@@ -79,6 +79,44 @@ export const SETTINGS = {
     }),
     secrets: ['passphrase', 'remote.s3.secretAccessKey'],
   },
+  plex: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      name: z.string().trim().max(100).default(''),
+      /** e.g. http://192.168.1.10:32400 */
+      url: httpUrl.default(''),
+      token: z.string().max(500).default(''),
+      machineId: z.string().trim().max(200).default(''),
+    }),
+    secrets: ['token'],
+  },
+  jellyfin: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      name: z.string().trim().max(100).default(''),
+      url: httpUrl.default(''),
+      apiKey: z.string().max(500).default(''),
+    }),
+    secrets: ['apiKey'],
+  },
+  metadata: {
+    schema: z.object({
+      /** TMDB v3 API key or v4 read access token. */
+      tmdbApiKey: z.string().max(1000).default(''),
+      mdblistApiKey: z.string().max(500).default(''),
+      language: z.string().trim().regex(/^[a-z]{2}(-[A-Z]{2})?$/, 'Use a code like en-US').default('en-US'),
+      region: z.string().trim().regex(/^[A-Z]{2}$/, 'Use a country code like US').default('US'),
+    }),
+    secrets: ['tmdbApiKey', 'mdblistApiKey'],
+  },
+  library: {
+    schema: z.object({
+      /** Periodically scan Plex/Jellyfin to learn what is on the server. */
+      syncEnabled: z.boolean().default(true),
+      syncIntervalHours: z.number().int().min(1).max(24).default(6),
+    }),
+    secrets: [],
+  },
 } as const satisfies Record<string, { schema: z.ZodObject; secrets: readonly string[] }>;
 
 export type SectionName = keyof typeof SETTINGS;

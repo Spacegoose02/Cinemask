@@ -2,12 +2,16 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { ActivitySettings } from './settings/Activity';
 import { BackupSettings } from './settings/Backups';
 import { GeneralSettings } from './settings/General';
+import { MediaServerSettings } from './settings/MediaServers';
+import { MetadataSettings } from './settings/Metadata';
 import { SignInSettings } from './settings/SignIn';
 import { UserSettings } from './settings/Users';
 
 // All settings live under one page with tabs, so nothing is scattered around the app.
 const TABS = [
   { path: 'general', label: 'General', element: <GeneralSettings /> },
+  { path: 'media-servers', label: 'Media servers', element: <MediaServerSettings /> },
+  { path: 'metadata', label: 'Metadata', element: <MetadataSettings /> },
   { path: 'users', label: 'Users', element: <UserSettings /> },
   { path: 'sign-in', label: 'Sign-in', element: <SignInSettings /> },
   { path: 'backups', label: 'Backups', element: <BackupSettings /> },

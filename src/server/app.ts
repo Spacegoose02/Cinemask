@@ -16,7 +16,10 @@ import { BackupService, writeBackupArchive } from './backup/service.js';
 import type { AppConfig } from './config.js';
 import type { AppContext } from './context.js';
 import { databasePath, migrate, openDatabase, pendingMigrations, schemaVersion } from './db/database.js';
+import { integrationRoutes } from './integrations/routes.js';
 import { Scheduler } from './jobs/scheduler.js';
+import { libraryRoutes } from './library/routes.js';
+import { LibrarySync } from './library/service.js';
 import { HttpError } from './lib/errors.js';
 import { loadOrCreateSecretKey } from './security/crypto.js';
 import { settingsRoutes } from './settings/routes.js';
@@ -27,6 +30,7 @@ export interface BuiltApp {
   app: FastifyInstance;
   backups: BackupService;
   scheduler: Scheduler;
+  librarySync: LibrarySync;
 }
 
 export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {}): Promise<BuiltApp> {
@@ -59,7 +63,8 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   app.decorate('ctx', ctx);
 
   const backups = new BackupService(ctx);
-  const scheduler = new Scheduler(app, backups);
+  const librarySync = new LibrarySync(ctx);
+  const scheduler = new Scheduler(app, backups, librarySync);
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.message, code: err.code });
@@ -106,9 +111,12 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   await app.register(settingsRoutes, {
     onChange: (section: string) => {
       if (section === 'backup') scheduler.rescheduleBackups();
+      if (section === 'library') scheduler.rescheduleLibrarySync();
     },
   });
   await app.register(backupRoutes, { backups, nextRun: () => scheduler.nextBackup() });
+  await app.register(integrationRoutes);
+  await app.register(libraryRoutes, { sync: librarySync });
 
   if (config.webDir && fs.existsSync(config.webDir)) {
     await app.register(fastifyStatic, { root: path.resolve(config.webDir), wildcard: false });
@@ -125,5 +133,5 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
     ctx.dbHandle.sqlite.close();
   });
 
-  return { app, backups, scheduler };
+  return { app, backups, scheduler, librarySync };
 }

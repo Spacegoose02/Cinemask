@@ -6,15 +6,19 @@ import { pruneAuditLog } from '../audit/routes.js';
 import { audit } from '../audit/log.js';
 import { authStates } from '../db/schema.js';
 import type { BackupService } from '../backup/service.js';
+import { purgeHttpCache } from '../integrations/tmdb.js';
+import type { LibrarySync } from '../library/service.js';
 
 /** Background jobs. Kept in-process: a household install doesn't need a separate worker. */
 export class Scheduler {
   private backupTask: ScheduledTask | null = null;
   private housekeeping: ScheduledTask | null = null;
+  private libraryTask: ScheduledTask | null = null;
 
   constructor(
     private readonly app: FastifyInstance,
     private readonly backups: BackupService,
+    private readonly librarySync: LibrarySync,
   ) {}
 
   start(): void {
@@ -22,8 +26,22 @@ export class Scheduler {
       purgeExpiredSessions(this.app.ctx.db);
       this.app.ctx.db.delete(authStates).where(lt(authStates.expiresAt, Date.now())).run();
       pruneAuditLog(this.app);
+      purgeHttpCache(this.app.ctx.db);
     });
     this.rescheduleBackups();
+    this.rescheduleLibrarySync();
+  }
+
+  rescheduleLibrarySync(): void {
+    void this.libraryTask?.destroy();
+    this.libraryTask = null;
+    const s = this.app.ctx.settings.get('library');
+    if (!s.syncEnabled) return;
+    const hours = s.syncIntervalHours >= 24 ? '3' : `*/${s.syncIntervalHours}`;
+    this.libraryTask = cron.schedule(`5 ${hours} * * *`, async () => {
+      await this.librarySync.run();
+      await this.librarySync.backfillMetadata(200);
+    });
   }
 
   rescheduleBackups(): void {
@@ -52,5 +70,6 @@ export class Scheduler {
   async stop(): Promise<void> {
     await this.backupTask?.destroy();
     await this.housekeeping?.destroy();
+    await this.libraryTask?.destroy();
   }
 }

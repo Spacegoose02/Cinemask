@@ -58,6 +58,67 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       CREATE INDEX audit_created_idx ON audit_log(created_at);
     `,
   },
+  {
+    id: 2,
+    name: 'media_library',
+    sql: `
+      CREATE TABLE media (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        tvdb_id INTEGER,
+        imdb_id TEXT,
+        title TEXT NOT NULL,
+        year INTEGER,
+        overview TEXT,
+        poster_path TEXT,
+        backdrop_path TEXT,
+        release_date TEXT,
+        digital_release TEXT,
+        physical_release TEXT,
+        next_air_date TEXT,
+        tmdb_status TEXT,
+        runtime INTEGER,
+        genres TEXT,
+        network TEXT,
+        rating REAL,
+        trailer_key TEXT,
+        metadata_updated_at INTEGER,
+        UNIQUE (kind, tmdb_id)
+      );
+      CREATE TABLE library_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        server TEXT NOT NULL CHECK (server IN ('plex','jellyfin')),
+        external_key TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        title TEXT NOT NULL,
+        year INTEGER,
+        tmdb_id INTEGER,
+        tvdb_id INTEGER,
+        imdb_id TEXT,
+        resolution TEXT,
+        added_at INTEGER,
+        media_id INTEGER REFERENCES media(id) ON DELETE SET NULL,
+        UNIQUE (server, external_key)
+      );
+      CREATE INDEX library_items_media_idx ON library_items(media_id);
+      CREATE INDEX library_items_tmdb_idx ON library_items(kind, tmdb_id);
+      CREATE TABLE library_episodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        library_item_id INTEGER NOT NULL REFERENCES library_items(id) ON DELETE CASCADE,
+        season INTEGER NOT NULL,
+        episode INTEGER NOT NULL,
+        title TEXT,
+        resolution TEXT
+      );
+      CREATE INDEX library_episodes_item_idx ON library_episodes(library_item_id);
+      CREATE TABLE http_cache (
+        key TEXT PRIMARY KEY,
+        body TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

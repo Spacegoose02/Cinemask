@@ -5,7 +5,10 @@ import { api, hasRole, type AuthStatus, type Role } from './lib/api';
 import { useAuth } from './lib/auth';
 import { AccountPage } from './pages/Account';
 import { HomePage } from './pages/Home';
+import { LibraryPage } from './pages/Library';
 import { LoginPage } from './pages/Login';
+import { MediaDetailPage } from './pages/MediaDetail';
+import { SearchPage } from './pages/Search';
 import { SettingsPage } from './pages/Settings';
 import { SetupPage } from './pages/Setup';
 
@@ -34,6 +37,10 @@ export function App() {
     <Layout>
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/library" element={<LibraryPage />} />
+        <Route path="/search" element={<SearchPage />} />
+        <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" />} />
+        <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" />} />
         <Route path="/account" element={<AccountPage />} />
         <Route
           path="/settings/*"
