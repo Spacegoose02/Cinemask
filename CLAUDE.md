@@ -8,6 +8,11 @@
   - `auth/`: sessions, the access guard, local login, OIDC and Plex sign-in.
   - `settings/`: every setting is defined in `definitions.ts` (zod schema + list of secret fields). Secrets are encrypted with `/config/secret.key`.
   - `backup/`: archive creation, retention, remote copies and restore.
+  - `library/` and `integrations/`: Plex/Jellyfin sync, TMDB/mdblist metadata, availability statuses.
+  - `arr/`: the download engine (release parser, quality profiles, indexers, download clients, search, tracker, importer, naming).
+  - `files/`: rename, rescan and delete for monitored titles. **Every file operation goes through `insideRoot()`** so nothing outside the configured media folders can be touched.
+  - `calendar/` and `health/`: the calendar feed and the Settings → Health checks.
+  - `jobs/scheduler.ts`: all background jobs (backups, library sync, download tracking, RSS, health).
 - `src/web`: React + Vite + TanStack Query + Tailwind v4. Theme colours are CSS variables in `styles.css`; new themes only redefine them.
 - `test/`: Vitest. `helpers.ts` has a browser-like `Client` that keeps cookies and sends CSRF headers.
 

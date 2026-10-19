@@ -8,6 +8,7 @@ import { authStates } from '../db/schema.js';
 import type { BackupService } from '../backup/service.js';
 import { rssSync, searchMissing } from '../arr/rss.js';
 import { trackDownloads } from '../arr/tracker.js';
+import { refreshMonitored } from '../calendar/service.js';
 import { purgeHttpCache } from '../integrations/tmdb.js';
 import type { LibrarySync } from '../library/service.js';
 
@@ -17,6 +18,7 @@ export class Scheduler {
   private housekeeping: ScheduledTask | null = null;
   private libraryTask: ScheduledTask | null = null;
   private downloadTasks: ScheduledTask[] = [];
+  private maintenance: ScheduledTask[] = [];
   private busy = new Set<string>();
 
   constructor(
@@ -32,6 +34,14 @@ export class Scheduler {
       pruneAuditLog(this.app);
       purgeHttpCache(this.app.ctx.db);
     });
+    this.maintenance = [
+      // Hourly health checks so problems show in the nav without opening Settings.
+      cron.schedule('45 * * * *', this.once('health', () => this.app.runHealth())),
+      // New episodes and changed release dates for the calendar.
+      cron.schedule('20 */12 * * *', this.once('refresh-monitored', () => refreshMonitored(this.app.ctx))),
+    ];
+    // First health run shortly after start, so the nav badge is right without waiting an hour.
+    setTimeout(() => void this.once('health', () => this.app.runHealth())(), 30_000).unref();
     this.rescheduleBackups();
     this.rescheduleLibrarySync();
     this.rescheduleDownloading();
@@ -102,6 +112,6 @@ export class Scheduler {
     await this.backupTask?.destroy();
     await this.housekeeping?.destroy();
     await this.libraryTask?.destroy();
-    for (const t of this.downloadTasks) await t.destroy();
+    for (const t of [...this.downloadTasks, ...this.maintenance]) await t.destroy();
   }
 }

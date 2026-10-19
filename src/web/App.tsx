@@ -3,7 +3,9 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { api, hasRole, type AuthStatus, type Role } from './lib/api';
 import { useAuth } from './lib/auth';
+import { FilesPanel } from './components/FilesPanel';
 import { MediaActions } from './components/MediaActions';
+import { CalendarPage } from './pages/Calendar';
 import { AccountPage } from './pages/Account';
 import { DownloadsPage } from './pages/Downloads';
 import { RequestsPage } from './pages/Requests';
@@ -42,8 +44,9 @@ export function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/search" element={<SearchPage />} />
-        <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" actions={(m) => <MediaActions m={m} />} />} />
-        <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} />} />
+        <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" actions={(m) => <MediaActions m={m} />} panels={(m) => <FilesPanel m={m} />} />} />
+        <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} panels={(m) => <FilesPanel m={m} />} />} />
+        <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/requests" element={<RequestsPage />} />
         <Route
           path="/downloads"

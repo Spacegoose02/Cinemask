@@ -47,10 +47,13 @@ function SeasonPicker({ seasons, value, onChange }: { seasons: MediaDetail['seas
   );
 }
 
-function ManualSearch({ monitoredId, onClose }: { monitoredId: number; onClose: () => void }) {
-  const [season, setSeason] = useState<string>('');
-  const qs = season ? `?season=${season}` : '';
-  const res = useQuery({ queryKey: ['releases', monitoredId, season], queryFn: () => api<{ releases: ReleaseRow[]; errors: string[] }>(`/api/monitored/${monitoredId}/releases${qs}`) });
+export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: { monitoredId: number; onClose: () => void; initialSeason?: number; episode?: number }) {
+  const [season, setSeason] = useState<string>(initialSeason !== undefined ? String(initialSeason) : '');
+  const params = new URLSearchParams();
+  if (season) params.set('season', season);
+  if (season && episode !== undefined) params.set('episode', String(episode));
+  const qs = params.size ? `?${params}` : '';
+  const res = useQuery({ queryKey: ['releases', monitoredId, season, episode], queryFn: () => api<{ releases: ReleaseRow[]; errors: string[] }>(`/api/monitored/${monitoredId}/releases${qs}`) });
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const grab = async (r: ReleaseRow) => {
     try {
@@ -61,7 +64,7 @@ function ManualSearch({ monitoredId, onClose }: { monitoredId: number; onClose: 
     }
   };
   return (
-    <Modal title="Manual search" onClose={onClose} wide>
+    <Modal title={episode !== undefined ? `Manual search: S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}` : 'Manual search'} onClose={onClose} wide>
       <div className="mb-3 flex items-center gap-2">
         <label className="text-sm text-muted">
           Season{' '}

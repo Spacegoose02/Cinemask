@@ -77,7 +77,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export function MediaDetailPage({ kind, actions }: { kind: MediaKind; actions?: (m: MediaDetail) => ReactNode }) {
+export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; actions?: (m: MediaDetail) => ReactNode; panels?: (m: MediaDetail) => ReactNode }) {
   const { tmdbId } = useParams();
   const [trailer, setTrailer] = useState(false);
   const q = useQuery({ queryKey: ['media', kind, tmdbId], queryFn: () => api<MediaDetail>(`/api/media/${kind}/${tmdbId}`) });
@@ -141,6 +141,7 @@ export function MediaDetailPage({ kind, actions }: { kind: MediaKind; actions?: 
           </ul>
         </section>
       )}
+      {panels?.(m)}
       {trailer && m.trailerKey && <TrailerModal videoKey={m.trailerKey} onClose={() => setTrailer(false)} />}
     </div>
   );

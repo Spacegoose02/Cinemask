@@ -5,6 +5,7 @@ import type { AppContext } from '../context.js';
 import { downloads, monitored, monitoredEpisodes, requests } from '../db/schema.js';
 import { renderName } from './naming.js';
 import { parseRelease, VIDEO_EXTENSIONS } from './parser.js';
+import { insideRoot } from '../lib/paths.js';
 import { qualityRank } from './quality.js';
 
 const SAMPLE_MAX = 80 * 1024 * 1024;
@@ -65,10 +66,7 @@ export function placeFile(src: string, dest: string, mode: 'hardlink' | 'copy' |
 }
 
 /** Refuses any destination outside the media root, whatever the naming template produced. */
-function inside(root: string, target: string): boolean {
-  const r = path.resolve(root) + path.sep;
-  return path.resolve(target).startsWith(r);
-}
+const inside = insideRoot;
 
 export interface ImportResult {
   imported: string[];

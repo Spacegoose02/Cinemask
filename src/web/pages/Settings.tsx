@@ -4,6 +4,7 @@ import { BackupSettings } from './settings/Backups';
 import { GeneralSettings } from './settings/General';
 import { MediaServerSettings } from './settings/MediaServers';
 import { DownloadClientSettings } from './settings/DownloadClients';
+import { HealthSettings } from './settings/Health';
 import { IndexerSettings } from './settings/Indexers';
 import { MediaManagementSettings } from './settings/MediaManagement';
 import { MetadataSettings } from './settings/Metadata';
@@ -23,6 +24,7 @@ const TABS = [
   { path: 'users', label: 'Users', element: <UserSettings /> },
   { path: 'sign-in', label: 'Sign-in', element: <SignInSettings /> },
   { path: 'backups', label: 'Backups', element: <BackupSettings /> },
+  { path: 'health', label: 'Health', element: <HealthSettings /> },
   { path: 'activity', label: 'Activity log', element: <ActivitySettings /> },
 ];
 

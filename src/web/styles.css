@@ -12,6 +12,8 @@
   --color-accent-fg: var(--mm-accent-fg);
   --color-danger: var(--mm-danger);
   --color-success: var(--mm-success);
+  --color-warning: var(--mm-warning);
+  --color-info: var(--mm-info);
 }
 
 :root,
@@ -26,6 +28,8 @@
   --mm-accent-fg: #1a1205;
   --mm-danger: #f05252;
   --mm-success: #31c48d;
+  --mm-warning: #e3a008;
+  --mm-info: #76a9fa;
 }
 
 [data-theme='light'] {
@@ -39,6 +43,8 @@
   --mm-accent-fg: #ffffff;
   --mm-danger: #c81e1e;
   --mm-success: #057a55;
+  --mm-warning: #9f580a;
+  --mm-info: #1a56db;
 }
 
 body {

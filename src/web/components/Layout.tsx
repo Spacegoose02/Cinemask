@@ -14,6 +14,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const isManager = hasRole(me, 'manager');
   const dlCount = useQuery({ queryKey: ['download-count'], queryFn: () => api<{ active: number }>('/api/downloads/count'), enabled: isManager, refetchInterval: 15000 });
+  const isAdmin = hasRole(me, 'admin');
+  const health = useQuery({ queryKey: ['health-summary'], queryFn: () => api<{ level: string | null; problems: number }>('/api/system/health/summary'), enabled: isAdmin, refetchInterval: 300000 });
   const reqCount = useQuery({ queryKey: ['request-count'], queryFn: () => api<{ pending: number }>('/api/requests/count'), enabled: isManager, refetchInterval: 30000 });
   const badge = (n: number | undefined) => (n ? <span className="ml-auto rounded-full bg-accent px-1.5 text-xs font-semibold text-accent-fg">{n}</span> : null);
 
@@ -31,6 +33,9 @@ export function Layout({ children }: { children: ReactNode }) {
       <NavLink to="/library" className={linkClass}>
         Library
       </NavLink>
+      <NavLink to="/calendar" className={linkClass}>
+        Calendar
+      </NavLink>
       <NavLink to="/requests" className={(p) => `${linkClass(p)} flex items-center`}>
         Requests {badge(reqCount.data?.pending)}
       </NavLink>
@@ -39,9 +44,12 @@ export function Layout({ children }: { children: ReactNode }) {
           Downloads {badge(dlCount.data?.active)}
         </NavLink>
       )}
-      {hasRole(me, 'admin') && (
-        <NavLink to="/settings" className={linkClass}>
+      {isAdmin && (
+        <NavLink to="/settings" className={(p) => `${linkClass(p)} flex items-center`}>
           Settings
+          {health.data?.problems ? (
+            <span className={`ml-auto h-2 w-2 rounded-full ${health.data.level === 'error' ? 'bg-danger' : 'bg-warning'}`} title={`${health.data.problems} health problem(s)`} />
+          ) : null}
         </NavLink>
       )}
       <NavLink to="/account" className={linkClass}>

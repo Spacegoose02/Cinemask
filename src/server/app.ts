@@ -7,6 +7,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ZodError } from 'zod';
 import { seedProfiles } from './arr/profiles.js';
+import { calendarRoutes } from './calendar/routes.js';
+import { fileRoutes } from './files/routes.js';
+import { healthRoutes } from './health/routes.js';
 import { arrRoutes } from './arr/routes.js';
 import { auditRoutes } from './audit/routes.js';
 import { registerGuard } from './auth/guard.js';
@@ -122,6 +125,9 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   await app.register(integrationRoutes);
   await app.register(libraryRoutes, { sync: librarySync });
   await app.register(arrRoutes);
+  await app.register(fileRoutes);
+  await app.register(calendarRoutes);
+  await app.register(healthRoutes, { backups, librarySync });
 
   if (config.webDir && fs.existsSync(config.webDir)) {
     await app.register(fastifyStatic, { root: path.resolve(config.webDir), wildcard: false });

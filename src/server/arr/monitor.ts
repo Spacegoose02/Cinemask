@@ -27,12 +27,15 @@ export async function monitorTitle(
         .values({ kind: input.kind, tmdbId: input.tmdbId, title: meta.title, year: meta.year, profileId: input.profileId, seasons, addedBy: input.addedBy ?? null, addedAt: Date.now() })
         .returning()
         .get();
-  if (row.kind === 'show') await refreshEpisodes(ctx, row);
+  if (row.kind === 'show') await refreshEpisodes(ctx, row, true);
   return row;
 }
 
-/** Syncs a monitored show's episode list (titles, air dates) from TMDB. */
-export async function refreshEpisodes(ctx: AppContext, row: MonitoredRow) {
+/**
+ * Syncs a monitored show's episode list (titles, air dates) from TMDB. New episodes follow the
+ * season choice; existing ones keep their own monitored flag unless resetMonitored is set.
+ */
+export async function refreshEpisodes(ctx: AppContext, row: MonitoredRow, resetMonitored = false) {
   const tmdb = tmdbClient(ctx);
   const show = await tmdb.show(row.tmdbId);
   const wantedSeasons: number[] | null = row.seasons ? (JSON.parse(row.seasons) as number[]) : null;
@@ -46,7 +49,7 @@ export async function refreshEpisodes(ctx: AppContext, row: MonitoredRow) {
         .values({ monitoredId: row.id, season: s.season_number, episode: e.episode_number, title: e.name, airDate: e.air_date, monitored: isMonitored })
         .onConflictDoUpdate({
           target: [monitoredEpisodes.monitoredId, monitoredEpisodes.season, monitoredEpisodes.episode],
-          set: { title: e.name, airDate: e.air_date, monitored: isMonitored },
+          set: { title: e.name, airDate: e.air_date, ...(resetMonitored ? { monitored: isMonitored } : {}) },
         })
         .run();
     }
