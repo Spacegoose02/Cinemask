@@ -40,7 +40,7 @@ export async function searchThePosterDb(title: string, year: number | null, kind
   const term = encodeURIComponent(year ? `${title} ${year}` : title);
   try {
     const res = await fetch(`https://theposterdb.com/search?term=${term}&section=${kind === 'movie' ? 'movies' : 'shows'}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (media-manager)', Accept: 'text/html' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (cinemask)', Accept: 'text/html' },
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) return [];

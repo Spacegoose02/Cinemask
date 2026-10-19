@@ -61,14 +61,14 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen md:flex">
       <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3 md:hidden">
-        <span className="font-semibold">Media Manager</span>
+        <span className="flex items-center gap-2 font-semibold"><img src="/logo-128.png" alt="" className="h-7 w-7" />Cinemask</span>
         <button className="btn-secondary" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Menu">
           ☰
         </button>
       </header>
       {open && <div className="border-b border-border bg-surface p-3 md:hidden">{nav}</div>}
       <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-surface p-4 md:flex">
-        <div className="mb-6 px-3 text-lg font-semibold">Media Manager</div>
+        <div className="mb-6 flex items-center gap-2 px-2 text-lg font-semibold"><img src="/logo-128.png" alt="" className="h-9 w-9" />Cinemask</div>
         {nav}
         <div className="mt-auto space-y-2 px-3 text-sm">
           <div className="text-muted">

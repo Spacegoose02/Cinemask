@@ -170,7 +170,7 @@ describe('request → download → import', () => {
     expect(approved.status).toBe('approved');
     await vi.waitFor(() => expect(added).toHaveLength(1));
     expect(grabbed()[0]).toBe('Paddington.2014.1080p.BluRay.x264-SPARKS');
-    expect(added[0]).toContain('category=media-manager');
+    expect(added[0]).toContain('category=cinemask');
     expect(added[0]).toContain('tags=mm-1');
 
     // The client reports the download finished; the tracker imports it.

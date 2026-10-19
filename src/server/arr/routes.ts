@@ -437,7 +437,7 @@ export async function arrRoutes(app: FastifyInstance) {
     url: z.url({ protocol: /^https?$/ }).max(1000),
     username: z.string().max(200).nullable().optional(),
     password: z.string().max(500).nullable().optional(),
-    category: z.string().trim().min(1).max(100).regex(/^[\w.-]+$/).default('media-manager'),
+    category: z.string().trim().min(1).max(100).regex(/^[\w.-]+$/).default('cinemask'),
     enabled: z.boolean().default(true),
     priority: z.number().int().min(1).max(50).default(1),
   });

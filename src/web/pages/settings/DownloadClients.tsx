@@ -28,7 +28,7 @@ interface ClientRow {
   protocol: string;
 }
 
-const EMPTY = { name: '', type: 'qbittorrent' as ClientType, url: '', username: '', password: undefined as string | null | undefined, category: 'media-manager', enabled: true, priority: 1 };
+const EMPTY = { name: '', type: 'qbittorrent' as ClientType, url: '', username: '', password: undefined as string | null | undefined, category: 'cinemask', enabled: true, priority: 1 };
 
 export function DownloadClientSettings() {
   const qc = useQueryClient();

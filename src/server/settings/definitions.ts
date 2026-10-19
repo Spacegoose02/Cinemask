@@ -68,7 +68,7 @@ export const SETTINGS = {
               endpoint: httpUrl.default(''),
               region: z.string().trim().max(100).default('us-east-1'),
               bucket: z.string().trim().max(255).default(''),
-              prefix: z.string().trim().max(500).default('media-manager/'),
+              prefix: z.string().trim().max(500).default('cinemask/'),
               accessKeyId: z.string().trim().max(500).default(''),
               secretAccessKey: z.string().max(2000).default(''),
               forcePathStyle: z.boolean().default(true),

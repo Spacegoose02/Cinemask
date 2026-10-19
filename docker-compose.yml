@@ -1,8 +1,8 @@
 services:
-  media-manager:
-    image: ghcr.io/spacegoose02/media-manager:latest
+  cinemask:
+    image: ghcr.io/spacegoose02/cinemask:latest
     build: .
-    container_name: media-manager
+    container_name: cinemask
     restart: unless-stopped
     ports:
       - "7979:7979"

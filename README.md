@@ -1,4 +1,6 @@
-# Media Manager
+<p align="center"><img src="docs/logo.png" alt="Cinemask" width="260" /></p>
+
+# Cinemask
 
 A self-hosted media manager for families running Plex or Jellyfin, in the spirit of Sonarr, Radarr and Overseerr, in one app with real user accounts.
 
@@ -17,21 +19,21 @@ A self-hosted media manager for families running Plex or Jellyfin, in the spirit
 
 ### Unraid
 
-Add the template from `unraid/media-manager.xml` (Docker tab, Add Container, Template URL), or use the settings below:
+Add the template from `unraid/cinemask.xml` (Docker tab, Add Container, Template URL), or use the settings below:
 
 | Setting | Value |
 |---|---|
-| Repository | `ghcr.io/spacegoose02/media-manager:latest` |
+| Repository | `ghcr.io/spacegoose02/cinemask:latest` |
 | Port | `7979` |
-| `/config` | `/mnt/user/appdata/media-manager` |
+| `/config` | `/mnt/user/appdata/cinemask` |
 | `PUID` / `PGID` | `99` / `100` |
 
 ### Docker Compose
 
 ```yaml
 services:
-  media-manager:
-    image: ghcr.io/spacegoose02/media-manager:latest
+  cinemask:
+    image: ghcr.io/spacegoose02/cinemask:latest
     restart: unless-stopped
     ports: ["7979:7979"]
     environment:

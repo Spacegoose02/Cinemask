@@ -1,21 +1,21 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>media-manager</Name>
-  <Repository>ghcr.io/spacegoose02/media-manager:latest</Repository>
-  <Registry>https://github.com/Spacegoose02/media-manager/pkgs/container/media-manager</Registry>
+  <Name>cinemask</Name>
+  <Repository>ghcr.io/spacegoose02/cinemask:latest</Repository>
+  <Registry>https://github.com/Spacegoose02/cinemask/pkgs/container/cinemask</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/Spacegoose02/media-manager/issues</Support>
-  <Project>https://github.com/Spacegoose02/media-manager</Project>
+  <Support>https://github.com/Spacegoose02/cinemask/issues</Support>
+  <Project>https://github.com/Spacegoose02/cinemask</Project>
   <Overview>Self-hosted family media manager for Plex and Jellyfin households: requests, downloads, collections and more, with proper user accounts, single sign-on and backups.</Overview>
   <Category>MediaApp:Video MediaServer:Video Tools:</Category>
   <WebUI>http://[IP]:[PORT:7979]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/Spacegoose02/media-manager/main/unraid/media-manager.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/Spacegoose02/media-manager/main/docs/icon.png</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/Spacegoose02/cinemask/main/unraid/cinemask.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Spacegoose02/cinemask/main/docs/icon.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <Config Name="WebUI Port" Target="7979" Default="7979" Mode="tcp" Description="Web interface port" Type="Port" Display="always" Required="true" Mask="false">7979</Config>
-  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/media-manager" Mode="rw" Description="Database, settings, instance key and local backups" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/media-manager</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/cinemask" Mode="rw" Description="Database, settings, instance key and local backups" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/cinemask</Config>
   <Config Name="Downloads" Target="/downloads" Default="/mnt/user/data/downloads" Mode="rw" Description="Where your download clients save files. Keep it on the same share as Media so imports can hardlink." Type="Path" Display="always" Required="false" Mask="false">/mnt/user/data/downloads</Config>
   <Config Name="Media" Target="/media" Default="/mnt/user/data/media" Mode="rw" Description="Your library: movies, tv, audiobooks and books folders live here." Type="Path" Display="always" Required="false" Mask="false">/mnt/user/data/media</Config>
   <Config Name="Remote backups (optional)" Target="/remote-backups" Default="" Mode="rw" Description="Optional second share for backup copies. Set Settings, Backups, Remote copy to folder /remote-backups." Type="Path" Display="always" Required="false" Mask="false"/>

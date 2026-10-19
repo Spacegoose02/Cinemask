@@ -1,5 +1,7 @@
 # Notes for contributors and coding agents
 
+The app is called **Cinemask** (raccoon mascot). The head logo is the app icon (`src/web/public/icon-*.png`, `docs/icon.png`); the couch scene is `docs/logo.png` and `src/web/public/hero.png`.
+
 ## Layout
 
 - `src/server`: Fastify API (TypeScript, ESM, Node 22).

@@ -1,3 +1,4 @@
+import { Brand } from '../components/Brand';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -30,10 +31,11 @@ export function SetupPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
+      <Brand />
       <form onSubmit={submit} className="card w-full max-w-md space-y-4">
         <div>
-          <h1 className="text-xl font-semibold">Welcome</h1>
+          <h1 className="text-xl font-semibold">Welcome to Cinemask</h1>
           <p className="text-sm text-muted">Create the owner account. The owner controls every setting, API key and user.</p>
         </div>
         {error && <Alert>{error}</Alert>}
