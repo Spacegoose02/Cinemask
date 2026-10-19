@@ -33,6 +33,15 @@ export function Layout({ children }: { children: ReactNode }) {
       <NavLink to="/library" className={linkClass}>
         Library
       </NavLink>
+      <NavLink to="/discover" className={linkClass}>
+        Discover
+      </NavLink>
+      <NavLink to="/collections" className={linkClass}>
+        Collections
+      </NavLink>
+      <NavLink to="/lists" className={linkClass}>
+        Lists
+      </NavLink>
       <NavLink to="/calendar" className={linkClass}>
         Calendar
       </NavLink>

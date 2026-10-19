@@ -172,6 +172,7 @@ export function toCard(kind: MediaKind, r: TmdbSearchResult) {
     year: (r.release_date ?? r.first_air_date ?? '').slice(0, 4) || null,
     releaseDate: r.release_date ?? r.first_air_date ?? null,
     posterPath: r.poster_path ?? null,
+    backdropPath: r.backdrop_path ?? null,
     overview: r.overview ?? '',
     rating: r.vote_average ?? null,
   };

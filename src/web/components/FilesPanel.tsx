@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, formatBytes, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import type { MediaDetail } from '../pages/MediaDetail';
+import { TrailerManager } from './Extras';
 import { ManualSearch } from './MediaActions';
 import { Modal } from './Modal';
 import { Alert } from './ui';
@@ -160,6 +161,7 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [trailers, setTrailers] = useState(false);
   const [deleting, setDeleting] = useState<DeleteTarget | null>(null);
   const [manual, setManual] = useState<{ season: number; episode?: number } | null>(null);
   const [openSeason, setOpenSeason] = useState<number | null>(null);
@@ -202,6 +204,9 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
           </button>
           <button className="btn-secondary" onClick={() => setRenaming(true)}>
             Rename
+          </button>
+          <button className="btn-secondary" onClick={() => setTrailers(true)}>
+            Trailers
           </button>
           {m.kind === 'show' && files.data && files.data.files.length > 0 && (
             <button className="btn-secondary" onClick={() => setDeleting({ scope: 'show', label: `all files for ${mon.title}` })}>
@@ -322,6 +327,7 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
 
       {renaming && <RenameModal id={mon.id} onClose={() => setRenaming(false)} onDone={done} />}
       {deleting && <DeleteModal id={mon.id} target={deleting} onClose={() => setDeleting(null)} onDone={done} />}
+      {trailers && <TrailerManager monitoredId={mon.id} onClose={() => setTrailers(false)} />}
       {removing && <RemoveModal mon={mon} onClose={() => setRemoving(false)} />}
       {manual && <ManualSearch monitoredId={mon.id} initialSeason={manual.season} episode={manual.episode} onClose={() => setManual(null)} />}
     </section>

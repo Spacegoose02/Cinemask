@@ -6,6 +6,9 @@ import { useAuth } from './lib/auth';
 import { FilesPanel } from './components/FilesPanel';
 import { MediaActions } from './components/MediaActions';
 import { CalendarPage } from './pages/Calendar';
+import { CollectionDetailPage, CollectionsPage } from './pages/Collections';
+import { DiscoverPage } from './pages/Discover';
+import { ListDetailPage, ListsPage } from './pages/Lists';
 import { AccountPage } from './pages/Account';
 import { DownloadsPage } from './pages/Downloads';
 import { RequestsPage } from './pages/Requests';
@@ -47,6 +50,11 @@ export function App() {
         <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" actions={(m) => <MediaActions m={m} />} panels={(m) => <FilesPanel m={m} />} />} />
         <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} panels={(m) => <FilesPanel m={m} />} />} />
         <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/discover" element={<DiscoverPage />} />
+        <Route path="/lists" element={<ListsPage />} />
+        <Route path="/lists/:id" element={<ListDetailPage />} />
+        <Route path="/collections" element={<CollectionsPage />} />
+        <Route path="/collections/:id" element={<CollectionDetailPage />} />
         <Route path="/requests" element={<RequestsPage />} />
         <Route
           path="/downloads"

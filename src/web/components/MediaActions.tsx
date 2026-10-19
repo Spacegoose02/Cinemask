@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { api, formatBytes, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import type { MediaDetail } from '../pages/MediaDetail';
+import { PosterPicker, useCreateSeriesCollection } from './Extras';
 import { Modal } from './Modal';
 import { Alert } from './ui';
 
@@ -125,6 +126,8 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   const [requesting, setRequesting] = useState(false);
   const [seasons, setSeasons] = useState<number[]>(m.seasons.filter((s) => s.seasonNumber > 0 && s.onServer < s.episodeCount).map((s) => s.seasonNumber));
   const [manual, setManual] = useState(false);
+  const [posters, setPosters] = useState(false);
+  const createSeries = useCreateSeriesCollection();
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] });
 
@@ -184,7 +187,18 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           </button>
         </>
       )}
-      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      {isManager && (
+        <button className="btn-secondary" onClick={() => setPosters(true)}>
+          Change poster
+        </button>
+      )}
+      {isManager && m.collection && (
+        <button className="btn-secondary" onClick={() => run(() => createSeries(m.collection!), '')}>
+          Make a {m.collection.name} collection
+        </button>
+      )}
+      {msg && msg.text && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      {posters && <PosterPicker kind={m.kind} tmdbId={m.tmdbId} onClose={() => setPosters(false)} />}
       {requesting && (
         <Modal title={`Request ${m.title}`} onClose={() => setRequesting(false)}>
           <p className="mb-3 text-sm text-muted">Pick the seasons you want.</p>

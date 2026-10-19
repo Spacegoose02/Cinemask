@@ -21,8 +21,9 @@ export function MediaManagementSettings() {
   const m = useSettingsSection('media');
   const n = useSettingsSection('naming');
   const d = useSettingsSection('downloading');
+  const x = useSettingsSection('extras');
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: () => api<{ id: number; name: string }[]>('/api/profiles') });
-  if (m.loading || n.loading || d.loading) return null;
+  if (m.loading || n.loading || d.loading || x.loading) return null;
   const maps = m.values.remotePathMappings as { remote: string; local: string }[];
 
   return (
@@ -119,6 +120,24 @@ export function MediaManagementSettings() {
           hint="Off by default so a link can't be used to reach other devices on your network."
         />
         <SaveBar onSave={d.save} saving={d.saving} message={d.message} />
+      </section>
+
+      <section className="card space-y-4">
+        <h2 className="font-semibold">Trailers and posters</h2>
+        <Toggle label="Allow trailer downloads" checked={x.values.trailersEnabled} onChange={(v) => x.set('trailersEnabled', v)} hint="Trailers are saved next to each movie so Plex and Jellyfin play them as extras." />
+        <Toggle label="Download a trailer for every new movie" checked={x.values.autoDownloadTrailers} onChange={(v) => x.set('autoDownloadTrailers', v)} />
+        <Field label="Best trailer quality">
+          <select className="input" value={x.values.trailerMaxHeight} onChange={(e) => x.set('trailerMaxHeight', Number(e.target.value))}>
+            <option value={720}>720p</option>
+            <option value={1080}>1080p</option>
+            <option value={2160}>4K</option>
+          </select>
+        </Field>
+        <Field label="yt-dlp location" hint="Included in the Docker image. Only change this if you run Cinemask outside Docker.">
+          <input className="input" value={x.values.ytDlpPath} onChange={(e) => x.set('ytDlpPath', e.target.value)} />
+        </Field>
+        <Toggle label="Offer posters from ThePosterDB" checked={x.values.thePosterDb} onChange={(v) => x.set('thePosterDb', v)} hint="ThePosterDB has no official API, so this reads its search page and may stop working if the site changes." />
+        <SaveBar onSave={x.save} saving={x.saving} message={x.message} />
       </section>
     </div>
   );
