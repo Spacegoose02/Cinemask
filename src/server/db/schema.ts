@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, real, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, primaryKey, real, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const ROLES = ['user', 'manager', 'admin'] as const;
 export type Role = (typeof ROLES)[number];
@@ -18,6 +18,7 @@ export const users = sqliteTable('users', {
   lockedUntil: integer('locked_until'),
   createdAt: integer('created_at').notNull(),
   lastLoginAt: integer('last_login_at'),
+  homeLayout: text('home_layout'), // JSON HomeRow[]; null means the default layout
 });
 
 export const sessions = sqliteTable(
@@ -92,6 +93,7 @@ export const media = sqliteTable(
     network: text('network'),
     rating: real('rating'),
     trailerKey: text('trailer_key'),
+    posterOverride: text('poster_override'), // poster chosen in the app; pushed to Plex/Jellyfin
     metadataUpdatedAt: integer('metadata_updated_at'),
   },
   (t) => [uniqueIndex('media_kind_tmdb').on(t.kind, t.tmdbId)],
@@ -277,3 +279,74 @@ export const blocklist = sqliteTable('blocklist', {
   reason: text('reason'),
   createdAt: integer('created_at').notNull(),
 });
+
+export const LIST_SOURCES = ['mdblist', 'tmdb_list', 'tmdb_discover', 'csv'] as const;
+export type ListSource = (typeof LIST_SOURCES)[number];
+
+export const lists = sqliteTable('lists', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  source: text('source', { enum: LIST_SOURCES }).notNull(),
+  config: text('config').notNull().default('{}'), // JSON, depends on source
+  kind: text('kind', { enum: MEDIA_KINDS }),
+  autoAdd: integer('auto_add', { mode: 'boolean' }).notNull().default(false),
+  profileId: integer('profile_id').references(() => qualityProfiles.id, { onDelete: 'set null' }),
+  searchOnAdd: integer('search_on_add', { mode: 'boolean' }).notNull().default(true),
+  syncHours: integer('sync_hours').notNull().default(12),
+  lastSyncAt: integer('last_sync_at'),
+  lastError: text('last_error'),
+  itemCount: integer('item_count').notNull().default(0),
+  createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const listItems = sqliteTable(
+  'list_items',
+  {
+    listId: integer('list_id')
+      .notNull()
+      .references(() => lists.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    title: text('title').notNull(),
+    year: integer('year'),
+    posterPath: text('poster_path'),
+    position: integer('position').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.listId, t.kind, t.tmdbId] })],
+);
+
+export const COLLECTION_SOURCES = ['manual', 'tmdb', 'list', 'plex', 'jellyfin'] as const;
+
+export const collections = sqliteTable('collections', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  description: text('description'),
+  poster: text('poster'), // TMDB path, https URL, or plex:/jellyfin: image path
+  source: text('source', { enum: COLLECTION_SOURCES }).notNull(),
+  sourceId: text('source_id'),
+  syncPlex: integer('sync_plex', { mode: 'boolean' }).notNull().default(false),
+  syncJellyfin: integer('sync_jellyfin', { mode: 'boolean' }).notNull().default(false),
+  plexKey: text('plex_key'),
+  jellyfinId: text('jellyfin_id'),
+  lastPushAt: integer('last_push_at'),
+  lastError: text('last_error'),
+  createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const collectionItems = sqliteTable(
+  'collection_items',
+  {
+    collectionId: integer('collection_id')
+      .notNull()
+      .references(() => collections.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    title: text('title').notNull(),
+    year: integer('year'),
+    posterPath: text('poster_path'),
+    position: integer('position').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.collectionId, t.kind, t.tmdbId] })],
+);

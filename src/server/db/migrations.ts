@@ -235,6 +235,66 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    id: 4,
+    name: 'lists, collections, home layout and posters',
+    sql: `
+      CREATE TABLE lists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('mdblist','tmdb_list','tmdb_discover','csv')),
+        config TEXT NOT NULL DEFAULT '{}',
+        kind TEXT CHECK (kind IN ('movie','show')),
+        auto_add INTEGER NOT NULL DEFAULT 0,
+        profile_id INTEGER REFERENCES quality_profiles(id) ON DELETE SET NULL,
+        search_on_add INTEGER NOT NULL DEFAULT 1,
+        sync_hours INTEGER NOT NULL DEFAULT 12,
+        last_sync_at INTEGER,
+        last_error TEXT,
+        item_count INTEGER NOT NULL DEFAULT 0,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE list_items (
+        list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        year INTEGER,
+        poster_path TEXT,
+        position INTEGER NOT NULL,
+        PRIMARY KEY (list_id, kind, tmdb_id)
+      );
+      CREATE TABLE collections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        poster TEXT,
+        source TEXT NOT NULL CHECK (source IN ('manual','tmdb','list','plex','jellyfin')),
+        source_id TEXT,
+        sync_plex INTEGER NOT NULL DEFAULT 0,
+        sync_jellyfin INTEGER NOT NULL DEFAULT 0,
+        plex_key TEXT,
+        jellyfin_id TEXT,
+        last_push_at INTEGER,
+        last_error TEXT,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE collection_items (
+        collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        year INTEGER,
+        poster_path TEXT,
+        position INTEGER NOT NULL,
+        PRIMARY KEY (collection_id, kind, tmdb_id)
+      );
+      ALTER TABLE users ADD COLUMN home_layout TEXT;
+      ALTER TABLE media ADD COLUMN poster_override TEXT;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

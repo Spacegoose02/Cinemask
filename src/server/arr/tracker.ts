@@ -5,6 +5,7 @@ import { JellyfinClient } from '../integrations/jellyfin.js';
 import { createClient, type ClientItem } from './clients.js';
 import { importDownload } from './importer.js';
 import { autoSearch } from './search.js';
+import { autoTrailer } from '../trailers/service.js';
 import { openSecret } from './secrets.js';
 
 const ACTIVE = ['queued', 'downloading', 'paused', 'completed', 'importing'] as const;
@@ -75,6 +76,8 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
         const r = importDownload(ctx, d.id, item.outputPath);
         if (r.imported.length) {
           imported = true;
+          const row = ctx.db.select().from(monitored).where(eq(monitored.id, d.monitoredId)).get();
+          if (row) void autoTrailer(ctx, row).catch(() => undefined);
           if (ctx.settings.get('media').removeCompletedDownloads) {
             const client = createClient({ type: c.type as DownloadClientType, name: c.name, url: c.url, username: c.username, password: openSecret(ctx, c.password) });
             // With hardlinks the library copy survives; with copy/move the client data is no longer needed.

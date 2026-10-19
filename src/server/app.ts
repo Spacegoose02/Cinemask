@@ -8,6 +8,12 @@ import path from 'node:path';
 import { ZodError } from 'zod';
 import { seedProfiles } from './arr/profiles.js';
 import { calendarRoutes } from './calendar/routes.js';
+import { collectionRoutes } from './collections/routes.js';
+import { discoverRoutes } from './discover/routes.js';
+import { homeRoutes } from './home/routes.js';
+import { listRoutes } from './lists/routes.js';
+import { posterRoutes } from './posters/routes.js';
+import { trailerRoutes } from './trailers/routes.js';
 import { fileRoutes } from './files/routes.js';
 import { healthRoutes } from './health/routes.js';
 import { arrRoutes } from './arr/routes.js';
@@ -128,6 +134,12 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   await app.register(fileRoutes);
   await app.register(calendarRoutes);
   await app.register(healthRoutes, { backups, librarySync });
+  await app.register(discoverRoutes);
+  await app.register(listRoutes);
+  await app.register(collectionRoutes);
+  await app.register(posterRoutes);
+  await app.register(trailerRoutes);
+  await app.register(homeRoutes);
 
   if (config.webDir && fs.existsSync(config.webDir)) {
     await app.register(fastifyStatic, { root: path.resolve(config.webDir), wildcard: false });

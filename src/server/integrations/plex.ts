@@ -1,4 +1,4 @@
-import { fetchJson, normalizeResolution } from './http.js';
+import { fetchJson, IntegrationError, normalizeResolution } from './http.js';
 import type { MediaServerClient, ServerItem } from './mediaserver.js';
 
 interface PlexGuid {
@@ -74,5 +74,74 @@ export class PlexClient implements MediaServerClient {
       }
     }
     return items;
+  }
+
+  // ---------------- Writes: collections and posters ----------------
+
+  private async send(method: string, path: string, body?: string | Uint8Array, contentType?: string): Promise<Response> {
+    const base = this.url.replace(/\/+$/, '');
+    let res: Response;
+    try {
+      res = await fetch(`${base}${path}`, {
+        method,
+        body,
+        headers: { 'X-Plex-Token': this.token, Accept: 'application/json', ...(contentType ? { 'Content-Type': contentType } : {}) },
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      throw new IntegrationError('Plex', 'could not connect');
+    }
+    if (!res.ok) throw new IntegrationError('Plex', `responded with HTTP ${res.status}`, res.status);
+    return res;
+  }
+
+  /** The library section an item lives in (needed to edit its tags). */
+  async sectionOf(ratingKey: string): Promise<string> {
+    const r = await this.get<{ librarySectionID?: number | string; Metadata?: { librarySectionID?: number | string }[] }>(`/library/metadata/${encodeURIComponent(ratingKey)}`);
+    const id = r.Metadata?.[0]?.librarySectionID ?? r.librarySectionID;
+    if (id === undefined) throw new IntegrationError('Plex', 'could not find the item\'s library');
+    return String(id);
+  }
+
+  /** Adds or removes a collection tag on an item. Plex creates the collection when the first item is tagged. */
+  async setCollectionTag(section: string, kind: 'movie' | 'show', ratingKey: string, name: string, remove = false) {
+    const qs = new URLSearchParams({ type: kind === 'movie' ? '1' : '2', id: ratingKey, includeExternalMedia: '1', 'collection.locked': '1' });
+    qs.set(remove ? 'collection[].tag.tag-' : 'collection[0].tag.tag', name);
+    await this.send('PUT', `/library/sections/${encodeURIComponent(section)}/all?${qs.toString()}`);
+  }
+
+  async collections(): Promise<{ ratingKey: string; title: string; summary?: string; thumb?: string; section: string; subtype?: string }[]> {
+    const sections = await this.get<{ Directory?: { key: string; type: string }[] }>('/library/sections');
+    const out: { ratingKey: string; title: string; summary?: string; thumb?: string; section: string; subtype?: string }[] = [];
+    for (const sec of sections.Directory ?? []) {
+      if (sec.type !== 'movie' && sec.type !== 'show') continue;
+      const r = await this.get<{ Metadata?: { ratingKey: string; title: string; summary?: string; thumb?: string; subtype?: string }[] }>(`/library/sections/${sec.key}/collections`);
+      for (const c of r.Metadata ?? []) out.push({ ...c, section: sec.key });
+    }
+    return out;
+  }
+
+  async collectionChildren(ratingKey: string): Promise<string[]> {
+    const r = await this.get<{ Metadata?: { ratingKey: string }[] }>(`/library/collections/${encodeURIComponent(ratingKey)}/children`);
+    return (r.Metadata ?? []).map((m) => m.ratingKey);
+  }
+
+  async renameCollection(section: string, ratingKey: string, title: string) {
+    const qs = new URLSearchParams({ type: '18', id: ratingKey, 'title.value': title, 'title.locked': '1' });
+    await this.send('PUT', `/library/sections/${encodeURIComponent(section)}/all?${qs.toString()}`);
+  }
+
+  async setPosterUrl(ratingKey: string, url: string) {
+    await this.send('POST', `/library/metadata/${encodeURIComponent(ratingKey)}/posters?url=${encodeURIComponent(url)}`);
+  }
+
+  async uploadPoster(ratingKey: string, data: Buffer, contentType: string) {
+    await this.send('POST', `/library/metadata/${encodeURIComponent(ratingKey)}/posters`, new Uint8Array(data), contentType);
+  }
+
+  /** Fetches an image from the server so the browser never sees the Plex token. */
+  async image(path: string): Promise<{ type: string; body: Buffer }> {
+    const res = await this.send('GET', path);
+    return { type: res.headers.get('content-type') ?? 'image/jpeg', body: Buffer.from(await res.arrayBuffer()) };
   }
 }

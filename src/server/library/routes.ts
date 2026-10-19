@@ -16,7 +16,7 @@ export function contains(col: AnyColumn, text: string) {
 }
 
 /** Integration failures become a 502 with a readable message instead of a generic 500. */
-async function upstream<T>(fn: () => Promise<T>): Promise<T> {
+export async function upstream<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
@@ -63,7 +63,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
         tmdbId: libraryItems.tmdbId,
         title: sql<string>`coalesce(${media.title}, ${libraryItems.title})`,
         year: libraryItems.year,
-        posterPath: media.posterPath,
+        posterPath: sql<string | null>`coalesce(${media.posterOverride}, ${media.posterPath})`,
         rating: media.rating,
         releaseDate: media.releaseDate,
         addedAt: sql<number>`max(${libraryItems.addedAt})`,
@@ -95,7 +95,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
     const { q, page } = parse(z.object({ q: z.string().trim().min(1).max(200), page: z.coerce.number().int().min(1).max(50).default(1) }), req.query);
     const tmdb = tmdbClient(ctx);
     const local = ctx.db
-      .select({ kind: libraryItems.kind, tmdbId: libraryItems.tmdbId, title: libraryItems.title, year: libraryItems.year, posterPath: media.posterPath })
+      .select({ kind: libraryItems.kind, tmdbId: libraryItems.tmdbId, title: libraryItems.title, year: libraryItems.year, posterPath: sql<string | null>`coalesce(${media.posterOverride}, ${media.posterPath})` })
       .from(libraryItems)
       .leftJoin(media, eq(media.id, libraryItems.mediaId))
       .where(contains(libraryItems.title, q))
@@ -154,6 +154,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
     }
     return {
       ...row,
+      posterPath: row.posterOverride ?? row.posterPath,
       genres: row.genres ? (JSON.parse(row.genres) as string[]) : [],
       released: isReleased(kind, row),
       availability,
@@ -203,7 +204,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
 
   app.get('/api/library/recent', { config: { access: 'user' } }, async () => {
     const rows = ctx.db
-      .select({ kind: libraryItems.kind, tmdbId: libraryItems.tmdbId, title: sql<string>`coalesce(${media.title}, ${libraryItems.title})`, year: libraryItems.year, posterPath: media.posterPath, addedAt: sql<number>`max(${libraryItems.addedAt})` })
+      .select({ kind: libraryItems.kind, tmdbId: libraryItems.tmdbId, title: sql<string>`coalesce(${media.title}, ${libraryItems.title})`, year: libraryItems.year, posterPath: sql<string | null>`coalesce(${media.posterOverride}, ${media.posterPath})`, addedAt: sql<number>`max(${libraryItems.addedAt})` })
       .from(libraryItems)
       .leftJoin(media, eq(media.id, libraryItems.mediaId))
       .groupBy(sql`coalesce(${libraryItems.kind} || ':' || ${libraryItems.tmdbId}, ${libraryItems.id})`)

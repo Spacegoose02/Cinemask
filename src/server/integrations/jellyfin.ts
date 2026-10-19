@@ -1,4 +1,4 @@
-import { fetchJson, normalizeResolution } from './http.js';
+import { fetchJson, IntegrationError, normalizeResolution } from './http.js';
 import type { MediaServerClient, ServerItem } from './mediaserver.js';
 
 interface JfItem {
@@ -67,5 +67,66 @@ export class JellyfinClient implements MediaServerClient {
       show.episodes!.push({ season: e.ParentIndexNumber, episode: e.IndexNumber, title: e.Name, resolution: normalizeResolution(height(e)) });
     }
     return items;
+  }
+
+  // ---------------- Writes: collections and posters ----------------
+
+  private async send(method: string, path: string, body?: string | Uint8Array, contentType?: string): Promise<Response> {
+    const base = this.url.replace(/\/+$/, '');
+    let res: Response;
+    try {
+      res = await fetch(`${base}${path}`, {
+        method,
+        body,
+        headers: { Authorization: `MediaBrowser Token="${this.apiKey}"`, Accept: 'application/json', ...(contentType ? { 'Content-Type': contentType } : {}) },
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      throw new IntegrationError('Jellyfin', 'could not connect');
+    }
+    if (!res.ok) throw new IntegrationError('Jellyfin', `responded with HTTP ${res.status}`, res.status);
+    return res;
+  }
+
+  async createCollection(name: string, ids: string[]): Promise<string> {
+    const qs = new URLSearchParams({ Name: name, Ids: ids.join(',') });
+    const r = (await (await this.send('POST', `/Collections?${qs.toString()}`)).json()) as { Id: string };
+    return r.Id;
+  }
+
+  async collectionItems(id: string): Promise<string[]> {
+    const r = await this.get<{ Items: { Id: string }[] }>(`/Items?ParentId=${encodeURIComponent(id)}`);
+    return r.Items.map((i) => i.Id);
+  }
+
+  async addToCollection(id: string, ids: string[]) {
+    if (ids.length) await this.send('POST', `/Collections/${encodeURIComponent(id)}/Items?Ids=${ids.map(encodeURIComponent).join(',')}`);
+  }
+
+  async removeFromCollection(id: string, ids: string[]) {
+    if (ids.length) await this.send('DELETE', `/Collections/${encodeURIComponent(id)}/Items?Ids=${ids.map(encodeURIComponent).join(',')}`);
+  }
+
+  async renameItem(id: string, name: string) {
+    const item = await this.get<Record<string, unknown>>(`/Items/${encodeURIComponent(id)}`);
+    await this.send('POST', `/Items/${encodeURIComponent(id)}`, JSON.stringify({ ...item, Name: name }), 'application/json');
+  }
+
+  async boxSets(): Promise<{ Id: string; Name: string; Overview?: string }[]> {
+    const r = await this.get<{ Items: { Id: string; Name: string; Overview?: string }[] }>('/Items?Recursive=true&IncludeItemTypes=BoxSet&Fields=Overview');
+    return r.Items;
+  }
+
+  async setPosterUrl(id: string, url: string) {
+    await this.send('POST', `/Items/${encodeURIComponent(id)}/RemoteImages/Download?Type=Primary&ImageUrl=${encodeURIComponent(url)}`);
+  }
+
+  async uploadPoster(id: string, data: Buffer, contentType: string) {
+    await this.send('POST', `/Items/${encodeURIComponent(id)}/Images/Primary`, data.toString('base64'), contentType);
+  }
+
+  async image(path: string): Promise<{ type: string; body: Buffer }> {
+    const res = await this.send('GET', path);
+    return { type: res.headers.get('content-type') ?? 'image/jpeg', body: Buffer.from(await res.arrayBuffer()) };
   }
 }

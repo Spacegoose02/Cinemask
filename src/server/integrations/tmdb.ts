@@ -27,8 +27,10 @@ export interface TmdbVideo {
   key: string;
   site: string;
   type: string;
+  name?: string;
   official?: boolean;
   size?: number;
+  published_at?: string;
 }
 
 export interface TmdbMovie {
@@ -162,6 +164,31 @@ export class TmdbClient {
 
   collection(id: number) {
     return this.get<{ id: number; name: string; overview: string; poster_path: string | null; parts: TmdbSearchResult[] }>(`/collection/${id}`);
+  }
+
+  searchCollections(query: string) {
+    return this.get<Paged<{ id: number; name: string; poster_path: string | null }>>('/search/collection', { query }, 24 * 60 * 60 * 1000);
+  }
+
+  /** A public TMDB list (v3 lists API). */
+  list(id: number, page = 1) {
+    return this.get<{ id: number; name: string; total_pages?: number; items: TmdbSearchResult[] }>(`/list/${id}`, { page }, 60 * 60 * 1000);
+  }
+
+  searchKind(kind: 'movie' | 'tv', query: string, year?: number | null) {
+    return this.get<Paged<TmdbSearchResult>>(`/search/${kind}`, { query, include_adult: 'false', ...(year ? (kind === 'movie' ? { year } : { first_air_date_year: year }) : {}) }, 24 * 60 * 60 * 1000);
+  }
+
+  images(kind: 'movie' | 'tv', id: number) {
+    return this.get<{ posters: { file_path: string; width: number; height: number; iso_639_1: string | null; vote_average: number; vote_count: number }[] }>(
+      `/${kind}/${id}/images`,
+      { include_image_language: 'en,null' },
+      24 * 60 * 60 * 1000,
+    );
+  }
+
+  videos(kind: 'movie' | 'tv', id: number) {
+    return this.get<{ results: TmdbVideo[] }>(`/${kind}/${id}/videos`, { include_video_language: 'en,null' }, 24 * 60 * 60 * 1000);
   }
 
   findByExternal(id: string, source: 'imdb_id' | 'tvdb_id') {

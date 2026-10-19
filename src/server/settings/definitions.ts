@@ -165,6 +165,19 @@ export const SETTINGS = {
     }),
     secrets: [],
   },
+  extras: {
+    schema: z.object({
+      /** yt-dlp downloads trailers into media folders, where Plex and Jellyfin pick them up. */
+      trailersEnabled: z.boolean().default(true),
+      ytDlpPath: z.string().trim().max(500).default('/usr/local/bin/yt-dlp'),
+      trailerMaxHeight: z.union([z.literal(720), z.literal(1080), z.literal(2160)]).default(1080),
+      /** Fetch a trailer automatically after a movie is imported. */
+      autoDownloadTrailers: z.boolean().default(false),
+      /** Also offer posters from ThePosterDB (scraped from its website, so it may break). */
+      thePosterDb: z.boolean().default(false),
+    }),
+    secrets: [],
+  },
 } as const satisfies Record<string, { schema: z.ZodObject; secrets: readonly string[] }>;
 
 export type SectionName = keyof typeof SETTINGS;

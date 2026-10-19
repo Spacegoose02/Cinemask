@@ -9,6 +9,8 @@ import type { BackupService } from '../backup/service.js';
 import { rssSync, searchMissing } from '../arr/rss.js';
 import { trackDownloads } from '../arr/tracker.js';
 import { refreshMonitored } from '../calendar/service.js';
+import { syncCollections } from '../collections/service.js';
+import { syncDueLists } from '../lists/service.js';
 import { purgeHttpCache } from '../integrations/tmdb.js';
 import type { LibrarySync } from '../library/service.js';
 
@@ -39,6 +41,9 @@ export class Scheduler {
       cron.schedule('45 * * * *', this.once('health', () => this.app.runHealth())),
       // New episodes and changed release dates for the calendar.
       cron.schedule('20 */12 * * *', this.once('refresh-monitored', () => refreshMonitored(this.app.ctx))),
+      // Lists sync on their own interval (checked hourly); collections follow their sources nightly.
+      cron.schedule('10 * * * *', this.once('lists', () => syncDueLists(this.app.ctx))),
+      cron.schedule('40 4 * * *', this.once('collections', () => syncCollections(this.app.ctx))),
     ];
     // First health run shortly after start, so the nav badge is right without waiting an hour.
     setTimeout(() => void this.once('health', () => this.app.runHealth())(), 30_000).unref();
