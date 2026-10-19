@@ -1,7 +1,8 @@
 import { and, desc, eq, gte } from 'drizzle-orm';
 import fs from 'node:fs';
 import type { AppContext } from '../context.js';
-import { downloadClients, downloads, indexers, type DownloadClientType } from '../db/schema.js';
+import { books, downloadClients, downloads, indexers, type DownloadClientType } from '../db/schema.js';
+import { absClient, shelfmarkClient } from '../books/service.js';
 import type { BackupService } from '../backup/service.js';
 import { createClient } from '../arr/clients.js';
 import { testIndexer } from '../arr/indexers.js';
@@ -90,6 +91,10 @@ export async function runHealthChecks(ctx: AppContext, deps: { backups: BackupSe
       return `Connected to ${i.name} (Jellyfin ${i.version})`;
     }));
   }
+  const abs = absClient(ctx);
+  if (abs) pending.push(connection('audiobookshelf', 'Audiobookshelf', 'books', () => abs.test()));
+  const sm = shelfmarkClient(ctx);
+  if (sm) pending.push(connection('shelfmark', 'Shelfmark', 'books', () => sm.test()));
   const meta = ctx.settings.get('metadata');
   pending.push(
     meta.tmdbApiKey
@@ -127,6 +132,10 @@ export async function runHealthChecks(ctx: AppContext, deps: { backups: BackupSe
   checks.push(storageCheck('movies', 'Movies folder', m.moviesPath, 'media-management'));
   checks.push(storageCheck('tv', 'TV folder', m.tvPath, 'media-management'));
   checks.push(storageCheck('downloads', 'Downloads folder', m.downloadsPath, 'media-management'));
+  if (abs || sm || ctx.db.select({ id: books.id }).from(books).limit(1).get()) {
+    checks.push(storageCheck('audiobooks', 'Audiobooks folder', m.audiobooksPath, 'media-management'));
+    checks.push(storageCheck('books', 'Books folder', m.booksPath, 'media-management'));
+  }
   if (m.importMode === 'hardlink' && fs.existsSync(m.downloadsPath)) {
     const dev = fs.statSync(m.downloadsPath).dev;
     const split = [m.moviesPath, m.tvPath].filter((p) => fs.existsSync(p) && fs.statSync(p).dev !== dev);

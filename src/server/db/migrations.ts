@@ -295,6 +295,46 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE media ADD COLUMN poster_override TEXT;
     `,
   },
+  {
+    id: 5,
+    name: 'books, audiobooks and Audiobookshelf',
+    sql: `
+      CREATE TABLE books (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_key TEXT NOT NULL,
+        format TEXT NOT NULL CHECK (format IN ('audiobook','ebook')),
+        title TEXT NOT NULL,
+        author TEXT,
+        year INTEGER,
+        cover_id INTEGER,
+        isbn TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending','approved','declined','downloading','available','failed')),
+        requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        requested_by_name TEXT,
+        decided_by_name TEXT,
+        decided_at INTEGER,
+        reason TEXT,
+        external_id TEXT,
+        path TEXT,
+        error TEXT,
+        created_at INTEGER NOT NULL,
+        UNIQUE (work_key, format)
+      );
+      CREATE INDEX books_status_idx ON books(status);
+      CREATE TABLE abs_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        abs_id TEXT NOT NULL UNIQUE,
+        library_id TEXT NOT NULL,
+        media_type TEXT NOT NULL CHECK (media_type IN ('book','podcast')),
+        title TEXT NOT NULL,
+        author TEXT,
+        asin TEXT,
+        isbn TEXT,
+        added_at INTEGER
+      );
+      ALTER TABLE downloads ADD COLUMN book_id INTEGER REFERENCES books(id) ON DELETE SET NULL;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

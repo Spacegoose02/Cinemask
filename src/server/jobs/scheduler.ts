@@ -9,6 +9,7 @@ import type { BackupService } from '../backup/service.js';
 import { rssSync, searchMissing } from '../arr/rss.js';
 import { trackDownloads } from '../arr/tracker.js';
 import { refreshMonitored } from '../calendar/service.js';
+import { pollShelfmark, syncAudiobookshelf } from '../books/service.js';
 import { syncCollections } from '../collections/service.js';
 import { syncDueLists } from '../lists/service.js';
 import { purgeHttpCache } from '../integrations/tmdb.js';
@@ -44,6 +45,9 @@ export class Scheduler {
       // Lists sync on their own interval (checked hourly); collections follow their sources nightly.
       cron.schedule('10 * * * *', this.once('lists', () => syncDueLists(this.app.ctx))),
       cron.schedule('40 4 * * *', this.once('collections', () => syncCollections(this.app.ctx))),
+      // Audiobookshelf's library every few hours; Shelfmark's queue every couple of minutes while books download.
+      cron.schedule('25 */4 * * *', this.once('audiobookshelf', async () => (this.app.ctx.settings.get('audiobookshelf').enabled ? syncAudiobookshelf(this.app.ctx) : null))),
+      cron.schedule('*/2 * * * *', this.once('shelfmark', () => pollShelfmark(this.app.ctx))),
     ];
     // First health run shortly after start, so the nav badge is right without waiting an hour.
     setTimeout(() => void this.once('health', () => this.app.runHealth())(), 30_000).unref();

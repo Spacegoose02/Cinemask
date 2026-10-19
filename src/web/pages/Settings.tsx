@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { ActivitySettings } from './settings/Activity';
+import { BookSettings } from './settings/Books';
 import { BackupSettings } from './settings/Backups';
 import { GeneralSettings } from './settings/General';
 import { MediaServerSettings } from './settings/MediaServers';
@@ -21,6 +22,7 @@ const TABS = [
   { path: 'profiles', label: 'Quality', element: <ProfileSettings /> },
   { path: 'indexers', label: 'Indexers', element: <IndexerSettings /> },
   { path: 'download-clients', label: 'Download clients', element: <DownloadClientSettings /> },
+  { path: 'books', label: 'Books', element: <BookSettings /> },
   { path: 'users', label: 'Users', element: <UserSettings /> },
   { path: 'sign-in', label: 'Sign-in', element: <SignInSettings /> },
   { path: 'backups', label: 'Backups', element: <BackupSettings /> },

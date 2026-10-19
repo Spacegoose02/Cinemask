@@ -22,7 +22,7 @@ export const poster = (path: string | null | undefined, size: 'w185' | 'w342' | 
   if (!path) return null;
   if (path.startsWith('/')) return `https://image.tmdb.org/t/p/${size}${path}`;
   if (path.startsWith('https://')) return path;
-  if (/^(plex|jellyfin|local):/.test(path)) return `/api/images?src=${encodeURIComponent(path)}`;
+  if (/^(plex|jellyfin|local|abs):/.test(path)) return `/api/images?src=${encodeURIComponent(path)}`;
   return null;
 };
 

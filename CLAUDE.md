@@ -13,6 +13,7 @@ The app is called **Cinemask** (raccoon mascot). The head logo is the app icon (
   - `library/` and `integrations/`: Plex/Jellyfin sync, TMDB/mdblist metadata, availability statuses.
   - `arr/`: the download engine (release parser, quality profiles, indexers, download clients, search, tracker, importer, naming).
   - `files/`: rename, rescan and delete for monitored titles. **Every file operation goes through `insideRoot()`** so nothing outside the configured media folders can be touched.
+  - `books/`: book and audiobook requests (Open Library metadata), downloads through Shelfmark or the indexers, imports as `Author/Title (Year)`, and the Audiobookshelf mirror (`abs_items`) plus podcasts (Apple directory, subscribed through Audiobookshelf).
   - `calendar/` and `health/`: the calendar feed and the Settings → Health checks.
   - `jobs/scheduler.ts`: all background jobs (backups, library sync, download tracking, RSS, health).
 - `src/web`: React + Vite + TanStack Query + Tailwind v4. Theme colours are CSS variables in `styles.css`; new themes only redefine them.

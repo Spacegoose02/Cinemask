@@ -165,6 +165,30 @@ export const SETTINGS = {
     }),
     secrets: [],
   },
+  audiobookshelf: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      url: httpUrl.default(''),
+      /** API token from Audiobookshelf → Settings → Users → your user. */
+      apiKey: z.string().max(2000).default(''),
+      audiobookLibraryId: z.string().max(100).default(''),
+      podcastLibraryId: z.string().max(100).default(''),
+    }),
+    secrets: ['apiKey'],
+  },
+  shelfmark: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      url: httpUrl.default(''),
+      username: z.string().max(200).default(''),
+      password: z.string().max(500).default(''),
+      /** Shelfmark's download folder as seen inside this container; finished books are imported from here. */
+      ingestPath: z.string().trim().max(1000).default('/downloads/books'),
+      /** Which book requests go to Shelfmark first. The rest use your indexers. */
+      useFor: z.enum(['ebooks', 'both']).default('ebooks'),
+    }),
+    secrets: ['password'],
+  },
   extras: {
     schema: z.object({
       /** yt-dlp downloads trailers into media folders, where Plex and Jellyfin pick them up. */

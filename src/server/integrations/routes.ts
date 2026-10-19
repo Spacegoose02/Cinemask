@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { AudiobookshelfClient } from './audiobookshelf.js';
+import { ShelfmarkClient } from './shelfmark.js';
 import { audit } from '../audit/log.js';
 import { plexHeaders } from '../auth/plex.js';
 import { HttpError } from '../lib/errors.js';
@@ -21,7 +23,7 @@ export async function integrationRoutes(app: FastifyInstance) {
   };
 
   app.post('/api/integrations/:service/test', { config: { access: 'admin' } }, async (req) => {
-    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'tmdb', 'mdblist']) }), req.params);
+    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'tmdb', 'mdblist', 'audiobookshelf', 'shelfmark']) }), req.params);
     const result = await run(async () => {
       switch (service) {
         case 'plex': {
@@ -46,6 +48,16 @@ export async function integrationRoutes(app: FastifyInstance) {
         case 'mdblist':
           await mdblistClient(ctx).test();
           return 'mdblist key works';
+        case 'audiobookshelf': {
+          const s = ctx.settings.get('audiobookshelf');
+          if (!s.url || !s.apiKey) throw new Error('Enter the Audiobookshelf URL and API token first');
+          return new AudiobookshelfClient(s.url, s.apiKey).test();
+        }
+        case 'shelfmark': {
+          const s = ctx.settings.get('shelfmark');
+          if (!s.url) throw new Error('Enter the Shelfmark URL first');
+          return new ShelfmarkClient(s.url, s.username, s.password).test();
+        }
       }
     });
     audit(ctx.db, req, 'integration.tested', { target: service, details: { ok: result.ok } });

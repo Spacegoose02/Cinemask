@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { absClient } from '../books/service.js';
 import { audit } from '../audit/log.js';
 import { assertSafeUrl } from '../arr/direct.js';
 import { collectionItems, collections, lists, MEDIA_KINDS, SERVERS } from '../db/schema.js';
@@ -226,6 +227,7 @@ export async function collectionRoutes(app: FastifyInstance) {
     try {
       if (/^plex:\/library\/(metadata|collections)\/\d+\/(thumb|composite|art)(\/\d+)?$/.test(src)) img = (await plexClient(ctx)?.image(src.slice(5))) ?? null;
       else if (/^jellyfin:\/Items\/[0-9a-f-]{32,36}\/Images\/Primary$/i.test(src)) img = (await jellyfinClient(ctx)?.image(src.slice(9))) ?? null;
+      else if (/^abs:\/api\/items\/[\w-]{1,64}\/cover$/.test(src)) img = (await absClient(ctx)?.image(src.slice(4))) ?? null;
       else if (/^local:[\w.-]+\.(jpg|png|webp)$/.test(src)) {
         const file = path.join(postersDir(ctx), path.basename(src.slice(6)));
         if (fs.existsSync(file)) img = { type: `image/${path.extname(file).slice(1).replace('jpg', 'jpeg')}`, body: fs.readFileSync(file) };

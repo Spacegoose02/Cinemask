@@ -3,9 +3,10 @@ import type { AppContext } from '../context.js';
 import { blocklist, downloadClients, downloads, monitored, type DownloadClientType } from '../db/schema.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import { createClient, type ClientItem } from './clients.js';
-import { importDownload } from './importer.js';
+import { importDownload, mapRemotePath } from './importer.js';
 import { autoSearch } from './search.js';
 import { autoTrailer } from '../trailers/service.js';
+import { failBook, importBook } from '../books/service.js';
 import { openSecret } from './secrets.js';
 
 const ACTIVE = ['queued', 'downloading', 'paused', 'completed', 'importing'] as const;
@@ -68,6 +69,16 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
         continue;
       }
       ctx.db.update(downloads).set({ status: 'importing', progress: 1, completedAt: d.completedAt ?? Date.now() }).where(eq(downloads.id, d.id)).run();
+      if (d.bookId && item.outputPath) {
+        try {
+          importBook(ctx, d.bookId, mapRemotePath(ctx, item.outputPath));
+          ctx.db.update(downloads).set({ status: 'imported', importedAt: Date.now(), outputPath: item.outputPath }).where(eq(downloads.id, d.id)).run();
+        } catch (err) {
+          ctx.db.update(downloads).set({ status: 'failed', error: (err as Error).message }).where(eq(downloads.id, d.id)).run();
+          failBook(ctx, d.bookId, (err as Error).message);
+        }
+        continue;
+      }
       if (!d.monitoredId || !item.outputPath) {
         ctx.db.update(downloads).set({ status: 'completed' }).where(eq(downloads.id, d.id)).run();
         continue;
@@ -97,6 +108,7 @@ export async function failDownload(ctx: AppContext, id: number, reason: string, 
   const d = ctx.db.select().from(downloads).where(eq(downloads.id, id)).get();
   if (!d) return;
   ctx.db.update(downloads).set({ status: 'failed', error: reason }).where(eq(downloads.id, id)).run();
+  if (d.bookId) failBook(ctx, d.bookId, reason);
   if (!d.monitoredId) return;
   ctx.db.insert(blocklist).values({ monitoredId: d.monitoredId, releaseTitle: d.title, indexer: d.indexer, reason, createdAt: Date.now() }).run();
   const row = ctx.db.select().from(monitored).where(eq(monitored.id, d.monitoredId)).get();

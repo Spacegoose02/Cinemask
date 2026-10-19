@@ -267,6 +267,7 @@ export const downloads = sqliteTable(
     addedAt: integer('added_at').notNull(),
     completedAt: integer('completed_at'),
     importedAt: integer('imported_at'),
+    bookId: integer('book_id'), // set for audiobook/ebook grabs instead of monitoredId
   },
   (t) => [index('downloads_status_idx').on(t.status)],
 );
@@ -350,3 +351,44 @@ export const collectionItems = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.collectionId, t.kind, t.tmdbId] })],
 );
+
+export const BOOK_FORMATS = ['audiobook', 'ebook'] as const;
+export type BookFormat = (typeof BOOK_FORMATS)[number];
+export const BOOK_STATUSES = ['pending', 'approved', 'declined', 'downloading', 'available', 'failed'] as const;
+
+export const books = sqliteTable(
+  'books',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    workKey: text('work_key').notNull(), // Open Library work, e.g. /works/OL45804W
+    format: text('format', { enum: BOOK_FORMATS }).notNull(),
+    title: text('title').notNull(),
+    author: text('author'),
+    year: integer('year'),
+    coverId: integer('cover_id'),
+    isbn: text('isbn'),
+    status: text('status', { enum: BOOK_STATUSES }).notNull(),
+    requestedBy: integer('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    requestedByName: text('requested_by_name'),
+    decidedByName: text('decided_by_name'),
+    decidedAt: integer('decided_at'),
+    reason: text('reason'),
+    externalId: text('external_id'), // Shelfmark download id
+    path: text('path'),
+    error: text('error'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('books_work_key_format_unique').on(t.workKey, t.format), index('books_status_idx').on(t.status)],
+);
+
+export const absItems = sqliteTable('abs_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  absId: text('abs_id').notNull().unique(),
+  libraryId: text('library_id').notNull(),
+  mediaType: text('media_type', { enum: ['book', 'podcast'] }).notNull(),
+  title: text('title').notNull(),
+  author: text('author'),
+  asin: text('asin'),
+  isbn: text('isbn'),
+  addedAt: integer('added_at'),
+});
