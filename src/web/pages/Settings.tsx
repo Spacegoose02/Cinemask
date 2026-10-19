@@ -3,7 +3,11 @@ import { ActivitySettings } from './settings/Activity';
 import { BackupSettings } from './settings/Backups';
 import { GeneralSettings } from './settings/General';
 import { MediaServerSettings } from './settings/MediaServers';
+import { DownloadClientSettings } from './settings/DownloadClients';
+import { IndexerSettings } from './settings/Indexers';
+import { MediaManagementSettings } from './settings/MediaManagement';
 import { MetadataSettings } from './settings/Metadata';
+import { ProfileSettings } from './settings/Profiles';
 import { SignInSettings } from './settings/SignIn';
 import { UserSettings } from './settings/Users';
 
@@ -12,6 +16,10 @@ const TABS = [
   { path: 'general', label: 'General', element: <GeneralSettings /> },
   { path: 'media-servers', label: 'Media servers', element: <MediaServerSettings /> },
   { path: 'metadata', label: 'Metadata', element: <MetadataSettings /> },
+  { path: 'media-management', label: 'Media management', element: <MediaManagementSettings /> },
+  { path: 'profiles', label: 'Quality', element: <ProfileSettings /> },
+  { path: 'indexers', label: 'Indexers', element: <IndexerSettings /> },
+  { path: 'download-clients', label: 'Download clients', element: <DownloadClientSettings /> },
   { path: 'users', label: 'Users', element: <UserSettings /> },
   { path: 'sign-in', label: 'Sign-in', element: <SignInSettings /> },
   { path: 'backups', label: 'Backups', element: <BackupSettings /> },

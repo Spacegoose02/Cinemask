@@ -117,6 +117,54 @@ export const SETTINGS = {
     }),
     secrets: [],
   },
+  media: {
+    schema: z.object({
+      /** Where download clients put finished files, as seen inside this container. */
+      downloadsPath: z.string().trim().max(1000).default('/downloads'),
+      moviesPath: z.string().trim().max(1000).default('/media/movies'),
+      tvPath: z.string().trim().max(1000).default('/media/tv'),
+      audiobooksPath: z.string().trim().max(1000).default('/media/audiobooks'),
+      booksPath: z.string().trim().max(1000).default('/media/books'),
+      /** hardlink keeps torrents seeding without using extra space (needs the same disk/share). */
+      importMode: z.enum(['hardlink', 'copy', 'move']).default('hardlink'),
+      /** Translate paths a download client reports (its own container) into paths here. */
+      remotePathMappings: z
+        .array(z.object({ remote: z.string().trim().min(1).max(1000), local: z.string().trim().min(1).max(1000) }))
+        .max(20)
+        .default([]),
+      removeCompletedDownloads: z.boolean().default(false),
+    }),
+    secrets: [],
+  },
+  naming: {
+    schema: z.object({
+      renameFiles: z.boolean().default(true),
+      movieFolder: z.string().max(300).default('{Movie Title} ({Year})'),
+      movieFile: z.string().max(300).default('{Movie Title} ({Year}) - {Quality}'),
+      seriesFolder: z.string().max(300).default('{Series Title} ({Year})'),
+      seasonFolder: z.string().max(300).default('Season {season:00}'),
+      episodeFile: z.string().max(300).default('{Series Title} - S{season:00}E{episode:00} - {Episode Title}'),
+    }),
+    secrets: [],
+  },
+  prowlarr: {
+    schema: z.object({
+      url: httpUrl.default(''),
+      apiKey: z.string().max(200).default(''),
+    }),
+    secrets: ['apiKey'],
+  },
+  downloading: {
+    schema: z.object({
+      rssSyncMinutes: z.number().int().min(10).max(1440).default(15),
+      searchMissingHours: z.number().int().min(1).max(168).default(12),
+      /** Allow direct URL downloads from LAN/private addresses. Off by default to prevent SSRF. */
+      allowPrivateDirectUrls: z.boolean().default(false),
+      defaultMovieProfile: z.number().int().positive().nullable().default(null),
+      defaultShowProfile: z.number().int().positive().nullable().default(null),
+    }),
+    secrets: [],
+  },
 } as const satisfies Record<string, { schema: z.ZodObject; secrets: readonly string[] }>;
 
 export type SectionName = keyof typeof SETTINGS;

@@ -14,4 +14,6 @@ services:
       - TRUST_PROXY=false
     volumes:
       - ./config:/config
-      # Media and downloads paths are added in Phase 3.
+      # Put downloads and media on the same disk/share so imports can hardlink.
+      - /mnt/user/data/downloads:/downloads
+      - /mnt/user/data/media:/media

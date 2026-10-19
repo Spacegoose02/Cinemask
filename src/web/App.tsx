@@ -3,7 +3,10 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { api, hasRole, type AuthStatus, type Role } from './lib/api';
 import { useAuth } from './lib/auth';
+import { MediaActions } from './components/MediaActions';
 import { AccountPage } from './pages/Account';
+import { DownloadsPage } from './pages/Downloads';
+import { RequestsPage } from './pages/Requests';
 import { HomePage } from './pages/Home';
 import { LibraryPage } from './pages/Library';
 import { LoginPage } from './pages/Login';
@@ -39,8 +42,17 @@ export function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/search" element={<SearchPage />} />
-        <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" />} />
-        <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" />} />
+        <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" actions={(m) => <MediaActions m={m} />} />} />
+        <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} />} />
+        <Route path="/requests" element={<RequestsPage />} />
+        <Route
+          path="/downloads"
+          element={
+            <RequireRole role="manager">
+              <DownloadsPage />
+            </RequireRole>
+          }
+        />
         <Route path="/account" element={<AccountPage />} />
         <Route
           path="/settings/*"

@@ -6,6 +6,8 @@ import { pruneAuditLog } from '../audit/routes.js';
 import { audit } from '../audit/log.js';
 import { authStates } from '../db/schema.js';
 import type { BackupService } from '../backup/service.js';
+import { rssSync, searchMissing } from '../arr/rss.js';
+import { trackDownloads } from '../arr/tracker.js';
 import { purgeHttpCache } from '../integrations/tmdb.js';
 import type { LibrarySync } from '../library/service.js';
 
@@ -14,6 +16,8 @@ export class Scheduler {
   private backupTask: ScheduledTask | null = null;
   private housekeeping: ScheduledTask | null = null;
   private libraryTask: ScheduledTask | null = null;
+  private downloadTasks: ScheduledTask[] = [];
+  private busy = new Set<string>();
 
   constructor(
     private readonly app: FastifyInstance,
@@ -30,6 +34,33 @@ export class Scheduler {
     });
     this.rescheduleBackups();
     this.rescheduleLibrarySync();
+    this.rescheduleDownloading();
+  }
+
+  /** Runs a job unless the previous run of the same job is still going. */
+  private once(name: string, fn: () => Promise<unknown>) {
+    return async () => {
+      if (this.busy.has(name)) return;
+      this.busy.add(name);
+      try {
+        await fn();
+      } catch (err) {
+        this.app.log.error({ err }, `Job ${name} failed`);
+      } finally {
+        this.busy.delete(name);
+      }
+    };
+  }
+
+  rescheduleDownloading(): void {
+    for (const t of this.downloadTasks) void t.destroy();
+    const s = this.app.ctx.settings.get('downloading');
+    const rss = s.rssSyncMinutes >= 60 ? `0 */${Math.min(23, Math.round(s.rssSyncMinutes / 60))} * * *` : `*/${s.rssSyncMinutes} * * * *`;
+    this.downloadTasks = [
+      cron.schedule('* * * * *', this.once('track', () => trackDownloads(this.app.ctx))),
+      cron.schedule(rss, this.once('rss', () => rssSync(this.app.ctx))),
+      cron.schedule('30 * * * *', this.once('missing', () => searchMissing(this.app.ctx, s.searchMissingHours))),
+    ];
   }
 
   rescheduleLibrarySync(): void {
@@ -71,5 +102,6 @@ export class Scheduler {
     await this.backupTask?.destroy();
     await this.housekeeping?.destroy();
     await this.libraryTask?.destroy();
+    for (const t of this.downloadTasks) await t.destroy();
   }
 }

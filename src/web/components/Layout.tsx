@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { api, hasRole } from '../lib/api';
@@ -11,6 +12,10 @@ export function Layout({ children }: { children: ReactNode }) {
   const { me, refresh } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const isManager = hasRole(me, 'manager');
+  const dlCount = useQuery({ queryKey: ['download-count'], queryFn: () => api<{ active: number }>('/api/downloads/count'), enabled: isManager, refetchInterval: 15000 });
+  const reqCount = useQuery({ queryKey: ['request-count'], queryFn: () => api<{ pending: number }>('/api/requests/count'), enabled: isManager, refetchInterval: 30000 });
+  const badge = (n: number | undefined) => (n ? <span className="ml-auto rounded-full bg-accent px-1.5 text-xs font-semibold text-accent-fg">{n}</span> : null);
 
   const logout = async () => {
     await api('/api/auth/logout', { method: 'POST' });
@@ -26,6 +31,14 @@ export function Layout({ children }: { children: ReactNode }) {
       <NavLink to="/library" className={linkClass}>
         Library
       </NavLink>
+      <NavLink to="/requests" className={(p) => `${linkClass(p)} flex items-center`}>
+        Requests {badge(reqCount.data?.pending)}
+      </NavLink>
+      {isManager && (
+        <NavLink to="/downloads" className={(p) => `${linkClass(p)} flex items-center`}>
+          Downloads {badge(dlCount.data?.active)}
+        </NavLink>
+      )}
       {hasRole(me, 'admin') && (
         <NavLink to="/settings" className={linkClass}>
           Settings

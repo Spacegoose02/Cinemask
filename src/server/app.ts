@@ -6,6 +6,8 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ZodError } from 'zod';
+import { seedProfiles } from './arr/profiles.js';
+import { arrRoutes } from './arr/routes.js';
 import { auditRoutes } from './audit/routes.js';
 import { registerGuard } from './auth/guard.js';
 import { oidcRoutes } from './auth/oidc.js';
@@ -60,6 +62,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
     settings: undefined as unknown as SettingsStore,
   };
   ctx.settings = new SettingsStore(() => ctx.db, () => ctx.secretKey);
+  seedProfiles(ctx);
   app.decorate('ctx', ctx);
 
   const backups = new BackupService(ctx);
@@ -112,11 +115,13 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
     onChange: (section: string) => {
       if (section === 'backup') scheduler.rescheduleBackups();
       if (section === 'library') scheduler.rescheduleLibrarySync();
+      if (section === 'downloading') scheduler.rescheduleDownloading();
     },
   });
   await app.register(backupRoutes, { backups, nextRun: () => scheduler.nextBackup() });
   await app.register(integrationRoutes);
   await app.register(libraryRoutes, { sync: librarySync });
+  await app.register(arrRoutes);
 
   if (config.webDir && fs.existsSync(config.webDir)) {
     await app.register(fastifyStatic, { root: path.resolve(config.webDir), wildcard: false });

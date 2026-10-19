@@ -133,3 +133,147 @@ export const httpCache = sqliteTable('http_cache', {
   body: text('body').notNull(),
   expiresAt: integer('expires_at').notNull(),
 });
+
+export const qualityProfiles = sqliteTable('quality_profiles', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull().unique(),
+  qualities: text('qualities').notNull(), // JSON QualityId[]
+  cutoff: text('cutoff').notNull(),
+  upgradesAllowed: integer('upgrades_allowed', { mode: 'boolean' }).notNull().default(true),
+  /** 'any', or an ISO 639-1 code such as 'en'. Releases in other languages are skipped. */
+  language: text('language').notNull().default('any'),
+  createdAt: integer('created_at').notNull(),
+});
+
+/** A movie or show the app keeps an eye on: searches for it, downloads and upgrades it. */
+export const monitored = sqliteTable(
+  'monitored',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    title: text('title').notNull(),
+    year: integer('year'),
+    profileId: integer('profile_id')
+      .notNull()
+      .references(() => qualityProfiles.id),
+    monitored: integer('monitored', { mode: 'boolean' }).notNull().default(true),
+    seasons: text('seasons'), // JSON number[]; null means every season
+    path: text('path'),
+    filePath: text('file_path'),
+    fileQuality: text('file_quality'),
+    addedBy: integer('added_by').references(() => users.id, { onDelete: 'set null' }),
+    addedAt: integer('added_at').notNull(),
+    lastSearchAt: integer('last_search_at'),
+  },
+  (t) => [uniqueIndex('monitored_kind_tmdb').on(t.kind, t.tmdbId)],
+);
+
+export const monitoredEpisodes = sqliteTable(
+  'monitored_episodes',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    monitoredId: integer('monitored_id')
+      .notNull()
+      .references(() => monitored.id, { onDelete: 'cascade' }),
+    season: integer('season').notNull(),
+    episode: integer('episode').notNull(),
+    title: text('title'),
+    airDate: text('air_date'),
+    monitored: integer('monitored', { mode: 'boolean' }).notNull().default(true),
+    filePath: text('file_path'),
+    fileQuality: text('file_quality'),
+  },
+  (t) => [uniqueIndex('monitored_episode_key').on(t.monitoredId, t.season, t.episode)],
+);
+
+export const REQUEST_STATUSES = ['pending', 'approved', 'declined', 'available'] as const;
+
+export const requests = sqliteTable(
+  'requests',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    title: text('title').notNull(),
+    year: integer('year'),
+    posterPath: text('poster_path'),
+    seasons: text('seasons'),
+    status: text('status', { enum: REQUEST_STATUSES }).notNull(),
+    requestedBy: integer('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    requestedByName: text('requested_by_name'),
+    decidedByName: text('decided_by_name'),
+    decidedAt: integer('decided_at'),
+    reason: text('reason'),
+    monitoredId: integer('monitored_id').references(() => monitored.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('requests_status_idx').on(t.status)],
+);
+
+export const indexers = sqliteTable('indexers', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  type: text('type', { enum: ['newznab', 'torznab'] }).notNull(),
+  url: text('url').notNull(),
+  apiKey: text('api_key'), // encrypted
+  categories: text('categories').notNull().default('[]'),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  priority: integer('priority').notNull().default(25),
+  source: text('source', { enum: ['manual', 'prowlarr'] }).notNull().default('manual'),
+  prowlarrId: integer('prowlarr_id').unique(),
+});
+
+export const DOWNLOAD_CLIENT_TYPES = ['qbittorrent', 'transmission', 'deluge', 'rtorrent', 'flood', 'utorrent', 'sabnzbd', 'nzbget'] as const;
+export type DownloadClientType = (typeof DOWNLOAD_CLIENT_TYPES)[number];
+
+export const downloadClients = sqliteTable('download_clients', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  type: text('type', { enum: DOWNLOAD_CLIENT_TYPES }).notNull(),
+  protocol: text('protocol', { enum: ['torrent', 'usenet'] }).notNull(),
+  url: text('url').notNull(),
+  username: text('username'),
+  password: text('password'), // encrypted
+  category: text('category').notNull().default('media-manager'),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  priority: integer('priority').notNull().default(1),
+});
+
+export const DOWNLOAD_STATUSES = ['queued', 'downloading', 'paused', 'completed', 'importing', 'imported', 'failed', 'removed'] as const;
+export type DownloadStatus = (typeof DOWNLOAD_STATUSES)[number];
+
+export const downloads = sqliteTable(
+  'downloads',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    clientId: integer('client_id').references(() => downloadClients.id, { onDelete: 'set null' }),
+    downloadId: text('download_id'),
+    monitoredId: integer('monitored_id').references(() => monitored.id, { onDelete: 'set null' }),
+    episodes: text('episodes'), // JSON {season, episodes[]} for TV grabs
+    title: text('title').notNull(),
+    quality: text('quality'),
+    size: integer('size'),
+    protocol: text('protocol', { enum: ['torrent', 'usenet', 'direct'] }).notNull(),
+    indexer: text('indexer'),
+    status: text('status', { enum: DOWNLOAD_STATUSES }).notNull(),
+    progress: real('progress').notNull().default(0),
+    error: text('error'),
+    outputPath: text('output_path'),
+    sourceUrl: text('source_url'),
+    addedBy: integer('added_by').references(() => users.id, { onDelete: 'set null' }),
+    addedAt: integer('added_at').notNull(),
+    completedAt: integer('completed_at'),
+    importedAt: integer('imported_at'),
+  },
+  (t) => [index('downloads_status_idx').on(t.status)],
+);
+
+export const blocklist = sqliteTable('blocklist', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  monitoredId: integer('monitored_id').references(() => monitored.id, { onDelete: 'cascade' }),
+  releaseTitle: text('release_title').notNull(),
+  indexer: text('indexer'),
+  reason: text('reason'),
+  createdAt: integer('created_at').notNull(),
+});

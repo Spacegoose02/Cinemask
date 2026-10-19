@@ -34,6 +34,11 @@ export class JellyfinClient implements MediaServerClient {
     return { name: info.ServerName, version: info.Version, machineId: info.Id };
   }
 
+  async refresh() {
+    const base = this.url.replace(/\/+$/, '');
+    await fetch(`${base}/Library/Refresh`, { method: 'POST', headers: { Authorization: `MediaBrowser Token="${this.apiKey}"` }, signal: AbortSignal.timeout(10_000) });
+  }
+
   async fetchLibrary(): Promise<ServerItem[]> {
     const fields = 'Fields=ProviderIds,MediaStreams,DateCreated,ProductionYear';
     const top = await this.get<{ Items: JfItem[] }>(`/Items?Recursive=true&IncludeItemTypes=Movie,Series&${fields}`);

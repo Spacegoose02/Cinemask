@@ -119,6 +119,122 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    id: 3,
+    name: 'requests_and_downloads',
+    sql: `
+      CREATE TABLE quality_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        qualities TEXT NOT NULL,
+        cutoff TEXT NOT NULL,
+        upgrades_allowed INTEGER NOT NULL DEFAULT 1,
+        language TEXT NOT NULL DEFAULT 'any',
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE monitored (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        year INTEGER,
+        profile_id INTEGER NOT NULL REFERENCES quality_profiles(id),
+        monitored INTEGER NOT NULL DEFAULT 1,
+        seasons TEXT,
+        path TEXT,
+        file_path TEXT,
+        file_quality TEXT,
+        added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        added_at INTEGER NOT NULL,
+        last_search_at INTEGER,
+        UNIQUE (kind, tmdb_id)
+      );
+      CREATE TABLE monitored_episodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        monitored_id INTEGER NOT NULL REFERENCES monitored(id) ON DELETE CASCADE,
+        season INTEGER NOT NULL,
+        episode INTEGER NOT NULL,
+        title TEXT,
+        air_date TEXT,
+        monitored INTEGER NOT NULL DEFAULT 1,
+        file_path TEXT,
+        file_quality TEXT,
+        UNIQUE (monitored_id, season, episode)
+      );
+      CREATE TABLE requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        year INTEGER,
+        poster_path TEXT,
+        seasons TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending','approved','declined','available')),
+        requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        requested_by_name TEXT,
+        decided_by_name TEXT,
+        decided_at INTEGER,
+        reason TEXT,
+        monitored_id INTEGER REFERENCES monitored(id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX requests_status_idx ON requests(status);
+      CREATE TABLE indexers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL CHECK (type IN ('newznab','torznab')),
+        url TEXT NOT NULL,
+        api_key TEXT,
+        categories TEXT NOT NULL DEFAULT '[]',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        priority INTEGER NOT NULL DEFAULT 25,
+        source TEXT NOT NULL DEFAULT 'manual',
+        prowlarr_id INTEGER UNIQUE
+      );
+      CREATE TABLE download_clients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        protocol TEXT NOT NULL CHECK (protocol IN ('torrent','usenet')),
+        url TEXT NOT NULL,
+        username TEXT,
+        password TEXT,
+        category TEXT NOT NULL DEFAULT 'media-manager',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        priority INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE TABLE downloads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id INTEGER REFERENCES download_clients(id) ON DELETE SET NULL,
+        download_id TEXT,
+        monitored_id INTEGER REFERENCES monitored(id) ON DELETE SET NULL,
+        episodes TEXT,
+        title TEXT NOT NULL,
+        quality TEXT,
+        size INTEGER,
+        protocol TEXT NOT NULL,
+        indexer TEXT,
+        status TEXT NOT NULL,
+        progress REAL NOT NULL DEFAULT 0,
+        error TEXT,
+        output_path TEXT,
+        source_url TEXT,
+        added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        added_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        imported_at INTEGER
+      );
+      CREATE INDEX downloads_status_idx ON downloads(status);
+      CREATE TABLE blocklist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        monitored_id INTEGER REFERENCES monitored(id) ON DELETE CASCADE,
+        release_title TEXT NOT NULL,
+        indexer TEXT,
+        reason TEXT,
+        created_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

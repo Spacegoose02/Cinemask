@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
-import { libraryEpisodes, libraryItems, media, type MediaKind, type ServerType } from '../db/schema.js';
+import { libraryEpisodes, libraryItems, media, requests, type MediaKind, type ServerType } from '../db/schema.js';
 import { bestResolution } from '../integrations/http.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import type { MediaServerClient, ServerItem } from '../integrations/mediaserver.js';
@@ -228,9 +228,19 @@ export class LibrarySync {
         }
       }
       this.status.lastRunAt = Date.now();
+      this.markRequestsAvailable();
       return this.status;
     } finally {
       this.status.running = false;
+    }
+  }
+
+  /** Approved requests whose title is now on a server are marked available. */
+  private markRequestsAvailable() {
+    const approved = this.ctx.db.select().from(requests).where(eq(requests.status, 'approved')).all();
+    for (const r of approved) {
+      const status = availabilityFor(this.ctx, r.kind, [{ tmdbId: r.tmdbId }]).get(r.tmdbId)!.status;
+      if (status === 'on_server') this.ctx.db.update(requests).set({ status: 'available' }).where(eq(requests.id, r.id)).run();
     }
   }
 

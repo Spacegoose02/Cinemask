@@ -16,6 +16,8 @@
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <Config Name="WebUI Port" Target="7979" Default="7979" Mode="tcp" Description="Web interface port" Type="Port" Display="always" Required="true" Mask="false">7979</Config>
   <Config Name="Config" Target="/config" Default="/mnt/user/appdata/media-manager" Mode="rw" Description="Database, settings, instance key and local backups" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/media-manager</Config>
+  <Config Name="Downloads" Target="/downloads" Default="/mnt/user/data/downloads" Mode="rw" Description="Where your download clients save files. Keep it on the same share as Media so imports can hardlink." Type="Path" Display="always" Required="false" Mask="false">/mnt/user/data/downloads</Config>
+  <Config Name="Media" Target="/media" Default="/mnt/user/data/media" Mode="rw" Description="Your library: movies, tv, audiobooks and books folders live here." Type="Path" Display="always" Required="false" Mask="false">/mnt/user/data/media</Config>
   <Config Name="Remote backups (optional)" Target="/remote-backups" Default="" Mode="rw" Description="Optional second share for backup copies. Set Settings, Backups, Remote copy to folder /remote-backups." Type="Path" Display="always" Required="false" Mask="false"/>
   <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID the app runs as" Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
   <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID the app runs as" Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
