@@ -1,0 +1,17 @@
+services:
+  media-manager:
+    image: ghcr.io/spacegoose02/media-manager:latest
+    build: .
+    container_name: media-manager
+    restart: unless-stopped
+    ports:
+      - "7979:7979"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      # Set to true only when behind a reverse proxy (Nginx Proxy Manager, SWAG, Traefik, Caddy).
+      - TRUST_PROXY=false
+    volumes:
+      - ./config:/config
+      # Media and downloads paths are added in Phase 3.
