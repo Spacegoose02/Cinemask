@@ -4,13 +4,21 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-20
+
+0.10.1 was tagged before its version bump, so no image was built for it. 0.10.2 carries everything meant for 0.10.1, along with more fixes.
+
 ### Added
 - Managers can add a title to monitoring without searching ("Monitor only"), and can monitor a movie that's already on the server so it gets upgraded ("Monitor for upgrades").
 - "Manage files" on any title that's on Plex or Jellyfin but not managed by Cinemask yet: it finds the title's folder, so its files can be deleted, renamed and upgraded. Nothing is downloaded.
+- The Files card shows where a title is on disk, including titles Cinemask doesn't manage yet, and its button reads "Manage this movie" or "Manage this show".
 - Automatic trailers are on by default, and cover every managed title that has files: after an import, when files are found, and hourly for any title still without one.
 
 ### Fixed
 - Movies and shows on the server couldn't be deleted: the Files panel only appeared for titles Cinemask monitored, auto-monitor added only 50 titles per sync, and a folder was only found when named exactly as Cinemask would name it. Folders like `Paddington.2014.1080p` or `Paddington {tmdb-116149}` are now found in any root folder, and auto-monitor works through the whole library.
+- Trailers already beside a movie played from YouTube instead: only a file named after the video file counted. Any `…-trailer` file next to the movie, or any video in a `Trailers` folder, now plays, also for titles Cinemask doesn't manage.
+- qBittorrent behind a reverse proxy (such as `https://torrent.example.com`): "login was rejected" with the right password, because Cinemask sent a Referer that qBittorrent's cross-site check refused. It no longer sends one, and a sign-in blocked by a proxy in front of qBittorrent now says so.
+- Releases made on GitHub's Releases page build even if `package.json` wasn't bumped first; the image takes its version from the tag.
 - qBittorrent 5.2 and later: "login was rejected" although the password was right (it now answers a good sign-in with an empty 204). A blocked address after too many failed sign-ins now says so.
 - Library posters missing for most titles on large libraries: a sync filled TMDB details for only 200 titles, and titles that kept failing were retried first and held up the rest. Every title is now filled after each sync, and anything left over is retried hourly.
 
@@ -75,6 +83,7 @@ The first public beta. Every phase of the roadmap is in.
 - Home Assistant: `/api/stats` for sensors and webhook events for automations.
 - Docker image for amd64 and arm64, and an Unraid template.
 
-[Unreleased]: https://github.com/Spacegoose02/cinemask/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Spacegoose02/cinemask/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/Spacegoose02/cinemask/compare/v0.10.0...v0.10.2
 [0.10.0]: https://github.com/Spacegoose02/cinemask/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Spacegoose02/cinemask/releases/tag/v0.9.0

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { insideRoot } from '../src/server/files/service.js';
+import { ensureMedia } from '../src/server/library/service.js';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
 import { fakeFetch, tmdbRoutes } from './fakes.js';
 
@@ -128,6 +129,19 @@ describe('file management, calendar and health', () => {
     fs.writeFileSync(path.join(folder, 'paddington.mkv'), 'movie');
     const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
     expect((await owner.req('POST', `/api/monitored/${m.id}/scan`)).json()).toMatchObject({ found: 1, folder });
+  });
+
+  it('plays a trailer already in the folder of a title Cinemask does not manage, and shows managers the folder', async () => {
+    ensureMedia(t.app.ctx, 'movie', 116149, { title: 'Paddington', year: 2014 });
+    const folder = path.join(movies, 'Paddington (2014)');
+    fs.mkdirSync(path.join(folder, 'Trailers'), { recursive: true });
+    fs.writeFileSync(path.join(folder, 'Paddington.2014.1080p.BluRay.mp4'), 'movie');
+    fs.writeFileSync(path.join(folder, 'Paddington (2014)-trailer.mkv'), 'trailer');
+    fs.writeFileSync(path.join(folder, 'Trailers', 'Teaser.mp4'), 'teaser');
+    expect((await kid.req('GET', '/api/trailers/movie/116149')).json().map((x: { name: string }) => x.name)).toEqual(['Paddington (2014)-trailer', 'Teaser']);
+    expect((await kid.req('GET', '/api/trailers/movie/116149/0')).body).toBe('trailer');
+    expect((await owner.req('GET', '/api/monitored/lookup/movie/116149')).json()).toMatchObject({ monitored: null, folder });
+    expect((await kid.req('GET', '/api/monitored/lookup/movie/116149')).json().folder).toBeUndefined();
   });
 
   it('calendar groups a show’s episodes on the same day and lists movie release types', async () => {

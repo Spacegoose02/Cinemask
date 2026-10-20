@@ -393,7 +393,22 @@ describe('qBittorrent sign-in', () => {
   it('says so when the password is wrong, or when qBittorrent has blocked it', async () => {
     fakeFetch({ 'http://qbit.local:8080/api/v2/auth/login': () => new Response('Fails.') });
     await expect(qbit().test()).rejects.toThrow('login was rejected');
-    fakeFetch({ 'http://qbit.local:8080/api/v2/auth/login': () => new Response('banned', { status: 403 }) });
+    fakeFetch({ 'http://qbit.local:8080/api/v2/auth/login': () => new Response('Your IP address has been banned after too many failed authentication attempts.', { status: 403 }) });
     await expect(qbit().test()).rejects.toThrow(/blocked Cinemask/);
+    fakeFetch({ 'http://qbit.local:8080/api/v2/auth/login': () => new Response('<html><body>Access denied</body></html>', { status: 403 }) });
+    await expect(qbit().test()).rejects.toThrow(/proxy in front of it/);
+  });
+
+  it('signs in without a Referer, so a reverse proxy in front of qBittorrent passes its cross-site check', async () => {
+    const { fn } = fakeFetch({
+      'http://qbit.local:8080/api/v2/auth/login': () => new Response('Ok.', { headers: { 'set-cookie': 'SID=abc; path=/' } }),
+      'http://qbit.local:8080/api/v2/app/version': () => new Response('v5.0.0'),
+    });
+    await qbit().test();
+    for (const [, init] of fn.mock.calls) {
+      const h = (init?.headers ?? {}) as Record<string, string>;
+      expect(Object.keys(h).map((k) => k.toLowerCase())).not.toContain('referer');
+      expect(h['user-agent']).toBe('Cinemask');
+    }
   });
 });

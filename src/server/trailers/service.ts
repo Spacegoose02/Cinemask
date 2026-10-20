@@ -86,14 +86,35 @@ function trailerTarget(ctx: AppContext, row: MonitoredRow): { dir: string; stem:
   return { dir: path.join(folder, 'trailers'), stem: sanitizeSegment(`${row.title}${row.year ? ` (${row.year})` : ''} - Trailer`) };
 }
 
-/** Trailer files already on disk for a title. */
+/**
+ * Trailer files already on disk for a title: "<anything>-trailer.ext" beside a movie (Plex and
+ * Jellyfin's naming, whoever made it), and any video in a "trailers" folder inside the title's folder.
+ */
 export function existingTrailers(ctx: AppContext, row: MonitoredRow): { path: string; size: number }[] {
-  const { dir, stem } = trailerTarget(ctx, row);
-  if (!fs.existsSync(dir)) return [];
-  return fs
-    .readdirSync(dir)
-    .filter((f) => VIDEO_EXT.test(f) && (row.kind === 'show' || f.startsWith(`${stem}.`)))
-    .map((f) => ({ path: path.join(dir, f), size: fs.statSync(path.join(dir, f)).size }));
+  const { dir } = trailerTarget(ctx, row);
+  const folder = row.path ?? expectedFolder(ctx, row);
+  const out = new Map<string, number>();
+  const add = (d: string, match: (f: string) => boolean) => {
+    let names: string[];
+    try {
+      names = fs.readdirSync(d);
+    } catch {
+      return;
+    }
+    for (const f of names) {
+      const p = path.join(d, f);
+      if (!VIDEO_EXT.test(f) || !match(f)) continue;
+      try {
+        const st = fs.statSync(p);
+        if (st.isFile()) out.set(p, st.size);
+      } catch {
+        // gone while listing
+      }
+    }
+  };
+  if (row.kind === 'movie') add(dir, (f) => /[-_. ]trailer$/i.test(path.parse(f).name));
+  for (const sub of ['trailers', 'Trailers']) add(path.join(folder, sub), () => true);
+  return [...out].map(([p, size]) => ({ path: p, size })).sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /**
