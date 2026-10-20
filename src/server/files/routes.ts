@@ -8,6 +8,7 @@ import { refreshMediaServers } from '../arr/tracker.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { applyRename, deleteFiles, deleteFolder, listFiles, renamePreview, scanFolder, type DeleteScope } from './service.js';
+import { autoTrailer } from '../trailers/service.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const num = z.number().int().min(0).max(5000);
@@ -38,6 +39,8 @@ export async function fileRoutes(app: FastifyInstance) {
     const row = getRow(id);
     const result = safely(() => scanFolder(ctx, row));
     audit(ctx.db, req, 'files.scanned', { target: row.title, details: result });
+    // Files just found: fetch a trailer for them when automatic trailers are on.
+    if (result.found) void autoTrailer(ctx, getRow(id)).catch(() => undefined);
     return result;
   });
 

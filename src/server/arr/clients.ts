@@ -80,8 +80,11 @@ class QBittorrent implements DownloadClient {
       headers: { 'content-type': 'application/x-www-form-urlencoded', Referer: base(this.c.url) },
       body: new URLSearchParams({ username: this.c.username ?? '', password: this.c.password ?? '' }),
     });
+    // Too many failed sign-ins and qBittorrent bans the address for a while.
+    if (res.status === 403) throw new IntegrationError(this.c.name, 'too many failed sign-ins, so qBittorrent has blocked Cinemask for now (restart qBittorrent or wait, then check the username and password)', 403);
     ensureOk(this.c.name, res);
-    if ((await res.text()).trim() !== 'Ok.') throw new IntegrationError(this.c.name, 'login was rejected');
+    // qBittorrent 5.2+ answers a good sign-in with 204 and no body; older versions say "Ok." and a bad one "Fails.".
+    if (res.status !== 204 && (await res.text()).trim() !== 'Ok.') throw new IntegrationError(this.c.name, 'login was rejected');
     this.cookie = res.headers.get('set-cookie')?.split(';')[0] ?? null;
   }
 

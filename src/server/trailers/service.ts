@@ -1,8 +1,10 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { and, eq, exists, isNotNull, or, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import type { MonitoredRow } from '../arr/monitor.js';
+import { monitored, monitoredEpisodes } from '../db/schema.js';
 import { refreshMediaServers } from '../arr/tracker.js';
 import { expectedFolder, rootFor } from '../files/service.js';
 import { tmdbClient } from '../library/service.js';
@@ -171,6 +173,50 @@ export async function autoTrailer(ctx: AppContext, row: MonitoredRow): Promise<v
   if (!s.trailersEnabled || !s.autoDownloadTrailers || existingTrailers(ctx, row).length || jobs.get(row.id)?.status === 'downloading') return;
   const best = (await trailerCandidates(ctx, row))[0];
   if (best) downloadTrailer(ctx, row, best.key, best.site);
+}
+
+/** Titles whose automatic trailer failed since the app started; the sweep doesn't keep retrying them. */
+const sweepFailed = new Set<number>();
+
+/**
+ * Fetches trailers for titles that already have files but no trailer yet (titles on the server
+ * before Cinemask managed them, or added before the setting was on). One at a time, until
+ * `budgetMs` runs out; the next run carries on.
+ */
+export async function sweepTrailers(ctx: AppContext, budgetMs = 45 * 60 * 1000): Promise<number> {
+  const s = ctx.settings.get('extras');
+  if (!s.trailersEnabled || !s.autoDownloadTrailers) return 0;
+  try {
+    ytDlpBinary(ctx);
+  } catch {
+    return 0;
+  }
+  const until = Date.now() + budgetMs;
+  const withFiles = ctx.db
+    .select()
+    .from(monitored)
+    .where(or(isNotNull(monitored.filePath), exists(ctx.db.select({ one: sql`1` }).from(monitoredEpisodes).where(and(eq(monitoredEpisodes.monitoredId, monitored.id), isNotNull(monitoredEpisodes.filePath))))))
+    .all();
+  let fetched = 0;
+  for (const row of withFiles) {
+    if (Date.now() > until) break;
+    if (sweepFailed.has(row.id) || jobs.get(row.id)?.status === 'downloading') continue;
+    try {
+      if (existingTrailers(ctx, row).length) continue;
+      const best = (await trailerCandidates(ctx, row))[0];
+      if (!best) {
+        sweepFailed.add(row.id);
+        continue;
+      }
+      const job = downloadTrailer(ctx, row, best.key, best.site);
+      while (job.status === 'downloading') await new Promise((r) => setTimeout(r, 2000));
+      if (job.status === 'done') fetched++;
+      else sweepFailed.add(row.id);
+    } catch {
+      sweepFailed.add(row.id);
+    }
+  }
+  return fetched;
 }
 
 const MIME: Record<string, string> = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm', '.mkv': 'video/x-matroska', '.mov': 'video/quicktime' };

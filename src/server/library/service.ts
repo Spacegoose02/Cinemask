@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 import { requestAvailable } from '../notify/events.js';
 import type { AppContext } from '../context.js';
 import { libraryEpisodes, libraryItems, matchOverrides, media, requests, type MediaKind, type ServerType } from '../db/schema.js';
@@ -315,18 +315,28 @@ export class LibrarySync {
     })();
   }
 
-  /** Fills TMDB details for library titles that have none yet, a few at a time. */
-  async backfillMetadata(limit = 25) {
+  /**
+   * Fills TMDB details (posters, overview, rating) for library titles that have none yet. Works through
+   * all of them in batches, a few at a time, up to `limit`; a title that fails is skipped for the rest
+   * of the run so it can't hold up the others, and is tried again next run.
+   */
+  async backfillMetadata(limit = 5000) {
     if (!tmdbClient(this.ctx).configured) return 0;
-    const missing = this.ctx.db.select().from(media).where(isNull(media.metadataUpdatedAt)).limit(limit).all();
-    for (const m of missing) {
-      try {
-        await refreshMetadata(this.ctx, m.kind, m.tmdbId);
-      } catch {
-        // try again next run
-      }
+    const tried = new Set<number>();
+    let filled = 0;
+    while (tried.size < limit) {
+      const batch = this.ctx.db
+        .select()
+        .from(media)
+        .where(and(isNull(media.metadataUpdatedAt), tried.size ? notInArray(media.id, [...tried]) : undefined))
+        .limit(Math.min(8, limit - tried.size))
+        .all();
+      if (!batch.length) break;
+      for (const m of batch) tried.add(m.id);
+      const results = await Promise.allSettled(batch.map((m) => refreshMetadata(this.ctx, m.kind, m.tmdbId)));
+      filled += results.filter((r) => r.status === 'fulfilled').length;
     }
-    return missing.length;
+    return filled;
   }
 }
 

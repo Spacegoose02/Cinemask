@@ -153,6 +153,41 @@ function RemoveModal({ mon, onClose }: { mon: MonitoredView; onClose: () => void
 }
 
 /** Files on disk for a monitored movie or show, with rename, delete and per-episode search. Managers only. */
+/**
+ * A title on Plex or Jellyfin that Cinemask doesn't manage yet. Managing it finds its folder, so the
+ * files can be deleted, renamed and upgraded. Nothing is searched for.
+ */
+function StartManaging({ m }: { m: MediaDetail }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const start = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const row = await api<{ id: number }>('/api/monitored', { body: { kind: m.kind, tmdbId: m.tmdbId, search: false } });
+      // Stop it searching on its own: it's already on the server, and this is only to manage the files.
+      await api(`/api/monitored/${row.id}`, { method: 'PATCH', body: { monitored: false } });
+      await api(`/api/monitored/${row.id}/scan`, { body: {} });
+      await qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="card space-y-3">
+      <h2 className="font-semibold">Files</h2>
+      <p className="text-sm text-muted">This is on your media server, but Cinemask isn't managing its files yet. Manage it to delete, rename or upgrade them. Nothing is downloaded.</p>
+      {error && <Alert>{error}</Alert>}
+      <button className="btn-secondary" disabled={busy} onClick={start}>
+        {busy ? 'Finding the files…' : 'Manage files'}
+      </button>
+    </section>
+  );
+}
+
 export function FilesPanel({ m }: { m: MediaDetail }) {
   const { me } = useAuth();
   const qc = useQueryClient();
@@ -169,7 +204,8 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
   const [openSeason, setOpenSeason] = useState<number | null>(null);
   const [matching, setMatching] = useState(false);
   const navigate = useNavigate();
-  if (!isManager || !mon) return null;
+  if (!isManager) return null;
+  if (!mon) return lookup.data && (m.availability.status === 'on_server' || m.availability.status === 'partial') ? <StartManaging m={m} /> : null;
 
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] }), qc.invalidateQueries({ queryKey: ['files', mon.id] })]);
   const run = async (fn: () => Promise<unknown>, success: string | ((r: never) => string)) => {

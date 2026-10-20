@@ -257,7 +257,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
 
   app.post('/api/library/sync', { config: { access: 'manager' } }, async (req) => {
     audit(ctx.db, req, 'library.sync_started');
-    void opts.sync.run().then(() => opts.sync.backfillMetadata(200));
+    void opts.sync.run().then(() => opts.sync.backfillMetadata());
     return { started: true };
   });
 

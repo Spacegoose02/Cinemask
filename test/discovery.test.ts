@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseVideoUrl } from '../src/server/trailers/service.js';
+import { parseVideoUrl, sweepTrailers } from '../src/server/trailers/service.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseCsv, parseListUrl } from '../src/server/lists/service.js';
 import { sniffImage } from '../src/server/posters/service.js';
@@ -213,6 +213,24 @@ describe('discovery, lists, collections, posters and trailers', () => {
     await owner.req('DELETE', '/api/posters/movie/116149');
     expect((await kid.req('GET', '/api/media/movie/116149')).json().posterPath).toBe('/p.jpg');
     expect(fs.readdirSync(path.join(t.dir, 'posters'))).toEqual([]);
+  });
+
+  it('fetches trailers for managed titles that have files but no trailer', async () => {
+    const movies = path.join(t.dir, 'media', 'movies');
+    const ytdlp = path.join(t.dir, 'yt-dlp');
+    fs.writeFileSync(ytdlp, '#!/bin/sh\nwhile [ "$1" != "-o" ]; do shift; done\nout=$(echo "$2" | sed "s/%(ext)s/mkv/")\necho trailer > "$out"\n', { mode: 0o755 });
+    await owner.req('PUT', '/api/settings/media', { moviesPath: movies });
+    await owner.req('PUT', '/api/settings/extras', { ytDlpPath: ytdlp });
+    fs.mkdirSync(path.join(movies, 'Paddington (2014)'), { recursive: true });
+    fs.writeFileSync(path.join(movies, 'Paddington (2014)', 'Paddington.2014.1080p.mkv'), 'movie');
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    t.app.ctx.dbHandle.sqlite.prepare('update monitored set path = ?, file_path = ? where id = ?').run(path.join(movies, 'Paddington (2014)'), path.join(movies, 'Paddington (2014)', 'Paddington.2014.1080p.mkv'), m.id);
+    expect(await sweepTrailers(t.app.ctx)).toBe(1);
+    expect(fs.readdirSync(path.join(movies, 'Paddington (2014)')).sort()).toEqual(['Paddington.2014.1080p-trailer.mkv', 'Paddington.2014.1080p.mkv']);
+    expect(await sweepTrailers(t.app.ctx)).toBe(0); // already has one
+    await owner.req('PUT', '/api/settings/extras', { autoDownloadTrailers: false });
+    fs.rmSync(path.join(movies, 'Paddington (2014)', 'Paddington.2014.1080p-trailer.mkv'));
+    expect(await sweepTrailers(t.app.ctx)).toBe(0); // turned off
   });
 
   it('downloads a trailer next to the movie with yt-dlp and removes it', async () => {

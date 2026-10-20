@@ -104,6 +104,32 @@ describe('file management, calendar and health', () => {
     expect(fs.existsSync(movies)).toBe(true);
   });
 
+  it('finds a title already on the server in a folder named its own way, in any root folder', async () => {
+    const kids = path.join(t.dir, 'media', 'kids');
+    await owner.req('PUT', '/api/settings/media', { extraFolders: [{ id: 'kids', name: 'Kids Movies', kind: 'movie', path: kids, category: '' }] });
+    fs.mkdirSync(path.join(movies, 'Paddington 2 (2017)'), { recursive: true }); // a different film
+    fs.writeFileSync(path.join(movies, 'Paddington 2 (2017)', 'p2.mkv'), 'other');
+    const folder = path.join(kids, 'Paddington.2014.1080p.BluRay-GRP');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'paddington.mkv'), 'movie');
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    await owner.req('PATCH', `/api/monitored/${m.id}`, { monitored: false });
+    expect((await owner.req('POST', `/api/monitored/${m.id}/scan`)).json()).toMatchObject({ found: 1, folder });
+    expect((await owner.req('GET', `/api/monitored/lookup/movie/116149`)).json().monitored).toMatchObject({ rootId: 'kids', monitored: false });
+    expect((await owner.req('POST', `/api/monitored/${m.id}/remove`, { deleteFiles: true })).json()).toEqual({ ok: true, freed: 5 });
+    expect(fs.existsSync(folder)).toBe(false);
+    expect(fs.existsSync(path.join(movies, 'Paddington 2 (2017)', 'p2.mkv'))).toBe(true);
+  });
+
+  it('prefers a folder tagged with the TMDB id', async () => {
+    fs.mkdirSync(path.join(movies, 'Paddington (2014)-old'), { recursive: true });
+    const folder = path.join(movies, 'Paddington {tmdb-116149}');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'paddington.mkv'), 'movie');
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    expect((await owner.req('POST', `/api/monitored/${m.id}/scan`)).json()).toMatchObject({ found: 1, folder });
+  });
+
   it('calendar groups a show’s episodes on the same day and lists movie release types', async () => {
     await addShowWithFiles();
     await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false });

@@ -13,6 +13,7 @@ import { pollReadMeABook, pollShelfmark, syncAudiobookshelf } from '../books/ser
 import { syncCollections } from '../collections/service.js';
 import { syncDueLists } from '../lists/service.js';
 import { purgeHttpCache } from '../integrations/tmdb.js';
+import { sweepTrailers } from '../trailers/service.js';
 import { checkDueChannels, downloadWanted, requeueInterrupted } from '../youtube/service.js';
 import type { LibrarySync } from '../library/service.js';
 
@@ -45,12 +46,24 @@ export class Scheduler {
       cron.schedule('20 */12 * * *', this.once('refresh-monitored', () => refreshMonitored(this.app.ctx))),
       // Lists sync on their own interval (checked hourly); collections follow their sources nightly.
       cron.schedule('10 * * * *', this.once('lists', () => syncDueLists(this.app.ctx))),
+      // Posters and details for library titles that a sync couldn't fill (TMDB down, or added since),
+      // then any library titles auto-monitor hasn't reached yet.
+      cron.schedule(
+        '35 * * * *',
+        this.once('metadata', async () => {
+          await this.librarySync.backfillMetadata();
+          const { monitorLibrary } = await import('../arr/monitor.js');
+          await monitorLibrary(this.app.ctx);
+        }),
+      ),
       cron.schedule('40 4 * * *', this.once('collections', () => syncCollections(this.app.ctx))),
       // Audiobookshelf's library every few hours; Shelfmark's queue every couple of minutes while books download.
       cron.schedule('25 */4 * * *', this.once('audiobookshelf', async () => (this.app.ctx.settings.get('audiobookshelf').enabled ? syncAudiobookshelf(this.app.ctx) : null))),
       cron.schedule('*/2 * * * *', this.once('shelfmark', () => pollShelfmark(this.app.ctx))),
       cron.schedule('*/2 * * * *', this.once('readmeabook', () => pollReadMeABook(this.app.ctx))),
       // YouTube channels are checked on their own interval (looked at hourly); the queue drains every few minutes.
+      // Trailers for managed titles that don't have one yet, one at a time.
+      cron.schedule('50 * * * *', this.once('trailers', () => sweepTrailers(this.app.ctx))),
       cron.schedule('5 * * * *', this.once('youtube-check', () => checkDueChannels(this.app.ctx))),
       cron.schedule('*/5 * * * *', this.once('youtube-download', () => downloadWanted(this.app.ctx))),
     ];
@@ -96,7 +109,7 @@ export class Scheduler {
     const hours = s.syncIntervalHours >= 24 ? '3' : `*/${s.syncIntervalHours}`;
     this.libraryTask = cron.schedule(`5 ${hours} * * *`, async () => {
       await this.librarySync.run();
-      await this.librarySync.backfillMetadata(200);
+      await this.librarySync.backfillMetadata();
     });
   }
 

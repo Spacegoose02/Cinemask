@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createClient } from '../src/server/arr/clients.js';
 import { decide } from '../src/server/arr/decision.js';
 import { assertSafeUrl, isPrivateAddress } from '../src/server/arr/direct.js';
 import { parseFeed, type Release } from '../src/server/arr/indexers.js';
@@ -374,5 +375,25 @@ describe('request → download → import', () => {
     await trackDownloads(t.app.ctx);
     expect(grabbed()).toEqual(['Paddington.2014.1080p.BluRay.x264-SPARKS', 'Paddington.2014.720p.BluRay.x264-LOW']);
     expect((await owner.req('GET', '/api/downloads?history=true')).json().find((d: { id: number }) => d.id === 1).status).toBe('failed');
+  });
+});
+
+describe('qBittorrent sign-in', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const qbit = () => createClient({ type: 'qbittorrent', name: 'qBittorrent', url: 'http://qbit.local:8080', username: 'admin', password: 'pw' });
+
+  it('accepts qBittorrent 5.2, which answers a good sign-in with 204 and no body', async () => {
+    fakeFetch({
+      'http://qbit.local:8080/api/v2/auth/login': () => new Response(null, { status: 204, headers: { 'set-cookie': 'QBT_SID_8080=abc; path=/' } }),
+      'http://qbit.local:8080/api/v2/app/version': (_u, init) => new Response((init?.headers as Record<string, string>).Cookie === 'QBT_SID_8080=abc' ? 'v5.2.0' : 'Forbidden', { status: 200 }),
+    });
+    expect(await qbit().test()).toContain('v5.2.0');
+  });
+
+  it('says so when the password is wrong, or when qBittorrent has blocked it', async () => {
+    fakeFetch({ 'http://qbit.local:8080/api/v2/auth/login': () => new Response('Fails.') });
+    await expect(qbit().test()).rejects.toThrow('login was rejected');
+    fakeFetch({ 'http://qbit.local:8080/api/v2/auth/login': () => new Response('banned', { status: 403 }) });
+    await expect(qbit().test()).rejects.toThrow(/blocked Cinemask/);
   });
 });
