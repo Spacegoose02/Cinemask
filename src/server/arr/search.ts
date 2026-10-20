@@ -2,12 +2,14 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { blocklist, downloadClients, downloads, indexers, monitored, monitoredEpisodes, type DownloadClientType } from '../db/schema.js';
 import { media } from '../db/schema.js';
-import { bestDecision, decide, type Decision, type Target } from './decision.js';
+import { bestDecision, byPreference, decide, type DecideOptions, type Decision, type Target } from './decision.js';
 import { createClient } from './clients.js';
 import { CATEGORIES, searchIndexer, type IndexerConfig, type Release, type SearchQuery } from './indexers.js';
 import { wantedTarget, type MonitoredRow } from './monitor.js';
 import { getProfile } from './profiles.js';
 import { openSecret } from './secrets.js';
+import { rootOf } from './roots.js';
+import { notify } from '../notify/service.js';
 
 export function enabledIndexers(ctx: AppContext): IndexerConfig[] {
   return ctx.db
@@ -63,6 +65,30 @@ function queriesFor(ctx: AppContext, row: MonitoredRow, target: Target): SearchQ
   });
 }
 
+const GB = 1024 ** 3;
+const MB = 1024 ** 2;
+
+/** Largest wanted release for a title in bytes (per movie or per episode), or null for no limit. */
+export function maxSizeFor(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'maxSizeMb'>): number | null {
+  if (row.maxSizeMb !== null && row.maxSizeMb !== undefined) return row.maxSizeMb ? row.maxSizeMb * MB : null;
+  const s = ctx.settings.get('downloading');
+  const gb = row.kind === 'movie' ? s.maxMovieSizeGb : s.maxEpisodeSizeGb;
+  return gb ? gb * GB : null;
+}
+
+/** How releases are judged for a title, from settings and the title's own size limit. */
+export function decideOptions(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'maxSizeMb'>): DecideOptions {
+  return { skipCam: ctx.settings.get('downloading').skipCamReleases, maxSize: maxSizeFor(ctx, row) };
+}
+
+const gb = (n: number) => `${(n / GB).toFixed(n < 10 * GB ? 1 : 0)} GB`;
+
+/** The warning kept on a download (and sent to the webhook) when nothing within the size limit was found. */
+function oversizeWarning(ctx: AppContext, row: MonitoredRow, d: Decision): string {
+  const per = row.kind === 'show' ? ' per episode' : '';
+  return `Bigger than the ${gb(maxSizeFor(ctx, row)!)} limit: ${gb(d.oversize!)}${per}. Nothing smaller was found.`;
+}
+
 export interface SearchResult {
   decisions: Decision[];
   errors: string[];
@@ -110,8 +136,8 @@ export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter
   }
   const unique = [...new Map(all.map((r) => [r.title, r])).values()];
   const bl = blocked(ctx, row.id);
-  const opts = { skipCam: ctx.settings.get('downloading').skipCamReleases };
-  const decisions = unique.map((r) => decide(r, target, profile, bl, opts)).sort((a, b) => Number(b.accepted) - Number(a.accepted) || b.score - a.score);
+  const opts = decideOptions(ctx, row);
+  const decisions = unique.map((r) => decide(r, target, profile, bl, opts)).sort((a, b) => Number(b.accepted) - Number(a.accepted) || byPreference(a, b));
   for (const d of decisions) recentReleases.set(`${row.id}:${d.release.guid}`, { release: d.release, covers: d.covers, at: Date.now() });
   if (recentReleases.size > 5000) for (const k of [...recentReleases.keys()].slice(0, 1000)) recentReleases.delete(k);
   ctx.db.update(monitored).set({ lastSearchAt: Date.now() }).where(eq(monitored.id, row.id)).run();
@@ -133,9 +159,11 @@ export function pickClient(ctx: AppContext, protocol: 'torrent' | 'usenet') {
 }
 
 /** Sends a release to a download client and records it for tracking and import. */
-export async function grab(ctx: AppContext, release: Release, row: MonitoredRow | null, opts: { covers?: Decision['covers']; userId?: number | null; quality?: string }) {
+export async function grab(ctx: AppContext, release: Release, row: MonitoredRow | null, opts: { covers?: Decision['covers']; userId?: number | null; quality?: string; warning?: string | null }) {
   const picked = pickClient(ctx, release.protocol);
   if (!picked) throw new Error(`No ${release.protocol === 'torrent' ? 'torrent' : 'Usenet'} download client is set up`);
+  // A root folder can have its own category (e.g. "kids-tv"), so the client files it separately.
+  const category = (row && rootOf(ctx, row).category) || picked.row.category;
   const dl = ctx.db
     .insert(downloads)
     .values({
@@ -149,13 +177,15 @@ export async function grab(ctx: AppContext, release: Release, row: MonitoredRow 
       indexer: release.indexer,
       status: 'queued',
       sourceUrl: null,
+      category,
+      warning: opts.warning ?? null,
       addedBy: opts.userId ?? null,
       addedAt: Date.now(),
     })
     .returning()
     .get();
   try {
-    const id = await picked.client.add(release.downloadUrl, { category: picked.row.category, tag: `mm-${dl.id}`, title: release.title });
+    const id = await picked.client.add(release.downloadUrl, { category, tag: `mm-${dl.id}`, title: release.title });
     ctx.db.update(downloads).set({ downloadId: id }).where(eq(downloads.id, dl.id)).run();
   } catch (err) {
     ctx.db.update(downloads).set({ status: 'failed', error: (err as Error).message }).where(eq(downloads.id, dl.id)).run();
@@ -178,7 +208,7 @@ export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: De
     if (active.length) return 0;
     const best = bestDecision(decisions);
     if (!best) return 0;
-    await grab(ctx, best.release, row, { quality: best.parsed.quality });
+    await grabWithWarning(ctx, row, best);
     return 1;
   }
   const taken = new Set<string>();
@@ -187,11 +217,14 @@ export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: De
     for (const e of c?.episodes ?? []) taken.add(`${c!.season}:${e}`);
   }
   let grabbed = 0;
-  for (const d of decisions.filter((x) => x.accepted).sort((a, b) => (b.covers?.episodes.length ?? 0) - (a.covers?.episodes.length ?? 0) || b.score - a.score)) {
+  const ordered = decisions
+    .filter((x) => x.accepted)
+    .sort((a, b) => Number(a.oversize !== null) - Number(b.oversize !== null) || (b.covers?.episodes.length ?? 0) - (a.covers?.episodes.length ?? 0) || b.score - a.score);
+  for (const d of ordered) {
     const keys = (d.covers?.episodes ?? []).map((e) => `${d.covers!.season}:${e}`);
     if (!keys.length || keys.some((k) => taken.has(k))) continue;
     try {
-      await grab(ctx, d.release, row, { covers: d.covers, quality: d.parsed.quality });
+      await grabWithWarning(ctx, row, d);
       keys.forEach((k) => taken.add(k));
       grabbed++;
     } catch {
@@ -199,4 +232,11 @@ export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: De
     }
   }
   return grabbed;
+}
+
+/** Grabs an automatic pick. One over the size limit (only picked when nothing smaller was found) is flagged. */
+async function grabWithWarning(ctx: AppContext, row: MonitoredRow, d: Decision) {
+  const warning = d.oversize !== null ? oversizeWarning(ctx, row, d) : null;
+  await grab(ctx, d.release, row, { covers: d.covers, quality: d.parsed.quality, warning });
+  if (warning) notify(ctx, { event: 'download.warning', title: 'Download over the size limit', message: `${row.title}: ${warning}`, data: { kind: row.kind, tmdbId: row.tmdbId, release: d.release.title } });
 }

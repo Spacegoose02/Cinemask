@@ -1,11 +1,12 @@
 import { and, eq } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
-import { libraryEpisodes, libraryItems, monitored, monitoredEpisodes, type MediaKind } from '../db/schema.js';
+import { libraryEpisodes, libraryItems, monitored, monitoredEpisodes, monitorExclusions, type MediaKind } from '../db/schema.js';
 import { bestResolution } from '../integrations/http.js';
 import { refreshMetadata, tmdbClient } from '../library/service.js';
 import type { Target } from './decision.js';
-import { belowCutoff, getProfile } from './profiles.js';
+import { belowCutoff, defaultProfileId, getProfile } from './profiles.js';
 import { qualityFor } from './quality.js';
+import { assertRoot } from './roots.js';
 
 export type MonitoredRow = typeof monitored.$inferSelect;
 
@@ -14,17 +15,26 @@ const today = () => new Date().toISOString().slice(0, 10);
 /** Starts watching a title (or updates how it's watched). Shows get their episode list from TMDB. */
 export async function monitorTitle(
   ctx: AppContext,
-  input: { kind: MediaKind; tmdbId: number; profileId: number; seasons?: number[] | null; addedBy?: number | null },
+  input: { kind: MediaKind; tmdbId: number; profileId: number; seasons?: number[] | null; addedBy?: number | null; rootId?: string | null; maxSizeMb?: number | null },
 ): Promise<MonitoredRow> {
   const meta = await refreshMetadata(ctx, input.kind, input.tmdbId);
   if (!meta) throw new Error('Could not look up this title. Check the TMDB key in Settings → Metadata.');
   const existing = ctx.db.select().from(monitored).where(and(eq(monitored.kind, input.kind), eq(monitored.tmdbId, input.tmdbId))).get();
   const seasons = input.seasons === undefined ? existing?.seasons ?? null : input.seasons ? JSON.stringify([...new Set(input.seasons)].sort((a, b) => a - b)) : null;
+  assertRoot(ctx, input.kind, input.rootId);
+  const rootId = input.rootId && input.rootId !== 'default' ? input.rootId : null;
+  // A title already on disk keeps its folder; moving it is a separate step (files/service moveToRoot).
+  const extra = {
+    ...(input.rootId !== undefined && !existing?.path ? { rootId } : {}),
+    ...(input.maxSizeMb !== undefined ? { maxSizeMb: input.maxSizeMb } : {}),
+  };
+  // Monitoring something by hand again undoes an earlier removal.
+  ctx.db.delete(monitorExclusions).where(and(eq(monitorExclusions.kind, input.kind), eq(monitorExclusions.tmdbId, input.tmdbId))).run();
   const row = existing
-    ? ctx.db.update(monitored).set({ profileId: input.profileId, monitored: true, seasons }).where(eq(monitored.id, existing.id)).returning().get()
+    ? ctx.db.update(monitored).set({ profileId: input.profileId, monitored: true, seasons, ...extra }).where(eq(monitored.id, existing.id)).returning().get()
     : ctx.db
         .insert(monitored)
-        .values({ kind: input.kind, tmdbId: input.tmdbId, title: meta.title, year: meta.year, profileId: input.profileId, seasons, addedBy: input.addedBy ?? null, addedAt: Date.now() })
+        .values({ kind: input.kind, tmdbId: input.tmdbId, title: meta.title, year: meta.year, profileId: input.profileId, seasons, addedBy: input.addedBy ?? null, addedAt: Date.now(), ...extra })
         .returning()
         .get();
   if (row.kind === 'show') await refreshEpisodes(ctx, row, true);
@@ -101,4 +111,47 @@ export function upgradeCandidates(ctx: AppContext, row: MonitoredRow): number {
   const t = wantedTarget(ctx, row);
   if (!t) return 0;
   return t.kind === 'movie' ? (t.currentQuality ? 1 : 0) : (t.episodes ?? []).filter((e) => e.currentQuality).length;
+}
+
+/** At most this many titles are added per sync, so a big first sync doesn't flood TMDB. The next sync carries on. */
+const AUTO_MONITOR_BATCH = 50;
+
+/**
+ * Monitors titles the library sync found on Plex or Jellyfin (Settings → Media servers). Titles
+ * someone removed from monitoring by hand are left alone. Returns how many were added.
+ */
+export async function monitorLibrary(ctx: AppContext): Promise<number> {
+  const mode = ctx.settings.get('library').autoMonitor;
+  if (mode === 'off' || !tmdbClient(ctx).configured) return 0;
+  const seen = new Set<string>();
+  for (const r of ctx.db.select({ kind: monitored.kind, tmdbId: monitored.tmdbId }).from(monitored).all()) seen.add(`${r.kind}:${r.tmdbId}`);
+  for (const r of ctx.db.select().from(monitorExclusions).all()) seen.add(`${r.kind}:${r.tmdbId}`);
+  const todo = new Map<string, { kind: MediaKind; tmdbId: number }>();
+  for (const i of ctx.db.select({ kind: libraryItems.kind, tmdbId: libraryItems.tmdbId }).from(libraryItems).all()) {
+    if (i.tmdbId && !seen.has(`${i.kind}:${i.tmdbId}`)) todo.set(`${i.kind}:${i.tmdbId}`, { kind: i.kind, tmdbId: i.tmdbId });
+  }
+  let added = 0;
+  for (const t of [...todo.values()].slice(0, AUTO_MONITOR_BATCH)) {
+    try {
+      const row = await monitorTitle(ctx, { kind: t.kind, tmdbId: t.tmdbId, profileId: defaultProfileId(ctx, t.kind), seasons: null, addedBy: null });
+      if (mode === 'new') {
+        // Already out: leave it as it is on the server. Only what airs from now on is fetched.
+        if (row.kind === 'movie') ctx.db.update(monitored).set({ monitored: false }).where(eq(monitored.id, row.id)).run();
+        else {
+          for (const e of ctx.db.select().from(monitoredEpisodes).where(eq(monitoredEpisodes.monitoredId, row.id)).all()) {
+            if (!e.airDate || e.airDate <= today()) ctx.db.update(monitoredEpisodes).set({ monitored: false }).where(eq(monitoredEpisodes.id, e.id)).run();
+          }
+        }
+      }
+      added++;
+    } catch {
+      // TMDB hiccup: tried again on the next sync
+    }
+  }
+  return added;
+}
+
+/** Remembers that a title was removed from monitoring by hand, so library sync doesn't add it back. */
+export function excludeFromAutoMonitor(ctx: AppContext, kind: MediaKind, tmdbId: number) {
+  ctx.db.insert(monitorExclusions).values({ kind, tmdbId, createdAt: Date.now() }).onConflictDoNothing().run();
 }

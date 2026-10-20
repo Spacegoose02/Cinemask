@@ -11,6 +11,7 @@ const EVENTS: { id: string; label: string }[] = [
   { id: 'request.available', label: 'A request is ready to watch or read' },
   { id: 'download.imported', label: 'A download is imported' },
   { id: 'download.failed', label: 'A download fails' },
+  { id: 'download.warning', label: 'A download is over the size limit' },
   { id: 'health.problem', label: 'A health check starts failing' },
 ];
 

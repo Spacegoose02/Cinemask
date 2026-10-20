@@ -59,6 +59,29 @@ describe('library sync', () => {
     expect((await owner.req('GET', '/api/library?kind=show')).json().total).toBe(1);
   });
 
+  it('monitors what it finds without searching for anything already out', async () => {
+    const rows = t.app.ctx.dbHandle.sqlite.prepare('SELECT id, kind, title, monitored FROM monitored ORDER BY title').all() as { id: number; kind: string; title: string; monitored: number }[];
+    expect(rows.map((r) => [r.title, r.monitored])).toContainEqual(['Paddington', 0]);
+    const bluey = rows.find((r) => r.title === 'Bluey')!;
+    expect(bluey.monitored).toBe(1);
+    // Episodes that already aired stay as they are; only future ones would be fetched.
+    const aired = t.app.ctx.dbHandle.sqlite.prepare("SELECT COUNT(*) AS n FROM monitored_episodes WHERE monitored_id = ? AND monitored = 1 AND air_date <= date('now')").get(bluey.id) as { n: number };
+    expect(aired.n).toBe(0);
+    expect(t.librarySync.status.autoMonitored).toBe(rows.length);
+
+    // Removed by hand: the next sync leaves it alone.
+    await owner.req('DELETE', `/api/monitored/${bluey.id}`);
+    await t.librarySync.run();
+    expect(t.app.ctx.dbHandle.sqlite.prepare("SELECT COUNT(*) AS n FROM monitored WHERE title = 'Bluey'").get()).toEqual({ n: 0 });
+  });
+
+  it('can be told not to monitor what it finds', async () => {
+    t.app.ctx.dbHandle.sqlite.prepare('DELETE FROM monitored').run();
+    await owner.req('PUT', '/api/settings/library', { autoMonitor: 'off' });
+    await t.librarySync.run();
+    expect(t.app.ctx.dbHandle.sqlite.prepare('SELECT COUNT(*) AS n FROM monitored').get()).toEqual({ n: 0 });
+  });
+
   it('a second sync replaces, not duplicates, the server contents', async () => {
     await t.librarySync.run();
     expect((await owner.req('GET', '/api/library')).json().total).toBe(3);

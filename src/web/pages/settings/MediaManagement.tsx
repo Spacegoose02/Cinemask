@@ -25,6 +25,8 @@ export function MediaManagementSettings() {
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: () => api<{ id: number; name: string }[]>('/api/profiles') });
   if (m.loading || n.loading || d.loading || x.loading) return null;
   const maps = m.values.remotePathMappings as { remote: string; local: string }[];
+  const extra = m.values.extraFolders as { id: string; name: string; kind: 'movie' | 'show'; path: string; category: string }[];
+  const setExtra = (i: number, patch: Partial<(typeof extra)[number]>) => m.set('extraFolders', extra.map((f, j) => (j === i ? { ...f, ...patch } : f)));
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -40,6 +42,41 @@ export function MediaManagementSettings() {
         <Field label="TV folder">
           <input className="input" value={m.values.tvPath} onChange={(e) => m.set('tvPath', e.target.value)} />
         </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Download category for movies" hint="Empty uses each download client's own category.">
+            <input className="input" value={m.values.moviesCategory} onChange={(e) => m.set('moviesCategory', e.target.value)} placeholder="cinemask" />
+          </Field>
+          <Field label="Download category for TV">
+            <input className="input" value={m.values.tvCategory} onChange={(e) => m.set('tvCategory', e.target.value)} placeholder="cinemask" />
+          </Field>
+        </div>
+        <div>
+          <div className="label">More folders</div>
+          <p className="hint mb-2">Extra places for movies or shows, such as Kids Movies, Kids TV or 4K. Each title picks its folder, and downloads for it use the folder's category.</p>
+          {extra.map((f, i) => (
+            <div key={i} className="mb-3 grid gap-2 rounded border border-border p-2 sm:grid-cols-[1fr_8rem_2fr_1fr_auto]">
+              <input
+                className="input"
+                placeholder="Name"
+                aria-label="Folder name"
+                value={f.name}
+                onChange={(e) => setExtra(i, { name: e.target.value })}
+              />
+              <select className="input" value={f.kind} onChange={(e) => setExtra(i, { kind: e.target.value as 'movie' | 'show' })} aria-label="Holds">
+                <option value="movie">Movies</option>
+                <option value="show">TV</option>
+              </select>
+              <input className="input" placeholder="/media/kids-movies" aria-label="Path" value={f.path} onChange={(e) => setExtra(i, { path: e.target.value })} />
+              <input className="input" placeholder="Category" aria-label="Download category" value={f.category} onChange={(e) => setExtra(i, { category: e.target.value })} />
+              <button className="btn-secondary" onClick={() => m.set('extraFolders', extra.filter((_, j) => j !== i))} aria-label="Remove folder">
+                ✕
+              </button>
+            </div>
+          ))}
+          <button className="btn-secondary" onClick={() => m.set('extraFolders', [...extra, { id: `folder-${Date.now().toString(36)}`, name: '', kind: 'movie', path: '', category: '' }])}>
+            Add folder
+          </button>
+        </div>
         <Field label="Audiobooks folder">
           <input className="input" value={m.values.audiobooksPath} onChange={(e) => m.set('audiobooksPath', e.target.value)} />
         </Field>
@@ -113,6 +150,15 @@ export function MediaManagementSettings() {
             </select>
           </Field>
         ))}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Largest movie to grab (GB)" hint="0 means no limit. Each title can set its own.">
+            <input className="input w-28" type="number" min={0} step={0.5} value={d.values.maxMovieSizeGb} onChange={(e) => d.set('maxMovieSizeGb', Number(e.target.value))} />
+          </Field>
+          <Field label="Largest episode to grab (GB)" hint="Season packs are judged per episode.">
+            <input className="input w-28" type="number" min={0} step={0.5} value={d.values.maxEpisodeSizeGb} onChange={(e) => d.set('maxEpisodeSizeGb', Number(e.target.value))} />
+          </Field>
+        </div>
+        <p className="hint">A bigger release is only grabbed when nothing within the limit is found, and the download is marked with a warning.</p>
         <Toggle
           label="Skip CAM and telesync copies"
           checked={d.values.skipCamReleases}

@@ -5,6 +5,8 @@ import { NOTIFY_EVENTS } from '../notify/service.js';
 // New SSO accounts can never start as admin; admin comes only from the owner or an admin group mapping.
 const newAccountRole = z.enum(['user', 'manager']);
 const groupList = z.array(z.string().trim().min(1).max(200)).max(50);
+/** A download-client category or label. Clients disagree on what's allowed, so keep it simple. */
+const category = z.string().trim().max(60).regex(/^[\w .-]*$/, 'Letters, numbers, spaces, dots, dashes and underscores only');
 const httpUrl = z.union([z.literal(''), z.url({ protocol: /^https?$/ }).max(2000)]);
 
 /**
@@ -117,6 +119,11 @@ export const SETTINGS = {
       /** Periodically scan Plex/Jellyfin to learn what is on the server. */
       syncEnabled: z.boolean().default(true),
       syncIntervalHours: z.number().int().min(1).max(24).default(6),
+      /**
+       * Monitor what the sync finds. "new": shows get new episodes as they air, nothing already out is
+       * searched, movies are tracked without searching. "all": also fill gaps and upgrade by the profile.
+       */
+      autoMonitor: z.enum(['off', 'new', 'all']).default('new'),
     }),
     secrets: [],
   },
@@ -136,6 +143,23 @@ export const SETTINGS = {
         .max(20)
         .default([]),
       removeCompletedDownloads: z.boolean().default(false),
+      /** Download-client category for movies and TV in the main folders. Empty uses each client's own category. */
+      moviesCategory: category.default(''),
+      tvCategory: category.default(''),
+      /** More root folders, such as Kids Movies or 4K. Each title picks one; the main folders stay the default. */
+      extraFolders: z
+        .array(
+          z.object({
+            id: z.string().regex(/^[a-z0-9-]{1,40}$/, 'Use lowercase letters, numbers and dashes'),
+            name: z.string().trim().min(1).max(60),
+            kind: z.enum(['movie', 'show']),
+            path: z.string().trim().min(1).max(1000),
+            category: category.default(''),
+          }),
+        )
+        .max(20)
+        .default([])
+        .refine((f) => new Set(f.map((x) => x.id)).size === f.length && !f.some((x) => x.id === 'default'), 'Each folder needs its own id'),
     }),
     secrets: [],
   },
@@ -167,6 +191,9 @@ export const SETTINGS = {
       defaultShowProfile: z.number().int().positive().nullable().default(null),
       /** Never grab CAM, telesync, telecine or screener copies recorded in cinemas. */
       skipCamReleases: z.boolean().default(true),
+      /** Largest release to grab automatically, in GB. 0 means no limit. Titles can override it. */
+      maxMovieSizeGb: z.number().min(0).max(1000).default(0),
+      maxEpisodeSizeGb: z.number().min(0).max(1000).default(0),
     }),
     secrets: [],
   },
@@ -199,7 +226,7 @@ export const SETTINGS = {
       enabled: z.boolean().default(false),
       /** Where events are POSTed as JSON, e.g. a Home Assistant webhook: http://homeassistant:8123/api/webhook/<id> */
       webhookUrl: httpUrl.default(''),
-      events: z.array(z.enum(NOTIFY_EVENTS)).max(NOTIFY_EVENTS.length).default(['request.created', 'request.available', 'download.failed', 'health.problem']),
+      events: z.array(z.enum(NOTIFY_EVENTS)).max(NOTIFY_EVENTS.length).default(['request.created', 'request.available', 'download.failed', 'download.warning', 'health.problem']),
     }),
     // The webhook id in the URL is what authorises calls to it.
     secrets: ['webhookUrl'],

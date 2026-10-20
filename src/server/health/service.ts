@@ -131,6 +131,7 @@ export async function runHealthChecks(ctx: AppContext, deps: { backups: BackupSe
   checks.push(storageCheck('config', 'App data (/config)', deps.configDir, 'general'));
   checks.push(storageCheck('movies', 'Movies folder', m.moviesPath, 'media-management'));
   checks.push(storageCheck('tv', 'TV folder', m.tvPath, 'media-management'));
+  for (const f of m.extraFolders) checks.push(storageCheck(`folder-${f.id}`, `${f.name} folder`, f.path, 'media-management'));
   checks.push(storageCheck('downloads', 'Downloads folder', m.downloadsPath, 'media-management'));
   if (abs || sm || ctx.db.select({ id: books.id }).from(books).limit(1).get()) {
     checks.push(storageCheck('audiobooks', 'Audiobooks folder', m.audiobooksPath, 'media-management'));
@@ -138,7 +139,7 @@ export async function runHealthChecks(ctx: AppContext, deps: { backups: BackupSe
   }
   if (m.importMode === 'hardlink' && fs.existsSync(m.downloadsPath)) {
     const dev = fs.statSync(m.downloadsPath).dev;
-    const split = [m.moviesPath, m.tvPath].filter((p) => fs.existsSync(p) && fs.statSync(p).dev !== dev);
+    const split = [m.moviesPath, m.tvPath, ...m.extraFolders.map((f) => f.path)].filter((p) => fs.existsSync(p) && fs.statSync(p).dev !== dev);
     if (split.length) {
       checks.push({ id: 'hardlink', group: 'Storage', name: 'Hardlinks', level: 'warning', message: `${split.join(' and ')} ${split.length > 1 ? 'are' : 'is'} on a different disk from downloads, so imports will copy instead of hardlink and use double the space. Map one share (e.g. /mnt/user/data) into the container.`, fix: 'media-management' });
     }
