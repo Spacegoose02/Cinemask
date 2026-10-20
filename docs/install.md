@@ -26,6 +26,7 @@ So mount one parent folder and keep both inside it:
 └── media            → mounted at /media
     ├── movies
     ├── tv
+    ├── youtube
     ├── audiobooks
     └── books
 ```

@@ -13,7 +13,7 @@ A self-hosted media manager for families running Plex or Jellyfin. It does what 
 - **Discover** by genre, network, streaming service, year, rating and language, with trending and popular rows.
 - A personal **home page** with rows you choose, a **calendar** of upcoming releases, **collections** and **lists**.
 - **Books**: request audiobooks and ebooks, browse your Audiobookshelf library, and find podcasts.
-- Five **themes** (Dark, Light, Retro, Futuristic, 16-bit) and a phone-friendly layout you can install to your home screen.
+- 31 **themes** (five each of Dark, Light, Retro, Futuristic, 16-bit and Cinemas, plus Blockbuster) and a phone-friendly layout you can install to your home screen.
 
 **For whoever runs it**
 - **Downloads** like Sonarr and Radarr: indexers (or Prowlarr), quality profiles, automatic and manual search, RSS, nine download clients, renaming, hardlinked imports, failed-download retries and a blocklist.

@@ -10,7 +10,17 @@ import { generateApiKey } from './apikeys.js';
 const MAX_KEYS = 20;
 const DAY = 24 * 60 * 60 * 1000;
 const idParam = z.object({ id: z.coerce.number().int().positive() });
-export const THEME_NAMES = ['dark', 'light', 'retro', 'futuristic', '16bit'] as const;
+/** Every theme in src/web/lib/theme.ts (test/themes.test.ts checks they match). */
+// prettier-ignore
+export const THEME_NAMES = [
+  'dark', 'midnight', 'oled', 'forest', 'plum',
+  'light', 'paper', 'mint', 'sky', 'rose',
+  'retro', 'drivein', 'vhs', 'technicolor', 'kodachrome',
+  'futuristic', 'synthwave', 'terminal', 'ice', 'mars',
+  '16bit', 'pocket', 'arcade', 'dungeon', 'island',
+  'velvet', 'artdeco', 'multiplex', 'arthouse', 'silver',
+  'blockbuster',
+] as const;
 
 const view = (k: typeof apiKeys.$inferSelect) => ({ id: k.id, name: k.name, prefix: k.prefix, access: k.access, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt, expiresAt: k.expiresAt, expired: k.expiresAt !== null && k.expiresAt < Date.now() });
 

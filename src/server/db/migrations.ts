@@ -391,6 +391,40 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE collections ADD COLUMN from_label TEXT;
     `,
   },
+  {
+    id: 9,
+    name: 'youtube channels',
+    sql: `
+      CREATE TABLE youtube_channels (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT NOT NULL UNIQUE,
+        channel_id TEXT,
+        name TEXT NOT NULL,
+        description TEXT,
+        mode TEXT NOT NULL CHECK (mode IN ('new','all','playlists')),
+        playlists TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        last_checked_at INTEGER,
+        last_error TEXT,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE youtube_videos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel_id INTEGER NOT NULL REFERENCES youtube_channels(id) ON DELETE CASCADE,
+        video_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        playlist_id TEXT,
+        published_at TEXT,
+        status TEXT NOT NULL CHECK (status IN ('wanted','skipped','downloading','done','failed')),
+        path TEXT,
+        error TEXT,
+        created_at INTEGER NOT NULL,
+        UNIQUE (channel_id, video_id)
+      );
+      CREATE INDEX youtube_videos_status_idx ON youtube_videos(status);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

@@ -56,6 +56,11 @@ export function Layout({ children }: { children: ReactNode }) {
           Downloads {badge(dlCount.data?.active)}
         </NavLink>
       )}
+      {isManager && (
+        <NavLink to="/youtube" className={linkClass}>
+          YouTube
+        </NavLink>
+      )}
       {isAdmin && (
         <NavLink to="/settings" className={(p) => `${linkClass(p)} flex items-center`}>
           Settings

@@ -17,8 +17,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Fix a wrong match by hand: on a library item, a monitored title (Files → Fix match) or a book request. Library fixes are remembered through later syncs.
 - Watched status and play counts from Plex and Jellyfin: a Watched badge and filter in the Library, plays on the title page, and per-episode marks.
 - Collections can fill themselves from a Plex label or Jellyfin tag, and can put a label on their items in Plex for smart collections and sharing restrictions.
+- YouTube channel subscriptions (YouTube in the menu, for managers): new videos only, every video, or chosen playlists. Videos are saved as `Channel/Season YYYY/Channel - YYYY-MM-DD - Title [id].mkv` with a thumbnail, an episode `.nfo` and a `tvshow.nfo`, so Plex and Jellyfin show each channel as a series. Folder, quality and how often to check are in Settings → Media management.
+- ReadMeABook: approved audiobook requests can be sent to ReadMeABook (Settings → Books), which downloads and imports them; Cinemask follows each request and marks it ready.
+- 26 new themes, for 31 in all: five each in Dark, Light, Retro, Futuristic, 16-bit and the new Cinemas style, plus Blockbuster. The theme picker (Account) groups them by style.
 
 ### Fixed
+- Status badges were hard to read on light themes (black text on dark green).
 - YouTube trailers showed "Video player configuration error": the app told browsers to send no referrer, which YouTube now refuses.
 - A manual search result can only be grabbed for the title it was found for, with the episodes it was judged to cover.
 - Manual search of a season with nothing missing judged every release against episode 1 only.

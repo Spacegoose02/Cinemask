@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { mediaPath, poster, STATUS_LABEL, type Availability, type MediaCardData } from '../lib/media';
 
 const STATUS_STYLE: Record<Availability, string> = {
-  on_server: 'bg-success text-black',
+  on_server: 'bg-success text-bg',
   partial: 'bg-accent text-accent-fg',
   not_on_server: 'bg-surface-2 text-muted border border-border',
   not_available: 'bg-surface-2 text-muted border border-border',
@@ -33,7 +33,7 @@ export function MediaCard({ item, extra }: { item: MediaCardData; extra?: ReactN
           <StatusBadge status={status} resolution={item.availability?.resolution ?? item.resolution} />
         </div>
         {item.viewCount ? (
-          <span className="absolute bottom-1 right-1 rounded bg-success px-1.5 py-0.5 text-[11px] font-medium text-black" title={`Watched ${item.viewCount} ${item.viewCount === 1 ? 'time' : 'times'}`}>
+          <span className="absolute bottom-1 right-1 rounded bg-success px-1.5 py-0.5 text-[11px] font-medium text-bg" title={`Watched ${item.viewCount} ${item.viewCount === 1 ? 'time' : 'times'}`}>
             ✓ Watched
           </span>
         ) : null}
