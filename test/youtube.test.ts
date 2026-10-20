@@ -227,6 +227,59 @@ describe("YouTube subscriptions", () => {
     ).toEqual({ done: 1, wanted: 1 });
   });
 
+  it("pick mode lists everything, downloads only what is ticked, and leaves new uploads to pick", async () => {
+    const res = await owner.req("POST", "/api/youtube/channels", {
+      url: "https://www.youtube.com/@bluey",
+      mode: "all",
+      pick: true,
+    });
+    expect(res.json()).toMatchObject({ pick: true, counts: { skipped: 2 } });
+    const id = res.json().id;
+    const list = (
+      await owner.req("GET", `/api/youtube/channels/${id}/videos?q=sec`)
+    ).json();
+    expect(list.videos.map((v: { title: string }) => v.title)).toEqual(["Second"]);
+
+    fs.writeFileSync(path.join(path.dirname(bin), "new-video"), "");
+    await owner.req("POST", `/api/youtube/channels/${id}/check`);
+    const all = (
+      await owner.req("GET", `/api/youtube/channels/${id}/videos`)
+    ).json().videos as { id: number; title: string; status: string }[];
+    expect(all.every((v) => v.status === "skipped")).toBe(true);
+
+    const second = all.find((v) => v.title === "Second")!;
+    const third = all.find((v) => v.title === "Third")!;
+    const kid = new Client(t.app);
+    const u = await createUser(owner, "kid", "user");
+    await kid.login("kid", u.password);
+    expect(
+      (await kid.req("POST", "/api/youtube/videos/download", { ids: [second.id] })).statusCode,
+    ).toBe(403);
+    expect(
+      (await owner.req("POST", "/api/youtube/videos/download", { ids: [] })).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await owner.req("POST", "/api/youtube/videos/download", {
+          ids: [second.id, third.id],
+        })
+      ).json(),
+    ).toEqual({ queued: 2 });
+    await downloadWanted(t.app.ctx);
+    const done = (
+      await owner.req("GET", `/api/youtube/channels/${id}/videos?status=done`)
+    ).json();
+    expect(done.total).toBe(2);
+    // Already downloaded videos aren't queued again.
+    expect(
+      (
+        await owner.req("POST", "/api/youtube/videos/download", {
+          ids: [second.id],
+        })
+      ).json(),
+    ).toEqual({ queued: 0 });
+  });
+
   it("is for managers, and reports a misconfigured yt-dlp", async () => {
     const u = await createUser(owner, "kid", "user");
     const kid = new Client(t.app);

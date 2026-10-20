@@ -267,7 +267,8 @@ function recordVideos(
 
 /**
  * Subscribes to a channel or playlist. "new" downloads only videos published from now on, "all"
- * everything already there too, "playlists" every video in the chosen playlists.
+ * everything already there too, "playlists" every video in the chosen playlists. With `pick`,
+ * those videos are only listed (new uploads too), and nothing downloads until someone picks it.
  */
 export async function addChannel(
   ctx: AppContext,
@@ -275,6 +276,7 @@ export async function addChannel(
   mode: YoutubeMode,
   playlists: Playlist[],
   userId: number | null,
+  pick = false,
 ): Promise<ChannelRow> {
   const info = await flatVideos(
     ctx,
@@ -293,6 +295,7 @@ export async function addChannel(
       description: info.description?.slice(0, 5000) ?? null,
       mode,
       playlists: mode === "playlists" ? JSON.stringify(playlists) : null,
+      pick,
       lastCheckedAt: Date.now(),
       createdBy: userId,
       createdAt: Date.now(),
@@ -316,7 +319,7 @@ export async function addChannel(
       ctx,
       row.id,
       info.entries,
-      mode === "all" ? "wanted" : "skipped",
+      mode === "all" && !pick ? "wanted" : "skipped",
     );
   return ctx.db
     .select()
@@ -339,11 +342,11 @@ export async function checkChannel(
           ctx,
           `https://www.youtube.com/playlist?list=${p.id}`,
         );
-        added += recordVideos(ctx, ch.id, r.entries, "wanted", p.id);
+        added += recordVideos(ctx, ch.id, r.entries, ch.pick ? "skipped" : "wanted", p.id);
       }
     } else {
       const r = await flatVideos(ctx, ch.url, CHECK_DEPTH);
-      added += recordVideos(ctx, ch.id, r.entries, "wanted");
+      added += recordVideos(ctx, ch.id, r.entries, ch.pick ? "skipped" : "wanted");
     }
     ctx.db
       .update(youtubeChannels)

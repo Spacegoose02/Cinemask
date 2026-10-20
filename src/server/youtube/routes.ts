@@ -1,10 +1,11 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { audit } from "../audit/log.js";
 import { YOUTUBE_MODES, youtubeChannels, youtubeVideos } from "../db/schema.js";
 import { badRequest, conflict, HttpError, notFound } from "../lib/errors.js";
 import { parse } from "../lib/validate.js";
+import { contains } from "../library/routes.js";
 import {
   addChannel,
   channelPlaylists,
@@ -97,6 +98,7 @@ export async function youtubeRoutes(app: FastifyInstance) {
         urlBody.extend({
           mode: z.enum(YOUTUBE_MODES).default("new"),
           playlists: playlists.default([]),
+          pick: z.boolean().default(false),
         }),
         req.body,
       );
@@ -119,13 +121,14 @@ export async function youtubeRoutes(app: FastifyInstance) {
           body.mode,
           body.playlists,
           req.user!.id,
+          body.pick,
         );
       } catch (err) {
         throw failed(err);
       }
       audit(ctx.db, req, "youtube.subscribed", {
         target: row.name,
-        details: { url, mode: body.mode },
+        details: { url, mode: body.mode, pick: body.pick },
       });
       const result = view(row);
       void downloadWanted(ctx).catch(() => undefined);
@@ -144,6 +147,7 @@ export async function youtubeRoutes(app: FastifyInstance) {
             mode: z.enum(YOUTUBE_MODES),
             playlists,
             enabled: z.boolean(),
+            pick: z.boolean(),
           })
           .partial(),
         req.body,
@@ -156,6 +160,7 @@ export async function youtubeRoutes(app: FastifyInstance) {
         throw badRequest("Pick at least one playlist");
       const changes: Partial<ChannelRow> = {};
       if (body.enabled !== undefined) changes.enabled = body.enabled;
+      if (body.pick !== undefined) changes.pick = body.pick;
       if (body.mode || body.playlists)
         Object.assign(changes, {
           mode,
@@ -167,8 +172,8 @@ export async function youtubeRoutes(app: FastifyInstance) {
           .set(changes)
           .where(eq(youtubeChannels.id, id))
           .run();
-      // Switching to "all" queues what was skipped when the channel was added.
-      if (body.mode === "all" && c.mode !== "all")
+      // Switching to "all" queues what was skipped when the channel was added, unless videos are picked by hand.
+      if (body.mode === "all" && c.mode !== "all" && !(body.pick ?? c.pick))
         ctx.db
           .update(youtubeVideos)
           .set({ status: "wanted" })
@@ -231,6 +236,7 @@ export async function youtubeRoutes(app: FastifyInstance) {
             .enum(["all", "wanted", "skipped", "downloading", "done", "failed"])
             .default("all"),
           page: z.coerce.number().int().min(1).default(1),
+          q: z.string().trim().max(100).optional(),
         }),
         req.query,
       );
@@ -238,6 +244,7 @@ export async function youtubeRoutes(app: FastifyInstance) {
       const where = and(
         eq(youtubeVideos.channelId, id),
         q.status === "all" ? undefined : eq(youtubeVideos.status, q.status),
+        q.q ? contains(youtubeVideos.title, q.q) : undefined,
       );
       const total = ctx.db
         .select({ n: sql<number>`count(*)` })
@@ -253,6 +260,31 @@ export async function youtubeRoutes(app: FastifyInstance) {
         .offset((q.page - 1) * 100)
         .all();
       return { total, videos };
+    },
+  );
+
+  /** Queues the videos someone picked from a channel's list. Ones already downloading or done are left alone. */
+  app.post(
+    "/api/youtube/videos/download",
+    { config: { access: "manager" } },
+    async (req) => {
+      const { ids } = parse(
+        z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) }),
+        req.body,
+      );
+      const queued = ctx.db
+        .update(youtubeVideos)
+        .set({ status: "wanted", error: null })
+        .where(
+          and(
+            inArray(youtubeVideos.id, ids),
+            inArray(youtubeVideos.status, ["skipped", "failed"]),
+          ),
+        )
+        .run().changes;
+      audit(ctx.db, req, "youtube.videos_queued", { details: { queued } });
+      void downloadWanted(ctx).catch(() => undefined);
+      return { queued };
     },
   );
 

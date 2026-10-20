@@ -469,6 +469,8 @@ export const youtubeChannels = sqliteTable('youtube_channels', {
   description: text('description'),
   mode: text('mode', { enum: YOUTUBE_MODES }).notNull(),
   playlists: text('playlists'), // JSON [{ id, title }] followed in "playlists" mode
+  /** Nothing downloads on its own: the channel's videos are listed and someone picks which to get. */
+  pick: integer('pick', { mode: 'boolean' }).notNull().default(false),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   lastCheckedAt: integer('last_checked_at'),
   lastError: text('last_error'),

@@ -425,6 +425,13 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       CREATE INDEX youtube_videos_status_idx ON youtube_videos(status);
     `,
   },
+  {
+    id: 10,
+    name: 'youtube pick videos',
+    sql: `
+      ALTER TABLE youtube_channels ADD COLUMN pick INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;
