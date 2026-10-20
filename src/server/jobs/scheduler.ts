@@ -9,10 +9,11 @@ import type { BackupService } from '../backup/service.js';
 import { rssSync, searchMissing } from '../arr/rss.js';
 import { trackDownloads } from '../arr/tracker.js';
 import { refreshMonitored } from '../calendar/service.js';
-import { pollShelfmark, syncAudiobookshelf } from '../books/service.js';
+import { pollReadMeABook, pollShelfmark, syncAudiobookshelf } from '../books/service.js';
 import { syncCollections } from '../collections/service.js';
 import { syncDueLists } from '../lists/service.js';
 import { purgeHttpCache } from '../integrations/tmdb.js';
+import { checkDueChannels, downloadWanted, requeueInterrupted } from '../youtube/service.js';
 import type { LibrarySync } from '../library/service.js';
 
 /** Background jobs. Kept in-process: a household install doesn't need a separate worker. */
@@ -48,7 +49,12 @@ export class Scheduler {
       // Audiobookshelf's library every few hours; Shelfmark's queue every couple of minutes while books download.
       cron.schedule('25 */4 * * *', this.once('audiobookshelf', async () => (this.app.ctx.settings.get('audiobookshelf').enabled ? syncAudiobookshelf(this.app.ctx) : null))),
       cron.schedule('*/2 * * * *', this.once('shelfmark', () => pollShelfmark(this.app.ctx))),
+      cron.schedule('*/2 * * * *', this.once('readmeabook', () => pollReadMeABook(this.app.ctx))),
+      // YouTube channels are checked on their own interval (looked at hourly); the queue drains every few minutes.
+      cron.schedule('5 * * * *', this.once('youtube-check', () => checkDueChannels(this.app.ctx))),
+      cron.schedule('*/5 * * * *', this.once('youtube-download', () => downloadWanted(this.app.ctx))),
     ];
+    requeueInterrupted(this.app.ctx);
     // First health run shortly after start, so the nav badge is right without waiting an hour.
     setTimeout(() => void this.once('health', () => this.app.runHealth())(), 30_000).unref();
     this.rescheduleBackups();

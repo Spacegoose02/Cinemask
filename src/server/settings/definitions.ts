@@ -221,6 +221,15 @@ export const SETTINGS = {
     }),
     secrets: ['password'],
   },
+  readmeabook: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      url: httpUrl.default(''),
+      /** A ReadMeABook API token (Profile → API Tokens), starting rmab_. */
+      apiToken: z.string().max(500).default(''),
+    }),
+    secrets: ['apiToken'],
+  },
   notifications: {
     schema: z.object({
       enabled: z.boolean().default(false),
@@ -239,6 +248,10 @@ export const SETTINGS = {
       trailerMaxHeight: z.union([z.literal(720), z.literal(1080), z.literal(2160)]).default(1080),
       /** Fetch a trailer automatically after a movie is imported. */
       autoDownloadTrailers: z.boolean().default(false),
+      /** YouTube channel subscriptions: where videos go, best quality, how often channels are checked. */
+      youtubePath: z.string().trim().max(1000).default('/media/youtube'),
+      youtubeMaxHeight: z.union([z.literal(720), z.literal(1080), z.literal(2160)]).default(1080),
+      youtubeCheckHours: z.number().int().min(1).max(168).default(6),
       /** Also offer posters from ThePosterDB (scraped from its website, so it may break). */
       thePosterDb: z.boolean().default(false),
     }),

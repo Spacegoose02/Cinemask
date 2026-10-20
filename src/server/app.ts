@@ -15,6 +15,7 @@ import { homeRoutes } from './home/routes.js';
 import { listRoutes } from './lists/routes.js';
 import { posterRoutes } from './posters/routes.js';
 import { trailerRoutes } from './trailers/routes.js';
+import { youtubeRoutes } from './youtube/routes.js';
 import { fileRoutes } from './files/routes.js';
 import { healthRoutes } from './health/routes.js';
 import { apiRoutes } from './api/routes.js';
@@ -146,6 +147,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   await app.register(collectionRoutes);
   await app.register(posterRoutes);
   await app.register(trailerRoutes);
+  await app.register(youtubeRoutes);
   await app.register(homeRoutes);
   await app.register(bookRoutes);
   await app.register(apiRoutes);

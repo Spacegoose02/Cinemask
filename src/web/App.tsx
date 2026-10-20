@@ -1,5 +1,6 @@
 import { ApiDocsPage } from './pages/ApiDocs';
 import { BooksPage } from './pages/Books';
+import { YoutubePage } from './pages/Youtube';
 import { useQuery } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
@@ -60,6 +61,14 @@ export function App() {
         <Route path="/collections" element={<CollectionsPage />} />
         <Route path="/collections/:id" element={<CollectionDetailPage />} />
         <Route path="/requests" element={<RequestsPage />} />
+        <Route
+          path="/youtube"
+          element={
+            <RequireRole role="manager">
+              <YoutubePage />
+            </RequireRole>
+          }
+        />
         <Route
           path="/downloads"
           element={

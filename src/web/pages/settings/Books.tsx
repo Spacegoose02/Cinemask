@@ -14,13 +14,14 @@ interface AbsLibrary {
 export function BookSettings() {
   const abs = useSettingsSection('audiobookshelf');
   const sm = useSettingsSection('shelfmark');
+  const rmab = useSettingsSection('readmeabook');
   const libs = useQuery({
     queryKey: ['abs-libraries', abs.values?.url],
     queryFn: () => api<AbsLibrary[]>('/api/audiobookshelf/libraries'),
     enabled: Boolean(abs.values?.enabled && abs.values?.url && abs.secretsSet['apiKey']),
     retry: false,
   });
-  if (abs.loading || sm.loading) return null;
+  if (abs.loading || sm.loading || rmab.loading) return null;
   const pick = (type: AbsLibrary['mediaType'], key: 'audiobookLibraryId' | 'podcastLibraryId', label: string) => (
     <Field label={label}>
       {libs.data ? (
@@ -87,6 +88,21 @@ export function BookSettings() {
         </Field>
         <TestButton service="shelfmark" beforeTest={sm.save} />
         <SaveBar onSave={sm.save} saving={sm.saving} message={sm.message} />
+      </section>
+      <section className="card space-y-4">
+        <h2 className="font-semibold">ReadMeABook</h2>
+        <p className="text-sm text-muted">
+          Optional. Approved audiobook requests are sent to ReadMeABook, which finds, downloads and imports them into your library itself. Cinemask follows the request and marks it ready. If ReadMeABook has no match, the request falls back to Shelfmark and your indexers.
+        </p>
+        <Toggle label="Send audiobooks to ReadMeABook" checked={rmab.values.enabled} onChange={(v) => rmab.set('enabled', v)} />
+        <Field label="Address">
+          <input className="input" value={rmab.values.url} onChange={(e) => rmab.set('url', e.target.value)} placeholder="http://readmeabook:3030" />
+        </Field>
+        <Field label="API token" hint="Create one in ReadMeABook under Profile → API Tokens. Requests are made as that user, so its auto-approve setting applies.">
+          <SecretInput isSet={rmab.secretsSet['apiToken']!} value={rmab.secrets['apiToken']} onChange={(v) => rmab.setSecret('apiToken', v)} />
+        </Field>
+        <TestButton service="readmeabook" beforeTest={rmab.save} />
+        <SaveBar onSave={rmab.save} saving={rmab.saving} message={rmab.message} />
       </section>
     </div>
   );
