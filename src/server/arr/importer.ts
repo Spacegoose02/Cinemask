@@ -9,6 +9,7 @@ import { renderName } from './naming.js';
 import { parseRelease, VIDEO_EXTENSIONS } from './parser.js';
 import { insideRoot } from '../lib/paths.js';
 import { qualityRank } from './quality.js';
+import { rootOf } from './roots.js';
 
 const SAMPLE_MAX = 80 * 1024 * 1024;
 
@@ -87,7 +88,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
   const result: ImportResult = { imported: [], skipped: [] };
 
   if (row.kind === 'movie') {
-    const root = mediaSettings.moviesPath;
+    const root = rootOf(ctx, row).path;
     const file = files.sort((a, b) => fs.statSync(b).size - fs.statSync(a).size)[0]!;
     const quality = dl.quality ?? parseRelease(path.basename(file)).quality;
     const folder = row.path ?? path.join(root, renderName(naming.movieFolder, { movieTitle: row.title, year: row.year, tmdbId: row.tmdbId }));
@@ -103,7 +104,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
       result.imported.push(dest);
     }
   } else {
-    const root = mediaSettings.tvPath;
+    const root = rootOf(ctx, row).path;
     const seriesFolder = row.path ?? path.join(root, renderName(naming.seriesFolder, { seriesTitle: row.title, year: row.year, tmdbId: row.tmdbId }));
     const grabbed = dl.episodes ? (JSON.parse(dl.episodes) as { season: number; episodes: number[] }) : null;
     for (const file of files) {

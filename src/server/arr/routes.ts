@@ -9,19 +9,24 @@ import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/err
 import { parse } from '../lib/validate.js';
 import { availabilityFor, refreshMetadata } from '../library/service.js';
 import { CLIENT_PROTOCOL, createClient } from './clients.js';
-import { startDirectDownload } from './direct.js';
+import { startLinkDownload } from './direct.js';
 import { listProwlarrIndexers, testIndexer } from './indexers.js';
-import { monitorTitle, upgradeCandidates, wantedTarget } from './monitor.js';
+import { excludeFromAutoMonitor, monitorTitle, upgradeCandidates, wantedTarget } from './monitor.js';
 import { defaultProfileId, getProfile, listProfiles } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
 import { autoSearch, grab, rememberedRelease, searchMonitored } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats } from './tracker.js';
+import { assertRoot, linkDestinations, listRoots } from './roots.js';
+import { moveToRoot } from '../files/service.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const kind = z.enum(MEDIA_KINDS);
 const seasonsSchema = z.array(z.number().int().min(0).max(500)).max(200).nullable().optional();
+const rootIdSchema = z.string().regex(/^[a-z0-9-]{1,40}$/);
+/** MB per movie or per episode; null uses the default from settings, 0 means no limit. */
+const maxSizeSchema = z.number().int().min(0).max(1_000_000).nullable();
 
 export async function arrRoutes(app: FastifyInstance) {
   const ctx = app.ctx;
@@ -43,19 +48,22 @@ export async function arrRoutes(app: FastifyInstance) {
 
   app.get('/api/requests/count', { config: { access: 'manager' } }, async () => ({ pending: db().select().from(requests).where(eq(requests.status, 'pending')).all().length }));
 
-  const approve = async (requestId: number, profileId: number | undefined, deciderName: string, deciderId: number) => {
+  const approve = async (requestId: number, profileId: number | undefined, deciderName: string, deciderId: number, rootId?: string) => {
     const r = db().select().from(requests).where(eq(requests.id, requestId)).get();
     if (!r) throw notFound('Request not found');
     const profile = profileId ?? defaultProfileId(ctx, r.kind);
     if (!getProfile(ctx, profile)) throw badRequest('Unknown quality profile');
-    const row = await monitorTitle(ctx, { kind: r.kind, tmdbId: r.tmdbId, profileId: profile, seasons: r.seasons ? (JSON.parse(r.seasons) as number[]) : null, addedBy: deciderId });
+    const row = await monitorTitle(ctx, { kind: r.kind, tmdbId: r.tmdbId, profileId: profile, seasons: r.seasons ? (JSON.parse(r.seasons) as number[]) : null, addedBy: deciderId, rootId }).catch((err: Error) => {
+      throw err.message === 'Unknown root folder' ? badRequest(err.message) : err;
+    });
     db().update(requests).set({ status: 'approved', decidedByName: deciderName, decidedAt: Date.now(), monitoredId: row.id }).where(eq(requests.id, requestId)).run();
     void autoSearch(ctx, row).catch((err) => app.log.warn({ err }, 'Search after approval failed'));
     return row;
   };
 
   app.post('/api/requests', { config: { access: 'user' } }, async (req) => {
-    const body = parse(z.object({ kind, tmdbId: z.number().int().positive(), seasons: seasonsSchema }), req.body);
+    // rootId only counts for managers, who skip approval; a user's request gets its folder when approved.
+    const body = parse(z.object({ kind, tmdbId: z.number().int().positive(), seasons: seasonsSchema, rootId: rootIdSchema.optional() }), req.body);
     const meta = await refreshMetadata(ctx, body.kind, body.tmdbId);
     if (!meta) throw badRequest('Could not look up this title. Ask an admin to set a TMDB key.');
     const avail = availabilityFor(ctx, body.kind, [{ tmdbId: body.tmdbId, releaseDate: meta.releaseDate }]).get(body.tmdbId)!;
@@ -85,17 +93,17 @@ export async function arrRoutes(app: FastifyInstance) {
     audit(db(), req, 'request.created', { target: `${meta.title} (${meta.year ?? '?'})` });
     notify(ctx, { event: 'request.created', title: 'New request', message: `${created.requestedByName} requested ${meta.title}${meta.year ? ` (${meta.year})` : ''}`, data: { kind: body.kind, tmdbId: body.tmdbId, requestId: created.id } });
     // Managers and admins don't need anyone's approval.
-    if (hasRole(req.user!.role, 'manager')) await approve(created.id, undefined, req.user!.username, req.user!.id);
+    if (hasRole(req.user!.role, 'manager')) await approve(created.id, undefined, req.user!.username, req.user!.id, body.rootId);
     return db().select().from(requests).where(eq(requests.id, created.id)).get();
   });
 
   app.post('/api/requests/:id/approve', { config: { access: 'manager' } }, async (req) => {
     const { id } = parse(idParam, req.params);
-    const { profileId } = parse(z.object({ profileId: z.number().int().positive().optional() }), req.body ?? {});
+    const { profileId, rootId } = parse(z.object({ profileId: z.number().int().positive().optional(), rootId: rootIdSchema.optional() }), req.body ?? {});
     const r = db().select().from(requests).where(eq(requests.id, id)).get();
     if (!r) throw notFound('Request not found');
     if (r.status !== 'pending') throw conflict(`Request is already ${r.status}`);
-    await approve(id, profileId, req.user!.username, req.user!.id);
+    await approve(id, profileId, req.user!.username, req.user!.id, rootId);
     audit(db(), req, 'request.approved', { target: r.title });
     return db().select().from(requests).where(eq(requests.id, id)).get();
   });
@@ -141,6 +149,12 @@ export async function arrRoutes(app: FastifyInstance) {
     };
   };
 
+  /** Root folders titles can live in, and where a link download can be delivered. */
+  app.get('/api/root-folders', { config: { access: 'manager' } }, async () => ({
+    roots: listRoots(ctx).map((r) => ({ id: r.id, name: r.name, kind: r.kind, path: r.path })),
+    destinations: linkDestinations(ctx).map((d) => ({ key: d.key, name: d.name, path: d.path })),
+  }));
+
   app.get('/api/monitored', { config: { access: 'manager' } }, async (req) => {
     const q = parse(z.object({ kind: kind.optional() }), req.query);
     return db()
@@ -160,10 +174,26 @@ export async function arrRoutes(app: FastifyInstance) {
   });
 
   app.post('/api/monitored', { config: { access: 'manager' } }, async (req) => {
-    const body = parse(z.object({ kind, tmdbId: z.number().int().positive(), profileId: z.number().int().positive().optional(), seasons: seasonsSchema, search: z.boolean().default(true) }), req.body);
+    const body = parse(
+      z.object({
+        kind,
+        tmdbId: z.number().int().positive(),
+        profileId: z.number().int().positive().optional(),
+        seasons: seasonsSchema,
+        search: z.boolean().default(true),
+        rootId: rootIdSchema.optional(),
+        maxSizeMb: maxSizeSchema.optional(),
+      }),
+      req.body,
+    );
     const profileId = body.profileId ?? defaultProfileId(ctx, body.kind);
     if (!getProfile(ctx, profileId)) throw badRequest('Unknown quality profile');
-    const row = await monitorTitle(ctx, { kind: body.kind, tmdbId: body.tmdbId, profileId, seasons: body.seasons, addedBy: req.user!.id });
+    try {
+      assertRoot(ctx, body.kind, body.rootId);
+    } catch (err) {
+      throw badRequest((err as Error).message);
+    }
+    const row = await monitorTitle(ctx, { kind: body.kind, tmdbId: body.tmdbId, profileId, seasons: body.seasons, addedBy: req.user!.id, rootId: body.rootId, maxSizeMb: body.maxSizeMb });
     audit(db(), req, 'monitored.added', { target: row.title });
     if (body.search) void autoSearch(ctx, row).catch((err) => app.log.warn({ err }, 'Search failed'));
     return monitoredView(row);
@@ -171,18 +201,33 @@ export async function arrRoutes(app: FastifyInstance) {
 
   app.patch('/api/monitored/:id', { config: { access: 'manager' } }, async (req) => {
     const { id } = parse(idParam, req.params);
-    const body = parse(z.object({ profileId: z.number().int().positive().optional(), monitored: z.boolean().optional(), seasons: seasonsSchema }), req.body);
+    const body = parse(
+      z.object({
+        profileId: z.number().int().positive().optional(),
+        monitored: z.boolean().optional(),
+        seasons: seasonsSchema,
+        rootId: rootIdSchema.optional(),
+        maxSizeMb: maxSizeSchema.optional(),
+      }),
+      req.body,
+    );
     const before = getMonitored(id);
     if (body.profileId && !getProfile(ctx, body.profileId)) throw badRequest('Unknown quality profile');
-    db()
-      .update(monitored)
-      .set({
-        ...(body.profileId ? { profileId: body.profileId } : {}),
-        ...(body.monitored !== undefined ? { monitored: body.monitored } : {}),
-        ...(body.seasons !== undefined ? { seasons: body.seasons ? JSON.stringify(body.seasons) : null } : {}),
-      })
-      .where(eq(monitored.id, id))
-      .run();
+    if (body.rootId !== undefined && body.rootId !== (before.rootId ?? 'default')) {
+      try {
+        assertRoot(ctx, before.kind, body.rootId);
+        moveToRoot(ctx, before, body.rootId);
+      } catch (err) {
+        throw badRequest((err as Error).message);
+      }
+    }
+    const changes = {
+      ...(body.profileId ? { profileId: body.profileId } : {}),
+      ...(body.monitored !== undefined ? { monitored: body.monitored } : {}),
+      ...(body.seasons !== undefined ? { seasons: body.seasons ? JSON.stringify(body.seasons) : null } : {}),
+      ...(body.maxSizeMb !== undefined ? { maxSizeMb: body.maxSizeMb } : {}),
+    };
+    if (Object.keys(changes).length) db().update(monitored).set(changes).where(eq(monitored.id, id)).run();
     if (body.seasons !== undefined && before.kind === 'show') {
       for (const e of db().select().from(monitoredEpisodes).where(eq(monitoredEpisodes.monitoredId, id)).all()) {
         db().update(monitoredEpisodes).set({ monitored: !body.seasons || body.seasons.includes(e.season) }).where(eq(monitoredEpisodes.id, e.id)).run();
@@ -199,6 +244,7 @@ export async function arrRoutes(app: FastifyInstance) {
     const { id } = parse(idParam, req.params);
     const row = getMonitored(id);
     db().delete(monitored).where(eq(monitored.id, id)).run();
+    excludeFromAutoMonitor(ctx, row.kind, row.tmdbId);
     audit(db(), req, 'monitored.removed', { target: row.title });
     return { ok: true };
   });
@@ -233,6 +279,7 @@ export async function arrRoutes(app: FastifyInstance) {
         accepted: d.accepted,
         rejections: d.rejections,
         covers: d.covers,
+        oversize: d.oversize,
       })),
     };
   });
@@ -294,10 +341,17 @@ export async function arrRoutes(app: FastifyInstance) {
   });
 
   app.post('/api/downloads/direct', { config: { access: 'manager', rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req) => {
-    const { url } = parse(z.object({ url: z.url().max(4000) }), req.body);
+    const body = parse(
+      z.object({
+        url: z.string().trim().min(1).max(4000).refine((u) => /^(https?:\/\/|magnet:\?)/i.test(u), 'Paste an http(s) link or a magnet link'),
+        name: z.string().trim().max(200).nullable().optional(),
+        destination: z.string().max(60).nullable().optional(),
+      }),
+      req.body,
+    );
     try {
-      const id = await startDirectDownload(ctx, url, req.user!.id);
-      audit(db(), req, 'download.direct', { target: new URL(url).host });
+      const id = await startLinkDownload(ctx, body.url, { name: body.name, destination: body.destination }, req.user!.id);
+      audit(db(), req, 'download.direct', { target: /^magnet:/i.test(body.url) ? 'magnet link' : new URL(body.url).host, details: { destination: body.destination ?? 'downloads' } });
       return { id };
     } catch (err) {
       throw badRequest((err as Error).message);

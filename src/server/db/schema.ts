@@ -168,8 +168,23 @@ export const monitored = sqliteTable(
     addedBy: integer('added_by').references(() => users.id, { onDelete: 'set null' }),
     addedAt: integer('added_at').notNull(),
     lastSearchAt: integer('last_search_at'),
+    /** Which root folder (Settings → Media management) new files go to; null is the default one. */
+    rootId: text('root_id'),
+    /** Largest wanted release in MB, per movie or per episode. Null uses the default from settings; 0 means no limit. */
+    maxSizeMb: integer('max_size_mb'),
   },
   (t) => [uniqueIndex('monitored_kind_tmdb').on(t.kind, t.tmdbId)],
+);
+
+/** Titles removed from monitoring by hand, so library sync doesn't add them back. */
+export const monitorExclusions = sqliteTable(
+  'monitor_exclusions',
+  {
+    kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.kind, t.tmdbId] })],
 );
 
 export const monitoredEpisodes = sqliteTable(
@@ -269,6 +284,12 @@ export const downloads = sqliteTable(
     completedAt: integer('completed_at'),
     importedAt: integer('imported_at'),
     bookId: integer('book_id'), // set for audiobook/ebook grabs instead of monitoredId
+    /** Download-client category or label it was sent with. */
+    category: text('category'),
+    /** Something worth knowing that didn't stop the download, e.g. bigger than the size limit. */
+    warning: text('warning'),
+    /** For links: where the finished download goes, as a destination key (see arr/roots.ts), with an optional name. JSON. */
+    destination: text('destination'),
   },
   (t) => [index('downloads_status_idx').on(t.status)],
 );

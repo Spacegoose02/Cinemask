@@ -271,6 +271,95 @@ describe('request → download → import', () => {
     expect(fs.readdirSync(season).sort()).toEqual(['Bluey - S01E01 - Ep 1.mkv', 'Bluey - S01E02 - Ep 2.mkv', 'Bluey - S01E03 - Ep 3.mkv']);
   });
 
+  const indexerReturns = (items: { title: string; seeders?: number; size?: number }[]) =>
+    fakeFetch({
+      ...tmdbRoutes,
+      [`${INDEXER}/api`]: () => new Response(torznab(items)),
+      [`${QBIT}/api/v2/auth/login`]: () => new Response('Ok.', { headers: { 'set-cookie': 'SID=abc; path=/' } }),
+      [`${QBIT}/api/v2/torrents/add`]: (_u: URL, init?: RequestInit) => {
+        added.push(String(init?.body));
+        return new Response('Ok.');
+      },
+      [`${QBIT}/api/v2/torrents/info`]: () => qbitTorrents,
+    });
+
+  it('prefers releases within the size limit, and warns when only bigger ones exist', async () => {
+    indexerReturns([
+      { title: 'Paddington.2014.1080p.BluRay.x264-BIG', size: 8 * 1024 ** 3, seeders: 90 },
+      { title: 'Paddington.2014.1080p.WEB-DL-SMALL', size: 3 * 1024 ** 3 },
+    ]);
+    await owner.req('PUT', '/api/settings/downloading', { maxMovieSizeGb: 4 });
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: true })).json();
+    await vi.waitFor(() => expect(grabbed()).toEqual(['Paddington.2014.1080p.WEB-DL-SMALL']));
+    const manual = (await owner.req('GET', `/api/monitored/${m.id}/releases`)).json().releases;
+    expect(manual.find((r: { title: string }) => r.title.endsWith('BIG')).oversize).toBe(8 * 1024 ** 3);
+
+    // This title's own limit (2 GB) leaves nothing within it: the best one is grabbed with a warning.
+    await owner.req('DELETE', '/api/downloads/1');
+    await owner.req('PATCH', `/api/monitored/${m.id}`, { maxSizeMb: 2048 });
+    expect((await owner.req('POST', `/api/monitored/${m.id}/search`, {})).json().grabbed).toBe(1);
+    const dl2 = (await owner.req('GET', '/api/downloads')).json()[0];
+    expect(dl2.title).toBe('Paddington.2014.1080p.BluRay.x264-BIG');
+    expect(dl2.warning).toMatch(/Bigger than the 2\.0 GB limit: 8\.0 GB/);
+  });
+
+  it('puts titles in their own root folder with its own download category, and moves them between folders', async () => {
+    const kids = path.join(media, 'kids-movies');
+    await owner.req('PUT', '/api/settings/media', { extraFolders: [{ id: 'kids', name: 'Kids Movies', kind: 'movie', path: kids, category: 'kids-movies' }] });
+    expect((await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, rootId: 'nope' })).statusCode).toBe(400);
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, rootId: 'kids', search: true })).json();
+    await vi.waitFor(() => expect(added).toHaveLength(1));
+    expect(added[0]).toContain('category=kids-movies');
+
+    const folder = path.join(dl, 'Paddington.2014.1080p.BluRay.x264-SPARKS');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'paddington.mkv'), 'video');
+    qbitTorrents = [{ hash: 'h1', name: 'Paddington', progress: 1, state: 'stalledUP', size: 5, content_path: folder, save_path: dl, tags: 'mm-1' }];
+    await trackDownloads(t.app.ctx);
+    const inKids = path.join(kids, 'Paddington (2014)', 'Paddington (2014) - Bluray-1080p.mkv');
+    expect(fs.existsSync(inKids)).toBe(true);
+
+    expect((await owner.req('PATCH', `/api/monitored/${m.id}`, { rootId: 'default' })).statusCode).toBe(200);
+    const moved = path.join(media, 'movies', 'Paddington (2014)', 'Paddington (2014) - Bluray-1080p.mkv');
+    expect(fs.existsSync(moved)).toBe(true);
+    expect(fs.existsSync(inKids)).toBe(false);
+    expect((await owner.req('GET', `/api/monitored/${m.id}/files`)).json().files[0]).toMatchObject({ path: moved, exists: true });
+  });
+
+  it('downloads a link under a chosen name into a chosen folder', async () => {
+    fakeFetch({
+      'http://files.example/clip.mkv': () => new Response('home video', { headers: { 'content-length': '10' } }),
+      [`${QBIT}/api/v2/auth/login`]: () => new Response('Ok.', { headers: { 'set-cookie': 'SID=abc; path=/' } }),
+      [`${QBIT}/api/v2/torrents/add`]: (_u: URL, init?: RequestInit) => {
+        added.push(String(init?.body));
+        return new Response('Ok.');
+      },
+      [`${QBIT}/api/v2/torrents/info`]: () => qbitTorrents,
+    });
+    await owner.req('PUT', '/api/settings/downloading', { allowPrivateDirectUrls: true });
+    expect((await owner.req('POST', '/api/downloads/direct', { url: 'http://files.example/clip.mkv', destination: 'movie:nowhere' })).statusCode).toBe(400);
+    expect((await owner.req('POST', '/api/downloads/direct', { url: 'file:///etc/passwd' })).statusCode).toBe(400);
+
+    const destinations = (await owner.req('GET', '/api/root-folders')).json().destinations.map((d: { key: string }) => d.key);
+    expect(destinations).toEqual(['downloads', 'movie:default', 'show:default', 'audiobooks', 'books']);
+    const { id } = (await owner.req('POST', '/api/downloads/direct', { url: 'http://files.example/clip.mkv', name: 'Beach Day', destination: 'movie:default' })).json();
+    await vi.waitFor(async () => expect((await owner.req('GET', '/api/downloads?history=true')).json().find((d: { id: number }) => d.id === id).status).toBe('imported'));
+    expect(fs.readFileSync(path.join(media, 'movies', 'Beach Day.mkv'), 'utf8')).toBe('home video');
+
+    // A magnet link goes to the torrent client and is delivered when it finishes.
+    const magnet = 'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Show.Pilot';
+    const m = (await owner.req('POST', '/api/downloads/direct', { url: magnet, name: 'Pilot', destination: 'show:default' })).json();
+    expect(added.at(-1)).toContain('urls=magnet');
+    const folder = path.join(dl, 'Show.Pilot');
+    fs.mkdirSync(path.join(folder, 'extras'), { recursive: true });
+    fs.writeFileSync(path.join(folder, 'pilot.mkv'), 'ep');
+    fs.writeFileSync(path.join(folder, 'extras', 'bts.mkv'), 'bts');
+    qbitTorrents = [{ hash: '0123456789abcdef0123456789abcdef01234567', name: 'Show.Pilot', progress: 1, state: 'uploading', size: 5, content_path: folder, save_path: dl, tags: `mm-${m.id}` }];
+    await trackDownloads(t.app.ctx);
+    expect(fs.readFileSync(path.join(media, 'tv', 'Pilot', 'pilot.mkv'), 'utf8')).toBe('ep');
+    expect(fs.existsSync(path.join(media, 'tv', 'Pilot', 'extras', 'bts.mkv'))).toBe(true);
+  });
+
   it('RSS sync grabs a new release for a monitored title', async () => {
     await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false });
     const r = await rssSync(t.app.ctx);

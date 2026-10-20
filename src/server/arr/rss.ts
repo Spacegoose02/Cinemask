@@ -6,7 +6,7 @@ import { CATEGORIES, searchIndexer } from './indexers.js';
 import { wantedTarget } from './monitor.js';
 import { normalizeTitle, parseRelease } from './parser.js';
 import { getProfile } from './profiles.js';
-import { autoSearch, enabledIndexers, grabBest } from './search.js';
+import { autoSearch, decideOptions, enabledIndexers, grabBest } from './search.js';
 import { blocklist } from '../db/schema.js';
 
 /**
@@ -40,7 +40,7 @@ export async function rssSync(ctx: AppContext): Promise<{ checked: number; grabb
         const profile = getProfile(ctx, row.profileId);
         if (!target || !profile) continue;
         const bl = new Set(ctx.db.select({ t: blocklist.releaseTitle }).from(blocklist).where(eq(blocklist.monitoredId, row.id)).all().map((b) => b.t));
-        const d = decide(rel, target, profile, bl, { skipCam: ctx.settings.get('downloading').skipCamReleases });
+        const d = decide(rel, target, profile, bl, decideOptions(ctx, row));
         if (d.accepted) perTitle.set(row.id, [...(perTitle.get(row.id) ?? []), d]);
       }
     }

@@ -17,6 +17,7 @@ interface SyncStatus {
   running: boolean;
   lastRunAt: number | null;
   results: Record<string, { ok: boolean; movies?: number; shows?: number; episodes?: number; error?: string }>;
+  autoMonitored?: number;
 }
 
 function PlexSettings() {
@@ -113,6 +114,13 @@ function SyncSettings() {
           ))}
         </select>
       </Field>
+      <Field label="Monitor what the sync finds" hint="Who can change it per title: managers, with Monitor / Unmonitor on its page. Titles removed by hand stay removed.">
+        <select className="input w-auto" value={s.values.autoMonitor} onChange={(e) => s.set('autoMonitor', e.target.value)}>
+          <option value="new">New episodes only (nothing already out is searched)</option>
+          <option value="all">Everything (fill missing episodes and upgrade by quality profile)</option>
+          <option value="off">Don't monitor</option>
+        </select>
+      </Field>
       <SaveBar onSave={s.save} saving={s.saving} message={s.message} />
       <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
         <button
@@ -125,7 +133,10 @@ function SyncSettings() {
         >
           {status.data?.running ? 'Syncing…' : 'Sync now'}
         </button>
-        <span className="text-sm text-muted">Last sync: {formatDate(status.data?.lastRunAt)}</span>
+        <span className="text-sm text-muted">
+          Last sync: {formatDate(status.data?.lastRunAt)}
+          {status.data?.autoMonitored ? ` · started monitoring ${status.data.autoMonitored} title${status.data.autoMonitored === 1 ? '' : 's'}` : ''}
+        </span>
       </div>
       {Object.entries(status.data?.results ?? {}).map(([server, r]) => (
         <Alert key={server} kind={r.ok ? 'success' : 'error'}>

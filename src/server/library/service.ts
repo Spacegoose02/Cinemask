@@ -203,6 +203,8 @@ export interface SyncStatus {
   running: boolean;
   lastRunAt: number | null;
   results: Partial<Record<ServerType, { ok: boolean; movies?: number; shows?: number; episodes?: number; error?: string }>>;
+  /** Titles the last sync started monitoring (Settings → Media servers → Monitor what's found). */
+  autoMonitored?: number;
 }
 
 export class LibrarySync {
@@ -231,6 +233,9 @@ export class LibrarySync {
       }
       this.status.lastRunAt = Date.now();
       this.markRequestsAvailable();
+      // Imported lazily: arr/monitor uses this module too.
+      const { monitorLibrary } = await import('../arr/monitor.js');
+      this.status.autoMonitored = await monitorLibrary(this.ctx).catch(() => 0);
       return this.status;
     } finally {
       this.status.running = false;

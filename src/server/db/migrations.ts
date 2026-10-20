@@ -354,6 +354,23 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE users ADD COLUMN theme TEXT;
     `,
   },
+  {
+    id: 7,
+    name: 'root folders, size limits and link destinations',
+    sql: `
+      ALTER TABLE monitored ADD COLUMN root_id TEXT;
+      ALTER TABLE monitored ADD COLUMN max_size_mb INTEGER;
+      ALTER TABLE downloads ADD COLUMN category TEXT;
+      ALTER TABLE downloads ADD COLUMN warning TEXT;
+      ALTER TABLE downloads ADD COLUMN destination TEXT;
+      CREATE TABLE monitor_exclusions (
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (kind, tmdb_id)
+      );
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

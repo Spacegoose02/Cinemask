@@ -5,6 +5,7 @@ import { blocklist, downloadClients, downloads, monitored, type DownloadClientTy
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import { createClient, type ClientItem } from './clients.js';
 import { importDownload, mapRemotePath } from './importer.js';
+import { deliverLink } from './direct.js';
 import { autoSearch } from './search.js';
 import { autoTrailer } from '../trailers/service.js';
 import { failBook, importBook } from '../books/service.js';
@@ -48,9 +49,12 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
   for (const cid of clientIds) {
     const c = ctx.db.select().from(downloadClients).where(eq(downloadClients.id, cid)).get();
     if (!c) continue;
+    // Root folders can send downloads under their own category, so ask for each one in use.
+    const categories = [...new Set(active.filter((x) => x.clientId === cid).map((x) => x.category ?? c.category))];
+    const client = createClient({ type: c.type as DownloadClientType, name: c.name, url: c.url, username: c.username, password: openSecret(ctx, c.password) });
     let items: ClientItem[];
     try {
-      items = await createClient({ type: c.type as DownloadClientType, name: c.name, url: c.url, username: c.username, password: openSecret(ctx, c.password) }).list(c.category);
+      items = (await Promise.all(categories.map((cat) => client.list(cat)))).flat();
     } catch {
       continue; // client offline; try next time
     }
@@ -86,6 +90,12 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
         }
         continue;
       }
+      if (!d.monitoredId && !d.bookId && d.destination && item.outputPath) {
+        deliverLink(ctx, d.id, mapRemotePath(ctx, item.outputPath), ctx.settings.get('media').importMode);
+        const media = ctx.settings.get('media');
+        if (media.removeCompletedDownloads) await client.remove(item.id, media.importMode !== 'hardlink').catch(() => undefined);
+        continue;
+      }
       if (!d.monitoredId || !item.outputPath) {
         ctx.db.update(downloads).set({ status: 'completed' }).where(eq(downloads.id, d.id)).run();
         continue;
@@ -97,7 +107,6 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
           const row = ctx.db.select().from(monitored).where(eq(monitored.id, d.monitoredId)).get();
           if (row) void autoTrailer(ctx, row).catch(() => undefined);
           if (ctx.settings.get('media').removeCompletedDownloads) {
-            const client = createClient({ type: c.type as DownloadClientType, name: c.name, url: c.url, username: c.username, password: openSecret(ctx, c.password) });
             // With hardlinks the library copy survives; with copy/move the client data is no longer needed.
             await client.remove(item.id, ctx.settings.get('media').importMode !== 'hardlink').catch(() => undefined);
           }

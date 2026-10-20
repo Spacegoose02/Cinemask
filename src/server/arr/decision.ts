@@ -22,11 +22,15 @@ export interface Decision {
   score: number;
   /** Episodes this release would cover. */
   covers: { season: number; episodes: number[] } | null;
+  /** Set when the release is bigger than the size limit: its size per movie or per episode, in bytes. */
+  oversize: number | null;
 }
 
 export interface DecideOptions {
   /** Reject CAM, telesync, telecine and screener copies. */
   skipCam?: boolean;
+  /** Largest wanted size in bytes, per movie or per episode. Bigger releases are still accepted but only used when nothing smaller is. */
+  maxSize?: number | null;
 }
 
 const THEATRICAL_LABEL = { cam: 'CAM', telesync: 'telesync', telecine: 'telecine', screener: 'screener' } as const;
@@ -82,9 +86,18 @@ export function decide(release: Release, target: Target, profile: Profile, block
     (parsed.fullSeason ? 50 : 0) +
     Math.min(release.seeders ?? 50, 99);
 
-  return { release, parsed, accepted: rejections.length === 0, rejections, score, covers };
+  // A season pack is judged per episode, so a 20 GB pack of ten episodes passes a 3 GB limit.
+  const perItem = release.size ? release.size / Math.max(1, target.kind === 'show' ? (covers?.episodes.length ?? 1) : 1) : null;
+  const oversize = opts.maxSize && perItem && perItem > opts.maxSize ? perItem : null;
+
+  return { release, parsed, accepted: rejections.length === 0, rejections, score, covers, oversize };
+}
+
+/** Best first: anything within the size limit beats anything over it, then by score. */
+export function byPreference(a: Decision, b: Decision): number {
+  return Number(a.oversize !== null) - Number(b.oversize !== null) || b.score - a.score;
 }
 
 export function bestDecision(decisions: Decision[]): Decision | null {
-  return decisions.filter((d) => d.accepted).sort((a, b) => b.score - a.score)[0] ?? null;
+  return decisions.filter((d) => d.accepted).sort(byPreference)[0] ?? null;
 }

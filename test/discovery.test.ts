@@ -123,7 +123,8 @@ describe('discovery, lists, collections, posters and trailers', () => {
     expect(list.sync).toMatchObject({ ok: true, items: 3, added: 1 }); // Paddington and Bluey are already on Plex
     const items = (await kid.req('GET', `/api/lists/${list.id}/items`)).json().items;
     expect(items.map((i: { title: string }) => i.title)).toEqual(['Paddington', 'Future Film', 'Bluey']);
-    const monitoredTitles = (t.app.ctx.dbHandle.sqlite.prepare('SELECT title FROM monitored ORDER BY title').all() as { title: string }[]).map((r) => r.title);
+    // Paddington and Bluey were picked up by library sync (added_by is null); the list added Future Film.
+    const monitoredTitles = (t.app.ctx.dbHandle.sqlite.prepare('SELECT title FROM monitored WHERE added_by IS NOT NULL ORDER BY title').all() as { title: string }[]).map((r) => r.title);
     expect(monitoredTitles).toEqual(['Future Film']);
   });
 
