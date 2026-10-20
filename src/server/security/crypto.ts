@@ -21,11 +21,13 @@ export function loadOrCreateSecretKey(configDir: string): Buffer {
 }
 
 /**
- * HMAC-SHA256 with the instance key. Used for random API keys: they're 240-bit, so a slow password
- * hash adds nothing, and keying the hash means a copy of the database alone can't check guesses.
+ * scrypt with a salt derived from the instance key, so the same value always gives the same hash
+ * (needed to look a key up) and a copy of the database alone can't check guesses. Callers cache
+ * results, since scrypt is deliberately slow.
  */
-export function keyedHash(key: Buffer, purpose: string, value: string): string {
-  return crypto.createHmac('sha256', key).update(`${purpose}:${value}`).digest('hex');
+export function keyedSlowHash(key: Buffer, purpose: string, value: string): string {
+  const salt = crypto.createHmac('sha256', key).update(`salt:${purpose}`).digest();
+  return crypto.scryptSync(value, salt, 32, { N: 2 ** 12, r: 8, p: 1 }).toString('hex');
 }
 
 export function secretKeyPath(configDir: string): string {

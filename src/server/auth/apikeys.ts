@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { Orm } from '../db/database.js';
 import { apiKeys, users, type API_KEY_ACCESS } from '../db/schema.js';
-import { keyedHash, randomToken } from '../security/crypto.js';
+import { keyedSlowHash, randomToken } from '../security/crypto.js';
 import { toSessionUser, type SessionUser } from './sessions.js';
 
 export const API_KEY_HEADER = 'x-api-key';
@@ -27,7 +27,19 @@ export function generateApiKey(secretKey: Buffer): { key: string; prefix: string
   return { key, prefix: key.slice(0, PREFIX.length + 6), hash: hashApiKey(secretKey, key) };
 }
 
-const hashApiKey = (secretKey: Buffer, key: string) => keyedHash(secretKey, 'api-key', key);
+// Hashing is slow on purpose, so recent results are kept in memory: a Home Assistant poll every few
+// seconds shouldn't pay for scrypt each time. Keys are 240-bit random, so light scrypt settings are enough.
+const hashCache = new Map<string, string>();
+const CACHE_MAX = 200;
+
+function hashApiKey(secretKey: Buffer, key: string): string {
+  const hit = hashCache.get(key);
+  if (hit) return hit;
+  const hash = keyedSlowHash(secretKey, 'api-key', key);
+  if (hashCache.size >= CACHE_MAX) hashCache.delete(hashCache.keys().next().value!);
+  hashCache.set(key, hash);
+  return hash;
+}
 
 /** The key from `X-Api-Key` or `Authorization: Bearer`. Query strings are never read, since they end up in logs. */
 export function apiKeyFrom(headers: Record<string, string | string[] | undefined>): string | null {
