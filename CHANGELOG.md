@@ -4,6 +4,18 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- The Downloads queue shows totals (how many, total size, what's left, speed and time left), and each download shows its speed and time left.
+- CAM, telesync, telecine and screener copies are skipped by default (Settings → Media management → Searching).
+- "Add … to Plex/Jellyfin" on a movie adds its film series as a collection on whichever servers are connected and pushes it straight away.
+- `HANDOFF.md`: where the project stands and how to pick it up.
+
+### Fixed
+- YouTube trailers showed "Video player configuration error": the app told browsers to send no referrer, which YouTube now refuses.
+- A manual search result can only be grabbed for the title it was found for, with the episodes it was judged to cover.
+- Manual search of a season with nothing missing judged every release against episode 1 only.
+- The yt-dlp setting only runs a program named `yt-dlp`, so it can't be pointed at another program in the container.
+
 ## [0.9.0] - 2026-10-20
 
 The first public beta. Every phase of the roadmap is in.

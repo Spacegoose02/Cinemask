@@ -1,0 +1,36 @@
+# Handoff
+
+Where Cinemask stands and how to pick the work up. Read [CLAUDE.md](CLAUDE.md) first for the layout and the security rules, and keep this file current when you finish a piece of work.
+
+## State
+
+- **Released:** 0.9.0, the first public beta. Every phase in [docs/ROADMAP.md](docs/ROADMAP.md) is built.
+- **Tests:** `npm test` runs the API, security and integration tests. Integrations (Plex, Jellyfin, TMDB, indexers, download clients, Audiobookshelf, Shelfmark) are only tested against fakes in `test/fakes.ts`, so expect fixes once they meet real servers.
+- **CI:** `.github/workflows/ci.yml` (lint, typecheck, tests, build, audit, image to `ghcr.io/<owner>/cinemask:edge`), `codeql.yml`, and `release.yml` on tags `vX.Y.Z` (tests, tag must match `package.json`, multi-arch image, GitHub release from the changelog). A release created on GitHub's Releases page works too.
+
+## After 0.9: the to-do board
+
+The second board (35 cards) is being worked through in five pull requests. 14 cards were already done in 0.9.
+
+| PR | Cards | Status |
+|---|---|---|
+| 1. Fixes | YouTube trailer error, turn off CAM/TS copies, download totals on the Downloads tab, collection button for Plex and Jellyfin, Handoff.md, bug and security check | In review |
+| 2. Folders and sizes | Custom root folders (Kids Movies, 4K…), download tag per media path, size limits for movies and per show, download from a link with a name and destination, auto-monitor what the library sync finds | To do |
+| 3. Library | Watch trailers already on the server, trailer management (auto, sources, quality), manually map media, watched / play count, Plex labels with collections | To do |
+| 4. YouTube and ReadMeABook | Subscribe to channels (new, all, playlists), metadata for Plex and Jellyfin, audiobooks through ReadMeABook | To do |
+| 5. Themes | Five themes in each style (dark, light, retro, futuristic, 16-bit, cinemas) plus Blockbuster | To do |
+
+Already done in 0.9 (no work needed): delete episodes, seasons and movies; download or manually search one episode; manual search on a movie; collection maker synced to Plex and Jellyfin; download and import paths; Shelfmark search and download; rename and manage files; ask to search for upgrades after a profile change; Prowlarr search; change posters on Plex and Jellyfin; upgrades.
+
+## Known gaps
+
+- Direct (link) downloads are saved to `<downloads>/direct` and never imported (fixed in PR 2).
+- Specials (season 0) are not added to monitored episodes, so the per-episode tools can't act on them.
+- Removing a download with "Blocklist and retry" marks it `removed` in history although a retry search runs.
+
+## Working here
+
+- Run `npm install`, then `npm run dev` (API on 7979, UI on 5173), `npm test`, `npm run lint`, `npm run typecheck`.
+- Every schema change gets a new migration in `src/server/db/migrations.ts`; never edit a released one.
+- Every `/api` route declares `config.access`; `test/access.test.ts` calls every route at every level.
+- Changes go through pull requests to `main`; note user-facing changes under `[Unreleased]` in `CHANGELOG.md`.

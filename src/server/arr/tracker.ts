@@ -12,6 +12,9 @@ import { openSecret } from './secrets.js';
 
 const ACTIVE = ['queued', 'downloading', 'paused', 'completed', 'importing'] as const;
 
+/** Speed and time left from the last poll, by download id. Only kept in memory; it changes every poll. */
+export const liveStats = new Map<number, { speed: number | null; eta: number | null }>();
+
 /** Asks Plex/Jellyfin to rescan after an import so new files show up quickly. Best effort. */
 export async function refreshMediaServers(ctx: AppContext) {
   const plex = ctx.settings.get('plex');
@@ -38,6 +41,7 @@ export async function refreshMediaServers(ctx: AppContext) {
 /** Polls download clients, updates progress, imports finished downloads and retries failed ones. */
 export async function trackDownloads(ctx: AppContext): Promise<void> {
   const active = ctx.db.select().from(downloads).where(and(inArray(downloads.status, [...ACTIVE]), isNotNull(downloads.clientId))).all();
+  for (const id of liveStats.keys()) if (!active.some((d) => d.id === id)) liveStats.delete(id);
   if (!active.length) return;
   const clientIds = [...new Set(active.map((d) => d.clientId!))];
   let imported = false;
@@ -67,8 +71,10 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
       }
       if (item.status !== 'completed') {
         ctx.db.update(downloads).set({ status: item.status, progress: item.progress }).where(eq(downloads.id, d.id)).run();
+        liveStats.set(d.id, { speed: item.status === 'downloading' ? (item.speed ?? null) : 0, eta: item.eta ?? null });
         continue;
       }
+      liveStats.delete(d.id);
       ctx.db.update(downloads).set({ status: 'importing', progress: 1, completedAt: d.completedAt ?? Date.now() }).where(eq(downloads.id, d.id)).run();
       if (d.bookId && item.outputPath) {
         try {

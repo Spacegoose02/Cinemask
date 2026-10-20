@@ -153,6 +153,14 @@ describe('discovery, lists, collections, posters and trailers', () => {
     expect((await kid.req('POST', `/api/collections/${c.id}/push`)).statusCode).toBe(403);
   });
 
+  it('adds a collection to the connected servers in one step', async () => {
+    const c = (await owner.req('POST', '/api/collections', { name: 'Bear Films', toServers: true, items: [{ kind: 'movie', tmdbId: 116149 }] })).json();
+    expect(c).toMatchObject({ syncPlex: true, syncJellyfin: false });
+    expect(plexWrites).toEqual(['10 +Bear Films']);
+    await owner.req('PUT', '/api/settings/plex', { enabled: false });
+    expect((await owner.req('POST', '/api/collections', { name: 'Nothing', toServers: true })).statusCode).toBe(400);
+  });
+
   it('imports Plex collections and proxies their covers without exposing the token', async () => {
     plexCollections = [{ ratingKey: '900', title: 'Bear Films', thumb: '/library/metadata/900/thumb/1' }];
     expect((await owner.req('POST', '/api/collections/import', { server: 'plex' })).json()).toEqual({ imported: 1, updated: 0 });
@@ -198,6 +206,17 @@ describe('discovery, lists, collections, posters and trailers', () => {
     const files = (await owner.req('GET', `/api/monitored/${m.id}/trailers`)).json().files;
     expect(files.map((f: { path: string }) => path.relative(movies, f.path))).toEqual([path.join('Paddington (2014)', 'Paddington (2014)-trailer.mkv')]);
     expect((await owner.req('DELETE', `/api/monitored/${m.id}/trailers`)).json()).toEqual({ removed: 1 });
+  });
+
+  it('only runs a program named yt-dlp', async () => {
+    const other = path.join(t.dir, 'not-ytdlp');
+    fs.writeFileSync(other, '#!/bin/sh\ntouch /tmp/pwned\n', { mode: 0o755 });
+    await owner.req('PUT', '/api/settings/media', { moviesPath: path.join(t.dir, 'media', 'movies') });
+    await owner.req('PUT', '/api/settings/extras', { ytDlpPath: other });
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    const res = await owner.req('POST', `/api/monitored/${m.id}/trailers`, { key: 'abcDEF12345' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/named yt-dlp/);
   });
 
   it('each person keeps their own homepage layout', async () => {

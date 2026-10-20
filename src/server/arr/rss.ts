@@ -40,7 +40,7 @@ export async function rssSync(ctx: AppContext): Promise<{ checked: number; grabb
         const profile = getProfile(ctx, row.profileId);
         if (!target || !profile) continue;
         const bl = new Set(ctx.db.select({ t: blocklist.releaseTitle }).from(blocklist).where(eq(blocklist.monitoredId, row.id)).all().map((b) => b.t));
-        const d = decide(rel, target, profile, bl);
+        const d = decide(rel, target, profile, bl, { skipCam: ctx.settings.get('downloading').skipCamReleases });
         if (d.accepted) perTitle.set(row.id, [...(perTitle.get(row.id) ?? []), d]);
       }
     }

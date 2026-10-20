@@ -83,6 +83,7 @@ export function TrailerModal({ videoKey, onClose }: { videoKey: string; onClose:
           className="h-full w-full rounded-lg"
           src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoKey)}?autoplay=1`}
           title="Trailer"
+          referrerPolicy="strict-origin-when-cross-origin"
           allow="autoplay; encrypted-media; picture-in-picture"
           allowFullScreen
         />

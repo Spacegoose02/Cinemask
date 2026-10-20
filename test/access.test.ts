@@ -67,5 +67,7 @@ describe('security headers', () => {
     const res = await t.app.inject({ method: 'GET', url: '/api/health' });
     expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
     expect(res.headers['x-content-type-options']).toBe('nosniff');
+    // YouTube embeds need the origin as referrer, or they show "Video player configuration error".
+    expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
   });
 });

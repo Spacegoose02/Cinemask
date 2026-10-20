@@ -12,7 +12,14 @@ export interface ClientItem {
   outputPath: string | null;
   tags: string[];
   error?: string;
+  /** Download speed in bytes per second, when the client reports it. */
+  speed?: number;
+  /** Seconds left, when the client reports it. */
+  eta?: number;
 }
+
+/** Clients use huge numbers or negatives for "unknown"; keep only sensible ETAs. */
+const etaOf = (n: unknown) => (typeof n === 'number' && n >= 0 && n < 100 * 24 * 3600 ? n : undefined);
 
 export interface AddOptions {
   category: string;
@@ -38,6 +45,9 @@ export interface ClientConfig {
 }
 
 const base = (url: string) => url.replace(/\/+$/, '');
+
+/** "1:02:03" or "1:02:03:04" (with days) → seconds. */
+const hms = (t: string) => t.split(':').reduce((acc, n, i, all) => acc + Number(n) * [86400, 3600, 60, 1].slice(4 - all.length)[i]!, 0);
 
 async function request(service: string, url: string, init: RequestInit = {}): Promise<Response> {
   let res: Response;
@@ -107,11 +117,13 @@ class QBittorrent implements DownloadClient {
       content_path?: string;
       save_path: string;
       tags: string;
+      dlspeed?: number;
+      eta?: number;
     }[];
     return items.map((t): ClientItem => {
       const done = t.progress >= 1 || ['uploading', 'stalledUP', 'pausedUP', 'stoppedUP', 'queuedUP', 'forcedUP', 'checkingUP'].includes(t.state);
       const status: ClientItem['status'] = t.state === 'error' || t.state === 'missingFiles' ? 'failed' : done ? 'completed' : t.state.startsWith('paused') || t.state.startsWith('stopped') ? 'paused' : t.state.startsWith('queued') ? 'queued' : 'downloading';
-      return { id: t.hash, name: t.name, progress: t.progress, status, size: t.size, outputPath: t.content_path ?? `${t.save_path}/${t.name}`, tags: t.tags.split(',').map((x) => x.trim()).filter(Boolean) };
+      return { id: t.hash, name: t.name, progress: t.progress, status, size: t.size, outputPath: t.content_path ?? `${t.save_path}/${t.name}`, tags: t.tags.split(',').map((x) => x.trim()).filter(Boolean), speed: t.dlspeed, eta: etaOf(t.eta) };
     });
   }
 
@@ -154,9 +166,9 @@ class Transmission implements DownloadClient {
   }
 
   async list(category: string) {
-    const r = await this.rpc<{ torrents: { hashString: string; name: string; percentDone: number; status: number; totalSize: number; downloadDir: string; labels?: string[]; error: number; errorString: string }[] }>(
+    const r = await this.rpc<{ torrents: { hashString: string; name: string; percentDone: number; status: number; totalSize: number; downloadDir: string; labels?: string[]; error: number; errorString: string; rateDownload?: number; eta?: number }[] }>(
       'torrent-get',
-      { fields: ['hashString', 'name', 'percentDone', 'status', 'totalSize', 'downloadDir', 'labels', 'error', 'errorString'] },
+      { fields: ['hashString', 'name', 'percentDone', 'status', 'totalSize', 'downloadDir', 'labels', 'error', 'errorString', 'rateDownload', 'eta'] },
     );
     return r.torrents
       .filter((t) => (t.labels ?? []).includes(category))
@@ -170,6 +182,8 @@ class Transmission implements DownloadClient {
         outputPath: `${t.downloadDir}/${t.name}`,
         tags: t.labels ?? [],
         error: t.error ? t.errorString : undefined,
+        speed: t.rateDownload,
+        eta: etaOf(t.eta),
       }));
   }
 
@@ -228,8 +242,8 @@ class Deluge implements DownloadClient {
 
   async list(category: string) {
     await this.ensureLogin();
-    const r = await this.rpc<{ torrents: Record<string, { name: string; progress: number; state: string; total_size: number; save_path: string; label?: string }> }>('web.update_ui', [
-      ['name', 'progress', 'state', 'total_size', 'save_path', 'label'],
+    const r = await this.rpc<{ torrents: Record<string, { name: string; progress: number; state: string; total_size: number; save_path: string; label?: string; download_payload_rate?: number; eta?: number }> }>('web.update_ui', [
+      ['name', 'progress', 'state', 'total_size', 'save_path', 'label', 'download_payload_rate', 'eta'],
       {},
     ]);
     return Object.entries(r.torrents ?? {})
@@ -242,6 +256,8 @@ class Deluge implements DownloadClient {
         size: t.total_size,
         outputPath: `${t.save_path}/${t.name}`,
         tags: t.label ? [t.label] : [],
+        speed: t.download_payload_rate,
+        eta: t.eta ? etaOf(t.eta) : undefined,
       }));
   }
 
@@ -280,7 +296,7 @@ class RTorrent implements DownloadClient {
   }
 
   async list(category: string) {
-    const r = await this.call('d.multicall2', ['', 'main', 'd.hash=', 'd.name=', 'd.completed_bytes=', 'd.size_bytes=', 'd.complete=', 'd.state=', 'd.base_path=', 'd.custom1=', 'd.custom2=', 'd.message=']);
+    const r = await this.call('d.multicall2', ['', 'main', 'd.hash=', 'd.name=', 'd.completed_bytes=', 'd.size_bytes=', 'd.complete=', 'd.state=', 'd.base_path=', 'd.custom1=', 'd.custom2=', 'd.message=', 'd.down.rate=']);
     const rows = [...r.matchAll(/<value><array><data>([\s\S]*?)<\/data><\/array><\/value>/g)].map((m) =>
       [...m[1]!.matchAll(/<value>(?:<(?:string|i8|i4|int)>)?([^<]*)(?:<\/(?:string|i8|i4|int)>)?<\/value>/g)].map((v) => v[1]!),
     );
@@ -297,6 +313,8 @@ class RTorrent implements DownloadClient {
           outputPath: x[6] || null,
           tags: [x[7]!, x[8]!].filter(Boolean),
           error: x[9] || undefined,
+          speed: Number(x[10]) || 0,
+          eta: Number(x[10]) ? etaOf(Math.round((Number(x[3]) - Number(x[2])) / Number(x[10]))) : undefined,
         };
       });
   }
@@ -343,7 +361,7 @@ class Flood implements DownloadClient {
   }
 
   async list(category: string) {
-    const r = (await (await this.call('/torrents')).json()) as { torrents: Record<string, { hash: string; name: string; percentComplete: number; status: string[]; sizeBytes: number; directory: string; tags: string[] }> };
+    const r = (await (await this.call('/torrents')).json()) as { torrents: Record<string, { hash: string; name: string; percentComplete: number; status: string[]; sizeBytes: number; directory: string; tags: string[]; downRate?: number; eta?: number }> };
     return Object.values(r.torrents ?? {})
       .filter((t) => t.tags.includes(category))
       .map((t): ClientItem => ({
@@ -354,6 +372,8 @@ class Flood implements DownloadClient {
         size: t.sizeBytes,
         outputPath: `${t.directory}/${t.name}`,
         tags: t.tags,
+        speed: t.downRate,
+        eta: etaOf(t.eta),
       }));
   }
 
@@ -411,6 +431,8 @@ class UTorrent implements DownloadClient {
           size: Number(t[3]),
           outputPath: t[26] ? String(t[26]) : null,
           tags: t[11] ? [String(t[11])] : [],
+          speed: Number(t[9]) || 0,
+          eta: etaOf(Number(t[10])),
         };
       });
   }
@@ -446,7 +468,7 @@ class Sabnzbd implements DownloadClient {
   }
 
   async list(category: string) {
-    const q = await this.api<{ queue: { slots: { nzo_id: string; filename: string; percentage: string; status: string; mb: string; cat: string }[] } }>({ mode: 'queue', cat: category });
+    const q = await this.api<{ queue: { slots: { nzo_id: string; filename: string; percentage: string; status: string; mb: string; cat: string; timeleft?: string }[] } }>({ mode: 'queue', cat: category });
     const h = await this.api<{ history: { slots: { nzo_id: string; name: string; status: string; storage: string; bytes: number; category: string; fail_message: string }[] } }>({
       mode: 'history',
       category,
@@ -462,6 +484,7 @@ class Sabnzbd implements DownloadClient {
         size: Number(s.mb) * 1024 * 1024,
         outputPath: null,
         tags: [s.cat, tagOf(s.filename)].filter((x): x is string => Boolean(x)),
+        eta: s.status === 'Downloading' && s.timeleft ? etaOf(hms(s.timeleft)) : undefined,
       })),
       ...h.history.slots.map((s): ClientItem => ({
         id: s.nzo_id,

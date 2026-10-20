@@ -24,8 +24,15 @@ export interface Decision {
   covers: { season: number; episodes: number[] } | null;
 }
 
+export interface DecideOptions {
+  /** Reject CAM, telesync, telecine and screener copies. */
+  skipCam?: boolean;
+}
+
+const THEATRICAL_LABEL = { cam: 'CAM', telesync: 'telesync', telecine: 'telecine', screener: 'screener' } as const;
+
 /** Decides whether a release is wanted for a target under a quality profile, and how good it is. */
-export function decide(release: Release, target: Target, profile: Profile, blocklisted: Set<string>): Decision {
+export function decide(release: Release, target: Target, profile: Profile, blocklisted: Set<string>, opts: DecideOptions = {}): Decision {
   const parsed = parseRelease(release.title);
   const rejections: string[] = [];
   let covers: Decision['covers'] = null;
@@ -46,6 +53,7 @@ export function decide(release: Release, target: Target, profile: Profile, block
     }
   }
 
+  if (opts.skipCam && parsed.theatrical) rejections.push(`${THEATRICAL_LABEL[parsed.theatrical]} copy (turned off in Settings → Media management)`);
   if (!profile.qualities.includes(parsed.quality)) rejections.push(`${parsed.quality} is not allowed by "${profile.name}"`);
   if (profile.language !== 'any' && !parsed.languages.includes(profile.language) && !parsed.languages.includes('multi')) {
     rejections.push(`Language is ${parsed.languages.join(', ')}, wanted ${profile.language}`);

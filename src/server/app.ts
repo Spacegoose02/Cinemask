@@ -112,6 +112,9 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
     // Many home setups serve over plain HTTP on the LAN; HSTS is the reverse proxy's job.
     strictTransportSecurity: false,
     crossOriginEmbedderPolicy: false,
+    // YouTube refuses embeds that arrive with no referrer ("Video player configuration error"), so send
+    // the origin (never the path) to other sites, and the full URL only to our own.
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   });
   await app.register(cookie);
   await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute' });
