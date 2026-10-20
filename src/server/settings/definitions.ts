@@ -181,6 +181,19 @@ export const SETTINGS = {
     }),
     secrets: ['apiKey'],
   },
+  /** Radarr, Sonarr and Overseerr, for importing what they manage (Settings → Import). */
+  radarr: {
+    schema: z.object({ url: httpUrl.default(''), apiKey: z.string().max(200).default('') }),
+    secrets: ['apiKey'],
+  },
+  sonarr: {
+    schema: z.object({ url: httpUrl.default(''), apiKey: z.string().max(200).default('') }),
+    secrets: ['apiKey'],
+  },
+  overseerr: {
+    schema: z.object({ url: httpUrl.default(''), apiKey: z.string().max(200).default('') }),
+    secrets: ['apiKey'],
+  },
   downloading: {
     schema: z.object({
       rssSyncMinutes: z.number().int().min(10).max(1440).default(15),

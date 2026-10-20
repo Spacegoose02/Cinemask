@@ -7,6 +7,7 @@ import { GeneralSettings } from './settings/General';
 import { MediaServerSettings } from './settings/MediaServers';
 import { DownloadClientSettings } from './settings/DownloadClients';
 import { HealthSettings } from './settings/Health';
+import { ImportSettings } from './settings/Imports';
 import { IndexerSettings } from './settings/Indexers';
 import { MediaManagementSettings } from './settings/MediaManagement';
 import { MetadataSettings } from './settings/Metadata';
@@ -24,6 +25,7 @@ const TABS = [
   { path: 'indexers', label: 'Indexers', element: <IndexerSettings /> },
   { path: 'download-clients', label: 'Download clients', element: <DownloadClientSettings /> },
   { path: 'books', label: 'Books', element: <BookSettings /> },
+  { path: 'import', label: 'Import', element: <ImportSettings /> },
   { path: 'users', label: 'Users', element: <UserSettings /> },
   { path: 'sign-in', label: 'Sign-in', element: <SignInSettings /> },
   { path: 'api', label: 'API and webhooks', element: <ApiSettings /> },
