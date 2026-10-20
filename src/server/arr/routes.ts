@@ -20,7 +20,7 @@ import { autoSearch, grab, rememberedRelease, searchMonitored } from './search.j
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats } from './tracker.js';
 import { assertRoot, linkDestinations, listRoots } from './roots.js';
-import { moveToRoot, scanFolder } from '../files/service.js';
+import { moveToRoot, scanFolder, titleOnDisk } from '../files/service.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const kind = z.enum(MEDIA_KINDS);
@@ -171,7 +171,10 @@ export async function arrRoutes(app: FastifyInstance) {
     const p = parse(z.object({ kind, tmdbId: z.coerce.number().int().positive() }), req.params);
     const row = db().select().from(monitored).where(and(eq(monitored.kind, p.kind), eq(monitored.tmdbId, p.tmdbId))).get();
     const request = db().select().from(requests).where(and(eq(requests.kind, p.kind), eq(requests.tmdbId, p.tmdbId), ne(requests.status, 'declined'))).orderBy(desc(requests.createdAt)).get();
-    return { monitored: row && hasRole(req.user!.role, 'manager') ? monitoredView(row) : row ? { id: row.id, monitored: row.monitored } : null, request: request ?? null };
+    const manager = hasRole(req.user!.role, 'manager');
+    // Where it is on disk, for managers: its folder, or one found in the media folders.
+    const folder = manager ? (titleOnDisk(ctx, p.kind, p.tmdbId)?.path ?? null) : undefined;
+    return { monitored: row && manager ? monitoredView(row) : row ? { id: row.id, monitored: row.monitored } : null, request: request ?? null, folder };
   });
 
   app.post('/api/monitored', { config: { access: 'manager' } }, async (req) => {

@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext } from '../context.js';
-import { monitored, monitoredEpisodes } from '../db/schema.js';
+import { media, monitored, monitoredEpisodes, type MediaKind } from '../db/schema.js';
 import { findVideos } from '../arr/importer.js';
 import type { MonitoredRow } from '../arr/monitor.js';
 import { renderName } from '../arr/naming.js';
@@ -157,6 +157,23 @@ export function locateFolder(ctx: AppContext, row: MonitoredRow): { folder: stri
     }
   }
   return byName;
+}
+
+/**
+ * A title as it sits on disk: its monitored row with the folder filled in when one is found. For a
+ * title Cinemask doesn't manage, a stand-in row built from its details, so its folder and trailers
+ * can still be shown. Null when there's no folder.
+ */
+export function titleOnDisk(ctx: AppContext, kind: MediaKind, tmdbId: number): MonitoredRow | null {
+  let row = ctx.db.select().from(monitored).where(and(eq(monitored.kind, kind), eq(monitored.tmdbId, tmdbId))).get() ?? null;
+  if (!row) {
+    const m = ctx.db.select().from(media).where(and(eq(media.kind, kind), eq(media.tmdbId, tmdbId))).get();
+    if (!m) return null;
+    row = { id: 0, kind, tmdbId, title: m.title, year: m.year, rootId: null, path: null, filePath: null, fileQuality: null } as MonitoredRow;
+  }
+  if (row.path && fs.existsSync(row.path)) return row;
+  const found = locateFolder(ctx, row);
+  return found ? { ...row, path: found.folder, rootId: found.rootId === 'default' ? null : found.rootId } : null;
 }
 
 /**

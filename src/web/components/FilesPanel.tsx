@@ -157,7 +157,7 @@ function RemoveModal({ mon, onClose }: { mon: MonitoredView; onClose: () => void
  * A title on Plex or Jellyfin that Cinemask doesn't manage yet. Managing it finds its folder, so the
  * files can be deleted, renamed and upgraded. Nothing is searched for.
  */
-function StartManaging({ m }: { m: MediaDetail }) {
+function StartManaging({ m, folder }: { m: MediaDetail; folder: string | null }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -178,11 +178,16 @@ function StartManaging({ m }: { m: MediaDetail }) {
   };
   return (
     <section className="card space-y-3">
-      <h2 className="font-semibold">Files</h2>
-      <p className="text-sm text-muted">This is on your media server, but Cinemask isn't managing its files yet. Manage it to delete, rename or upgrade them. Nothing is downloaded.</p>
+      <div>
+        <h2 className="font-semibold">Files</h2>
+        <div className="break-all text-xs text-muted">{folder ?? 'No folder for this title was found in your media folders (Settings → Media management).'}</div>
+      </div>
+      <p className="text-sm text-muted">
+        This is on your media server, but Cinemask isn't managing it yet. Manage it to delete, rename or upgrade the files, search for releases and download a trailer. Nothing is downloaded until you ask.
+      </p>
       {error && <Alert>{error}</Alert>}
-      <button className="btn-secondary" disabled={busy} onClick={start}>
-        {busy ? 'Finding the files…' : 'Manage files'}
+      <button className="btn-primary" disabled={busy} onClick={start}>
+        {busy ? 'Finding the files…' : `Manage this ${m.kind === 'movie' ? 'movie' : 'show'}`}
       </button>
     </section>
   );
@@ -192,7 +197,7 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
   const { me } = useAuth();
   const qc = useQueryClient();
   const isManager = hasRole(me, 'manager');
-  const lookup = useQuery({ queryKey: ['lookup', m.kind, m.tmdbId], queryFn: () => api<{ monitored: MonitoredView | null }>(`/api/monitored/lookup/${m.kind}/${m.tmdbId}`), enabled: isManager });
+  const lookup = useQuery({ queryKey: ['lookup', m.kind, m.tmdbId], queryFn: () => api<{ monitored: MonitoredView | null; folder?: string | null }>(`/api/monitored/lookup/${m.kind}/${m.tmdbId}`), enabled: isManager });
   const mon = lookup.data?.monitored && 'episodes' in lookup.data.monitored ? lookup.data.monitored : null;
   const files = useQuery({ queryKey: ['files', mon?.id], queryFn: () => api<{ folder: string | null; files: FileEntry[]; totalSize: number }>(`/api/monitored/${mon!.id}/files`), enabled: Boolean(mon) });
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
@@ -205,7 +210,7 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
   const [matching, setMatching] = useState(false);
   const navigate = useNavigate();
   if (!isManager) return null;
-  if (!mon) return lookup.data && (m.availability.status === 'on_server' || m.availability.status === 'partial') ? <StartManaging m={m} /> : null;
+  if (!mon) return lookup.data && (m.availability.status === 'on_server' || m.availability.status === 'partial') ? <StartManaging m={m} folder={lookup.data.folder ?? null} /> : null;
 
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] }), qc.invalidateQueries({ queryKey: ['files', mon.id] })]);
   const run = async (fn: () => Promise<unknown>, success: string | ((r: never) => string)) => {

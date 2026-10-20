@@ -69,5 +69,5 @@ See [CLAUDE.md](CLAUDE.md) for architecture and conventions.
 
 ## Releasing
 
-Update [CHANGELOG.md](CHANGELOG.md) and the version in `package.json`, then push a tag like `v0.10.0` (no dot after the `v`). The release workflow runs the tests, publishes `ghcr.io/spacegoose02/cinemask` as `0.10.0`, `0.10` and `latest` for amd64 and arm64, and creates the GitHub release from the changelog.
+Update [CHANGELOG.md](CHANGELOG.md) and the version in `package.json`, then push a tag like `v0.10.2` (no dot after the `v`), or publish a release with that tag on GitHub. The image takes its version from the tag. The release workflow runs the tests, publishes `ghcr.io/spacegoose02/cinemask` as `0.10.0`, `0.10` and `latest` for amd64 and arm64, and creates the GitHub release from the changelog.
 

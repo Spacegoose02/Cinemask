@@ -52,7 +52,8 @@ const hms = (t: string) => t.split(':').reduce((acc, n, i, all) => acc + Number(
 async function request(service: string, url: string, init: RequestInit = {}): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(url, { ...init, signal: AbortSignal.timeout(20_000) });
+    // A named client: some proxies in front of download clients turn away fetch's default agent.
+    res = await fetch(url, { ...init, headers: { 'user-agent': 'Cinemask', ...(init.headers as Record<string, string> | undefined) }, signal: AbortSignal.timeout(20_000) });
   } catch {
     throw new IntegrationError(service, 'could not connect');
   }
@@ -75,22 +76,30 @@ class QBittorrent implements DownloadClient {
   constructor(private readonly c: ClientConfig) {}
 
   private async login() {
+    // No Referer or Origin: behind a reverse proxy (https://torrent.example.com) qBittorrent's
+    // cross-site check compares them with the Host it sees, which can differ, and rejects the
+    // sign-in. Sent without either, the check passes, as it does for Sonarr and Radarr.
     const res = await request(this.c.name, `${base(this.c.url)}/api/v2/auth/login`, {
       method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', Referer: base(this.c.url) },
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ username: this.c.username ?? '', password: this.c.password ?? '' }),
     });
-    // Too many failed sign-ins and qBittorrent bans the address for a while.
-    if (res.status === 403) throw new IntegrationError(this.c.name, 'too many failed sign-ins, so qBittorrent has blocked Cinemask for now (restart qBittorrent or wait, then check the username and password)', 403);
+    const text = (await res.text()).trim();
+    if (res.status === 403 && /banned/i.test(text)) throw new IntegrationError(this.c.name, 'too many failed sign-ins, so qBittorrent has blocked Cinemask for now (restart qBittorrent or wait, then check the username and password)', 403);
+    if (res.status === 401 || res.status === 403) {
+      // An HTML page is a proxy or firewall in front of qBittorrent (Cloudflare, Authelia…), not qBittorrent itself.
+      if (/<html/i.test(text)) throw new IntegrationError(this.c.name, `the sign-in was blocked before it reached qBittorrent (HTTP ${res.status} from a proxy in front of it). Use qBittorrent's local address, such as http://192.168.1.10:8080, or let Cinemask through the proxy`, res.status);
+      throw new IntegrationError(this.c.name, `qBittorrent refused the sign-in (HTTP ${res.status}). If it's behind a reverse proxy, turn on "Enable reverse proxy support" in its Web UI settings, or use its local address`, res.status);
+    }
     ensureOk(this.c.name, res);
     // qBittorrent 5.2+ answers a good sign-in with 204 and no body; older versions say "Ok." and a bad one "Fails.".
-    if (res.status !== 204 && (await res.text()).trim() !== 'Ok.') throw new IntegrationError(this.c.name, 'login was rejected');
+    if (res.status !== 204 && text !== 'Ok.') throw new IntegrationError(this.c.name, 'login was rejected: check the username and password');
     this.cookie = res.headers.get('set-cookie')?.split(';')[0] ?? null;
   }
 
   private async call(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
     if (!this.cookie) await this.login();
-    const res = await request(this.c.name, `${base(this.c.url)}/api/v2${path}`, { ...init, headers: { ...init.headers, Cookie: this.cookie ?? '', Referer: base(this.c.url) } });
+    const res = await request(this.c.name, `${base(this.c.url)}/api/v2${path}`, { ...init, headers: { ...init.headers, Cookie: this.cookie ?? '' } });
     if (res.status === 403 && retry) {
       this.cookie = null;
       return this.call(path, init, false);

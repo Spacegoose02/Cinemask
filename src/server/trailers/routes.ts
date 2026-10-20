@@ -1,10 +1,11 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
 import { MEDIA_KINDS, monitored } from '../db/schema.js';
+import { titleOnDisk } from '../files/service.js';
 import { upstream } from '../library/routes.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
@@ -66,7 +67,8 @@ export async function trailerRoutes(app: FastifyInstance) {
   // ---------------- Watching trailers already on disk ----------------
   const titleParams = z.object({ kind: z.enum(MEDIA_KINDS), tmdbId: z.coerce.number().int().positive() });
   const localTrailers = (kind: (typeof MEDIA_KINDS)[number], tmdbId: number) => {
-    const row = ctx.db.select().from(monitored).where(and(eq(monitored.kind, kind), eq(monitored.tmdbId, tmdbId))).get();
+    // Titles Cinemask doesn't manage count too: their folder is found in the media folders.
+    const row = titleOnDisk(ctx, kind, tmdbId);
     return row ? existingTrailers(ctx, row) : [];
   };
 
