@@ -20,6 +20,8 @@ function toPublic(u: UserRow) {
     role: u.role,
     isOwner: u.isOwner,
     disabled: u.disabled,
+    autoApproveMovies: u.autoApproveMovies,
+    autoApproveShows: u.autoApproveShows,
     hasPassword: Boolean(u.passwordHash),
     linked: { oidc: Boolean(u.oidcSubject), plex: Boolean(u.plexId) },
     locked: u.lockedUntil !== null && u.lockedUntil > Date.now(),
@@ -88,6 +90,8 @@ export async function userRoutes(app: FastifyInstance) {
         disabled: z.boolean().optional(),
         password: z.string().optional(),
         unlock: z.boolean().optional(),
+        autoApproveMovies: z.boolean().optional(),
+        autoApproveShows: z.boolean().optional(),
       }),
       req.body,
     );
@@ -102,6 +106,8 @@ export async function userRoutes(app: FastifyInstance) {
     if (body.email !== undefined) patch.email = body.email || null;
     if (body.role !== undefined) patch.role = body.role;
     if (body.disabled !== undefined) patch.disabled = body.disabled;
+    if (body.autoApproveMovies !== undefined) patch.autoApproveMovies = body.autoApproveMovies;
+    if (body.autoApproveShows !== undefined) patch.autoApproveShows = body.autoApproveShows;
     if (body.unlock) Object.assign(patch, { failedLogins: 0, lockedUntil: null });
     if (body.password !== undefined) {
       const problem = passwordProblem(body.password, target.username);

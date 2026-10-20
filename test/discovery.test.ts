@@ -221,6 +221,9 @@ describe('discovery, lists, collections, posters and trailers', () => {
     expect((await owner.req('POST', '/api/collections/import', { server: 'plex' })).json()).toEqual({ imported: 1, updated: 0 });
     const list = (await kid.req('GET', '/api/collections')).json();
     expect(list[0]).toMatchObject({ name: 'Bear Films', poster: 'plex:/library/metadata/900/thumb/1', itemCount: 1, library: 'Movies' });
+    // Items copied from Plex show the title's TMDB poster.
+    t.app.ctx.dbHandle.sqlite.prepare(`UPDATE media SET poster_path = '/old.jpg' WHERE kind = 'movie' AND tmdb_id = 999`).run();
+    expect((await kid.req('GET', `/api/collections/${list[0].id}`)).json().items[0].posterPath).toBe('/old.jpg');
     const img = await kid.req('GET', `/api/images?src=${encodeURIComponent(list[0].poster)}`);
     expect(img.statusCode).toBe(200);
     expect(img.headers['content-type']).toBe('image/png');

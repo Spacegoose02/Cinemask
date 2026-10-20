@@ -20,6 +20,9 @@ export const users = sqliteTable('users', {
   lastLoginAt: integer('last_login_at'),
   homeLayout: text('home_layout'), // JSON HomeRow[]; null means the default layout
   theme: text('theme'), // null means the browser's last choice (dark by default)
+  // A user's requests of that kind download without a manager's approval.
+  autoApproveMovies: integer('auto_approve_movies', { mode: 'boolean' }).notNull().default(false),
+  autoApproveShows: integer('auto_approve_shows', { mode: 'boolean' }).notNull().default(false),
 });
 
 export const sessions = sqliteTable(

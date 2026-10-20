@@ -4,6 +4,15 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-20
+
+### Added
+- Settings → Users: "Downloads without approval" lets an admin trust a user with movies, shows or both. That user's requests of that kind are approved and searched straight away.
+
+### Fixed
+- Users had no Request button on a movie or show that's monitored but not on the server yet. They can now request it, and approving the request keeps the title's quality profile and adds the requested seasons to the ones already monitored.
+- Collections copied from Plex or Jellyfin showed titles without posters. Their items now use each title's TMDB poster.
+
 ## [0.11.2] - 2026-10-20
 
 ### Added
