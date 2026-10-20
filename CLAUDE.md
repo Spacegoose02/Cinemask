@@ -14,9 +14,10 @@ The app is called **Cinemask** (raccoon mascot). The head logo is the app icon (
   - `arr/`: the download engine (release parser, quality profiles, indexers, download clients, search, tracker, importer, naming).
   - `files/`: rename, rescan and delete for monitored titles. **Every file operation goes through `insideRoot()`** so nothing outside the configured media folders can be touched.
   - `books/`: book and audiobook requests (Open Library metadata), downloads through Shelfmark or the indexers, imports as `Author/Title (Year)`, and the Audiobookshelf mirror (`abs_items`) plus podcasts (Apple directory, subscribed through Audiobookshelf).
+  - `api/`: `/api/openapi.json` (generated from the registered routes) and `/api/stats`. `notify/`: webhook events. `auth/apikeys.ts`: API keys; the guard decides which routes accept them (`config.apiKey`, default no for admin/owner and all of `/api/auth/*`).
   - `calendar/` and `health/`: the calendar feed and the Settings → Health checks.
   - `jobs/scheduler.ts`: all background jobs (backups, library sync, download tracking, RSS, health).
-- `src/web`: React + Vite + TanStack Query + Tailwind v4. Theme colours are CSS variables in `styles.css`; new themes only redefine them.
+- `src/web`: React + Vite + TanStack Query + Tailwind v4. Theme colours are CSS variables in `styles.css`; new themes only redefine them (add the name to `lib/theme.ts` and `THEME_NAMES` in `auth/apikey-routes.ts`). Don't start client routes with `/api`, which the server reserves.
 - `test/`: Vitest. `helpers.ts` has a browser-like `Client` that keeps cookies and sends CSRF headers.
 
 ## Rules that keep the app secure

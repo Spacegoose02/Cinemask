@@ -2,33 +2,38 @@
 
 # Cinemask
 
-A self-hosted media manager for families running Plex or Jellyfin, in the spirit of Sonarr, Radarr and Overseerr, in one app with real user accounts.
+A self-hosted media manager for families running Plex or Jellyfin. It does what Sonarr, Radarr and Overseerr do, plus books and audiobooks, in one app with real user accounts, single sign-on and backups.
 
-> **Status:** early development. Phase 0 and 1 (foundations, accounts, security and backups) are built. See [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
+> **Status:** beta (0.9). Every phase of the [roadmap](docs/ROADMAP.md) is built and covered by automated tests. The integrations with Plex, Jellyfin, TMDB, indexers, download clients, Audiobookshelf and Shelfmark are tested against simulated services; please [report anything](https://github.com/Spacegoose02/cinemask/issues) that behaves differently with the real thing.
 
-## What works today
+## Features
 
-- **First-run setup** creates the owner account. There is no default password.
-- **User levels:** Admin (the owner is the first admin), Manager and User, enforced on every API call.
-- **Sign-in:** username and password (Argon2id), single sign-on with any OpenID Connect provider (tinyauth, Authelia, Authentik, Keycloak, Pocket ID), and Sign in with Plex.
-- **One Settings page** with tabs. API keys and passwords for integrations are encrypted at rest and only admins can change them. They are never sent back to the browser.
-- **Backups:** nightly by default, on demand, before every upgrade and before every restore. They can be encrypted with a passphrase and copied to another folder or S3-compatible storage. Restore from the list or from an uploaded file.
-- **Activity log** of sign-ins, user changes, settings changes and backups.
+**For the family**
+- Search, browse and **request** movies and shows, see what's already on Plex or Jellyfin, and follow your requests.
+- **Discover** by genre, network, streaming service, year, rating and language, with trending and popular rows.
+- A personal **home page** with rows you choose, a **calendar** of upcoming releases, **collections** and **lists**.
+- **Books**: request audiobooks and ebooks, browse your Audiobookshelf library, and find podcasts.
+- Five **themes** (Dark, Light, Retro, Futuristic, 16-bit) and a phone-friendly layout you can install to your home screen.
+
+**For whoever runs it**
+- **Downloads** like Sonarr and Radarr: indexers (or Prowlarr), quality profiles, automatic and manual search, RSS, nine download clients, renaming, hardlinked imports, failed-download retries and a blocklist.
+- **Library management**: rescan, rename, delete files or seasons, per-episode monitoring, posters and trailers pushed to Plex and Jellyfin.
+- **Collections** synced to Plex and Jellyfin, from TMDB collections, lists or by hand.
+- **Lists** from mdblist, TMDB, saved Discover searches and CSV exports (Yamtrack, IMDb, Letterboxd), with optional auto-download.
+- **Books**: downloads through Shelfmark or your indexers, imported into Audiobookshelf's folder layout.
+- **Health** checks for every connection, disk space, hardlinks, failed downloads and backups.
+- An **API** with per-user keys, an OpenAPI description, and **Home Assistant** sensors and webhooks.
+
+**Security first**
+- Three roles (User, Manager, Admin) checked on every request, deny by default.
+- Passwords hashed with Argon2id, account lockout, rate-limited sign-in, CSRF protection, strict Content Security Policy.
+- Single sign-on with any OpenID Connect provider (Authelia, Authentik, Pocket ID, Keycloak, …) and Sign in with Plex.
+- Integration secrets encrypted at rest and never sent to the browser. Every file operation is confined to your media folders.
+- Automatic, optionally encrypted backups with off-server copies, and a backup before every upgrade.
+
+See [SECURITY.md](SECURITY.md) for the full model.
 
 ## Install
-
-### Unraid
-
-Add the template from `unraid/cinemask.xml` (Docker tab, Add Container, Template URL), or use the settings below:
-
-| Setting | Value |
-|---|---|
-| Repository | `ghcr.io/spacegoose02/cinemask:latest` |
-| Port | `7979` |
-| `/config` | `/mnt/user/appdata/cinemask` |
-| `PUID` / `PGID` | `99` / `100` |
-
-### Docker Compose
 
 ```yaml
 services:
@@ -42,41 +47,27 @@ services:
       - TZ=America/New_York
     volumes:
       - ./config:/config
+      - /srv/data/downloads:/downloads
+      - /srv/data/media:/media
 ```
 
-Open `http://<server>:7979` and create the owner account.
+Open `http://<server>:7979` and create the owner account. On Unraid, add the template `https://raw.githubusercontent.com/Spacegoose02/cinemask/main/unraid/cinemask.xml`.
 
-### Environment variables
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `PORT` | `7979` | Web port |
-| `PUID` / `PGID` | `99` / `100` | User the app runs as |
-| `TZ` | UTC | Time zone for schedules |
-| `TRUST_PROXY` | `false` | Set `true` only behind a reverse proxy, so sign-in rate limits see real client IPs |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-
-## Single sign-on
-
-1. In **Settings → General**, set the public URL (for example `https://media.example.com`).
-2. In your provider, create a client with redirect URL `https://media.example.com/api/auth/oidc/callback`.
-3. In **Settings → Sign-in**, enter the issuer URL, client ID and secret.
-4. Optionally map provider groups to Admin and Manager, and limit sign-in to an allowed group.
-
-New SSO accounts can start as User or Manager, never Admin. Admin comes only from the owner or an admin group mapping. The owner can always sign in with a password, so a broken SSO setup can't lock you out.
-
-## Backups
-
-Backups live in `/config/backups`. Each archive holds the database and the instance key (`secret.key`) that decrypts stored API keys, so treat backup files like passwords. Set a passphrase in **Settings → Backups** before copying backups off the server.
+**Guides:** [Install and first run](docs/install.md) · [Reverse proxy](docs/reverse-proxy.md) · [Single sign-on](docs/sso.md) · [Home Assistant](docs/home-assistant.md) · [API](docs/api.md) · [Unraid](docs/unraid.md) · [Changelog](CHANGELOG.md)
 
 ## Development
 
 ```bash
 npm install
 npm run dev        # API on :7979, UI on :5173 with hot reload
-npm test           # API and security tests
+npm test           # API, security and integration tests
 npm run lint
 npm run typecheck
 ```
 
-See [CLAUDE.md](CLAUDE.md) for architecture and conventions, and [SECURITY.md](SECURITY.md) for the security model.
+See [CLAUDE.md](CLAUDE.md) for architecture and conventions.
+
+## Releasing
+
+Update [CHANGELOG.md](CHANGELOG.md) and the version in `package.json`, then push a tag like `v0.9.0`. The release workflow runs the tests, publishes `ghcr.io/spacegoose02/cinemask` as `0.9.0`, `0.9` and `latest` for amd64 and arm64, and creates the GitHub release from the changelog.
+

@@ -8,8 +8,9 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/Spacegoose02/cinemask/issues</Support>
   <Project>https://github.com/Spacegoose02/cinemask</Project>
-  <Overview>Self-hosted family media manager for Plex and Jellyfin households: requests, downloads, collections and more, with proper user accounts, single sign-on and backups.</Overview>
-  <Category>MediaApp:Video MediaServer:Video Tools:</Category>
+  <Overview>Self-hosted family media manager for Plex and Jellyfin households. Requests and downloads like Overseerr, Sonarr and Radarr, plus collections, lists, a calendar, books and audiobooks (Audiobookshelf, Shelfmark), with real user accounts, single sign-on, API keys, Home Assistant support and automatic backups.</Overview>
+  <Changes>See https://github.com/Spacegoose02/cinemask/blob/main/CHANGELOG.md</Changes>
+  <Category>MediaApp:Video MediaApp:Books Downloaders: Tools:</Category>
   <WebUI>http://[IP]:[PORT:7979]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Spacegoose02/cinemask/main/unraid/cinemask.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Spacegoose02/cinemask/main/docs/icon.png</Icon>
@@ -21,6 +22,7 @@
   <Config Name="Remote backups (optional)" Target="/remote-backups" Default="" Mode="rw" Description="Optional second share for backup copies. Set Settings, Backups, Remote copy to folder /remote-backups." Type="Path" Display="always" Required="false" Mask="false"/>
   <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID the app runs as" Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
   <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID the app runs as" Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
+  <Config Name="UMASK" Target="UMASK" Default="002" Mode="" Description="Permissions for imported media, so Plex, Jellyfin and Audiobookshelf can read it. /config stays private either way." Type="Variable" Display="advanced" Required="false" Mask="false">002</Config>
   <Config Name="TZ" Target="TZ" Default="America/New_York" Mode="" Description="Time zone, used for backup schedules and the calendar" Type="Variable" Display="advanced" Required="false" Mask="false">America/New_York</Config>
   <Config Name="Trust reverse proxy" Target="TRUST_PROXY" Default="false" Mode="" Description="Set to true only when the app is behind a reverse proxy (SWAG, Nginx Proxy Manager, Traefik)" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
 </Container>
