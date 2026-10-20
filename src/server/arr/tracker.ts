@@ -54,7 +54,8 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
     const client = createClient({ type: c.type as DownloadClientType, name: c.name, url: c.url, username: c.username, password: openSecret(ctx, c.password) });
     let items: ClientItem[];
     try {
-      items = (await Promise.all(categories.map((cat) => client.list(cat)))).flat();
+      const ids = active.filter((x) => x.clientId === cid && x.downloadId).map((x) => x.downloadId!);
+      items = (await Promise.all(categories.map((cat, i) => client.list(cat, i === 0 ? ids : [])))).flat();
     } catch {
       continue; // client offline; try next time
     }

@@ -32,7 +32,8 @@ export interface DownloadClient {
   test(): Promise<string>;
   /** Returns the client's id for the item when it is known straight away. */
   add(url: string, opts: AddOptions): Promise<string | null>;
-  list(category: string): Promise<ClientItem[]>;
+  /** Items in the category, plus any of `ids` (the client's own ids) wherever they ended up. */
+  list(category: string, ids?: string[]): Promise<ClientItem[]>;
   remove(id: string, deleteData: boolean): Promise<void>;
 }
 
@@ -475,20 +476,29 @@ class Sabnzbd implements DownloadClient {
   }
 
   async add(url: string, o: AddOptions) {
-    const r = await this.api<{ nzo_ids?: string[] }>({ mode: 'addurl', name: url, cat: o.category, nzbname: `${o.title} {{${o.tag}}}` });
+    // Not "{{tag}}": SABnzbd reads {{…}} in a name as the archive password and strips it.
+    const r = await this.api<{ nzo_ids?: string[] }>({ mode: 'addurl', name: url, cat: o.category, nzbname: `${o.title} [${o.tag}]` });
     return r.nzo_ids?.[0] ?? null;
   }
 
-  async list(category: string) {
-    const q = await this.api<{ queue: { slots: { nzo_id: string; filename: string; percentage: string; status: string; mb: string; cat: string; timeleft?: string }[] } }>({ mode: 'queue', cat: category });
-    const h = await this.api<{ history: { slots: { nzo_id: string; name: string; status: string; storage: string; bytes: number; category: string; fail_message: string }[] } }>({
-      mode: 'history',
-      category,
-      limit: '100',
-    });
-    const tagOf = (n: string) => /\{\{(mm-\d+)\}\}/.exec(n)?.[1];
+  async list(category: string, ids: string[] = []) {
+    type Queue = { queue: { slots: { nzo_id: string; filename: string; percentage: string; status: string; mb: string; cat: string; timeleft?: string }[] } };
+    type History = { history: { slots: { nzo_id: string; name: string; status: string; storage: string; bytes: number; category: string; fail_message: string }[] } };
+    // Asking by id as well finds jobs whose category SABnzbd changed (an unknown category becomes the default one)
+    // and jobs that fell past the history page.
+    const byId = ids.length ? { nzo_ids: ids.join(',') } : null;
+    const [q, h, qIds, hIds] = await Promise.all([
+      this.api<Queue>({ mode: 'queue', cat: category }),
+      this.api<History>({ mode: 'history', category, limit: '100' }),
+      byId ? this.api<Queue>({ mode: 'queue', ...byId }) : null,
+      byId ? this.api<History>({ mode: 'history', ...byId }) : null,
+    ]);
+    const tagOf = (n: string) => /\[(mm-\d+)\]|\{\{(mm-\d+)\}\}/.exec(n)?.slice(1).find(Boolean);
+    const seen = new Set<string>();
+    const queue = [...q.queue.slots, ...(qIds?.queue.slots ?? [])].filter((s) => !seen.has(s.nzo_id) && seen.add(s.nzo_id));
+    const history = [...h.history.slots, ...(hIds?.history.slots ?? [])].filter((s) => !seen.has(s.nzo_id) && seen.add(s.nzo_id));
     return [
-      ...q.queue.slots.map((s): ClientItem => ({
+      ...queue.map((s): ClientItem => ({
         id: s.nzo_id,
         name: s.filename,
         progress: Number(s.percentage) / 100,
@@ -498,10 +508,11 @@ class Sabnzbd implements DownloadClient {
         tags: [s.cat, tagOf(s.filename)].filter((x): x is string => Boolean(x)),
         eta: s.status === 'Downloading' && s.timeleft ? etaOf(hms(s.timeleft)) : undefined,
       })),
-      ...h.history.slots.map((s): ClientItem => ({
+      ...history.map((s): ClientItem => ({
         id: s.nzo_id,
         name: s.name,
-        progress: s.status === 'Completed' ? 1 : 0,
+        // Anything else in the history (Verifying, Repairing, Extracting, Moving, Running) is downloaded and being unpacked.
+        progress: s.status === 'Failed' ? 0 : 1,
         status: s.status === 'Completed' ? 'completed' : s.status === 'Failed' ? 'failed' : 'downloading',
         size: s.bytes,
         outputPath: s.storage || null,
