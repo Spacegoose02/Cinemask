@@ -127,3 +127,14 @@ export const jellyfinRoutes = {
           ],
         },
 };
+
+/** A request body as text; form uploads read like a query string, with files shown by name. */
+export function bodyText(body: unknown): string {
+  if (!(body instanceof FormData)) return String(body);
+  const p = new URLSearchParams();
+  for (const [k, v] of body.entries()) p.append(k, typeof v === 'string' ? v : v.name);
+  return p.toString();
+}
+
+/** A tiny .torrent file, as an indexer would serve it. */
+export const torrentFile = () => new Response('d4:infod4:name4:testee', { headers: { 'content-type': 'application/x-bittorrent' } });

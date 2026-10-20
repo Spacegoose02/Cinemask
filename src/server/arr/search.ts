@@ -8,7 +8,7 @@ import { CATEGORIES, searchIndexer, type IndexerConfig, type Release, type Searc
 import { wantedTarget, type MonitoredRow } from './monitor.js';
 import { getProfile } from './profiles.js';
 import { parseRelease } from './parser.js';
-import { openSecret } from './secrets.js';
+import { openSecret, sealSecret } from './secrets.js';
 import { rootOf } from './roots.js';
 import { notify } from '../notify/service.js';
 
@@ -45,7 +45,7 @@ function activeDownloads(ctx: AppContext, monitoredId: number) {
   return ctx.db
     .select()
     .from(downloads)
-    .where(and(eq(downloads.monitoredId, monitoredId), inArray(downloads.status, ['queued', 'downloading', 'paused', 'completed', 'importing'])))
+    .where(and(eq(downloads.monitoredId, monitoredId), inArray(downloads.status, ['held', 'queued', 'downloading', 'paused', 'completed', 'importing'])))
     .all();
 }
 
@@ -244,7 +244,12 @@ export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: De
     if (active.length) return 0;
     const best = bestDecision(decisions);
     if (!best) return 0;
-    await grabWithWarning(ctx, row, best);
+    try {
+      await grabWithWarning(ctx, row, best);
+    } catch (err) {
+      if (best.oversize !== null && ctx.settings.get('downloading').oversize === 'skip') return 0;
+      throw err;
+    }
     return 1;
   }
   const taken = new Set<string>();
@@ -270,9 +275,53 @@ export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: De
   return grabbed;
 }
 
-/** Grabs an automatic pick. One over the size limit (only picked when nothing smaller was found) is flagged. */
+/**
+ * Grabs an automatic pick. One over the size limit (only picked when nothing smaller was found) is
+ * grabbed with a warning, held for a manager to confirm, or skipped (Settings → Media management).
+ */
 async function grabWithWarning(ctx: AppContext, row: MonitoredRow, d: Decision) {
   const warning = d.oversize !== null ? oversizeWarning(ctx, row, d) : null;
+  const mode = ctx.settings.get('downloading').oversize;
+  if (warning && mode === 'skip') throw new Error('Only releases over the size limit were found');
+  if (warning && mode === 'ask') {
+    holdRelease(ctx, d, row, warning);
+    notify(ctx, { event: 'download.warning', title: 'Confirm a big download', message: `${row.title}: ${warning} It waits on Downloads until you confirm it.`, data: { kind: row.kind, tmdbId: row.tmdbId, release: d.release.title } });
+    return;
+  }
   await grab(ctx, d.release, row, { covers: d.covers, quality: d.parsed.quality, warning });
   if (warning) notify(ctx, { event: 'download.warning', title: 'Download over the size limit', message: `${row.title}: ${warning}`, data: { kind: row.kind, tmdbId: row.tmdbId, release: d.release.title } });
+}
+
+/** Records an oversize pick as "held" on Downloads; nothing is sent to a client until it's confirmed. */
+function holdRelease(ctx: AppContext, d: Decision, row: MonitoredRow, warning: string) {
+  ctx.db
+    .insert(downloads)
+    .values({
+      monitoredId: row.id,
+      episodes: d.covers ? JSON.stringify(d.covers) : null,
+      title: d.release.title,
+      quality: d.parsed.quality,
+      size: d.release.size,
+      protocol: d.release.protocol,
+      indexer: d.release.indexer,
+      status: 'held',
+      warning,
+      heldRelease: sealSecret(ctx, JSON.stringify(d.release)),
+      addedAt: Date.now(),
+    })
+    .run();
+}
+
+/** Sends a held release to the download client. The held row is replaced by the real download. */
+export async function confirmHeld(ctx: AppContext, id: number, userId: number | null): Promise<number> {
+  const held = ctx.db.select().from(downloads).where(and(eq(downloads.id, id), eq(downloads.status, 'held'))).get();
+  if (!held?.heldRelease || !held.monitoredId) throw new Error('That download is no longer waiting');
+  const row = ctx.db.select().from(monitored).where(eq(monitored.id, held.monitoredId)).get();
+  if (!row) throw new Error('The movie or show was removed');
+  const release = JSON.parse(openSecret(ctx, held.heldRelease)) as Release;
+  const covers = held.episodes ? (JSON.parse(held.episodes) as NonNullable<Decision['covers']>) : undefined;
+  // The held row stays until the client has the release, so a failed send can be tried again.
+  const newId = await grab(ctx, release, row, { covers, quality: held.quality ?? undefined, warning: held.warning, userId });
+  ctx.db.delete(downloads).where(eq(downloads.id, id)).run();
+  return newId;
 }

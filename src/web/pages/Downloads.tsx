@@ -32,6 +32,13 @@ function formatEta(sec: number): string {
   return m ? `${h} h ${m} min` : `${h} h`;
 }
 
+/** Seconds left: the client's own estimate, or worked out from the size, progress and speed. */
+function etaOf(d: DownloadRow): number | null {
+  if (d.eta !== null) return d.eta;
+  if (!d.speed || !d.size || d.progress >= 1) return null;
+  return (d.size * (1 - d.progress)) / d.speed;
+}
+
 /** Totals across the queue: how many, how big, how fast and how long. */
 function QueueTotals({ rows }: { rows: DownloadRow[] }) {
   if (!rows.length) return null;
@@ -39,8 +46,9 @@ function QueueTotals({ rows }: { rows: DownloadRow[] }) {
   const total = rows.reduce((n, r) => n + (r.size ?? 0), 0);
   const left = rows.reduce((n, r) => n + (r.size ?? 0) * (1 - r.progress), 0);
   const speed = rows.reduce((n, r) => n + (r.speed ?? 0), 0);
-  const etas = rows.filter((r) => r.status === 'downloading' && r.eta !== null).map((r) => r.eta!);
+  const etas = rows.filter((r) => r.status === 'downloading').map(etaOf).filter((e): e is number => e !== null);
   const parts = [
+    count('held') && `${count('held')} waiting for you`,
     `${count('downloading')} downloading`,
     count('queued') && `${count('queued')} queued`,
     count('paused') && `${count('paused')} paused`,
@@ -67,6 +75,21 @@ function QueueTotals({ rows }: { rows: DownloadRow[] }) {
   );
 }
 
+/** The bar, with the percentage done and the time left beside it. */
+function Progress({ d }: { d: DownloadRow }) {
+  const pct = Math.floor(d.progress * 1000) / 10;
+  const eta = d.status === 'downloading' ? etaOf(d) : null;
+  return (
+    <div className="flex items-center gap-3">
+      <div className="h-1.5 flex-1 overflow-hidden rounded bg-surface-2" role="progressbar" aria-valuenow={Math.round(d.progress * 100)} aria-valuemin={0} aria-valuemax={100}>
+        <div className="h-full bg-accent" style={{ width: `${d.progress * 100}%` }} />
+      </div>
+      <span className="shrink-0 text-xs tabular-nums text-muted">
+        {pct}%{eta !== null ? ` · ${formatEta(eta)} left` : ''}
+      </span>
+    </div>
+  );
+}
 
 interface FoundRelease {
   guid: string;
@@ -183,6 +206,16 @@ export function DownloadsPage() {
     refetchInterval: tab === 'queue' ? 5000 : false,
   });
 
+  const confirmHeld = async (d: DownloadRow) => {
+    setMsg(null);
+    try {
+      await api(`/api/downloads/${d.id}/confirm`, { method: 'POST' });
+    } catch (err) {
+      alert((err as Error).message);
+    }
+    await qc.invalidateQueries({ queryKey: ['downloads'] });
+  };
+
   const remove = async (d: DownloadRow, blocklist: boolean) => {
     if (!confirm(blocklist ? `Remove "${d.title}", blocklist it and look for another release?` : `Remove "${d.title}" from the queue and the download client?`)) return;
     await api(`/api/downloads/${d.id}?removeFromClient=true&blocklist=${blocklist}`, { method: 'DELETE' });
@@ -226,7 +259,6 @@ export function DownloadsPage() {
                     d.quality,
                     d.size ? formatBytes(d.size) : null,
                     tab === 'queue' && d.status === 'downloading' && d.speed ? `${formatBytes(d.speed)}/s` : null,
-                    tab === 'queue' && d.status === 'downloading' && d.eta !== null ? `${formatEta(d.eta)} left` : null,
                     d.protocol,
                     d.indexer,
                     formatDate(d.addedAt),
@@ -238,8 +270,18 @@ export function DownloadsPage() {
                 {d.warning && <div className="text-xs text-warning">{d.warning}</div>}
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs capitalize text-muted">{d.status}</span>
-                {tab === 'queue' && (
+                <span className={`text-xs ${d.status === 'held' ? 'text-warning' : 'capitalize text-muted'}`}>{d.status === 'held' ? 'Waiting for you' : d.status}</span>
+                {tab === 'queue' && d.status === 'held' && (
+                  <>
+                    <button className="btn-primary text-xs" onClick={() => void confirmHeld(d)}>
+                      Download anyway
+                    </button>
+                    <button className="btn-secondary text-xs" onClick={() => remove(d, false)}>
+                      Don't download
+                    </button>
+                  </>
+                )}
+                {tab === 'queue' && d.status !== 'held' && (
                   <>
                     <button className="btn-secondary text-xs" onClick={() => remove(d, false)}>
                       Remove
@@ -253,11 +295,7 @@ export function DownloadsPage() {
                 )}
               </div>
             </div>
-            {tab === 'queue' && (
-              <div className="h-1.5 overflow-hidden rounded bg-surface-2" role="progressbar" aria-valuenow={Math.round(d.progress * 100)} aria-valuemin={0} aria-valuemax={100}>
-                <div className="h-full bg-accent" style={{ width: `${Math.round(d.progress * 100)}%` }} />
-              </div>
-            )}
+            {tab === 'queue' && d.status !== 'held' && <Progress d={d} />}
           </li>
         ))}
         {list.data?.length === 0 && <li className="card text-sm text-muted">{tab === 'queue' ? 'Nothing downloading.' : 'No history yet.'}</li>}

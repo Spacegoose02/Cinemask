@@ -153,6 +153,7 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
   const res = useQuery({ queryKey: ['releases', monitoredId, season, episode], queryFn: () => api<{ releases: ReleaseRow[]; errors: string[] }>(`/api/monitored/${monitoredId}/releases${qs}`) });
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const grab = async (r: ReleaseRow) => {
+    if (r.oversize !== null && !confirm(`"${r.title}" is ${formatBytes(r.size)}, over the size limit. Download it anyway?`)) return;
     try {
       await api(`/api/monitored/${monitoredId}/grab`, { body: { guid: r.guid } });
       setMsg({ kind: 'success', text: `Sent "${r.title}" to the download client.` });

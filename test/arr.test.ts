@@ -10,7 +10,7 @@ import { rssSync } from '../src/server/arr/rss.js';
 import { maxSizeFor } from '../src/server/arr/search.js';
 import { ensureMedia } from '../src/server/library/service.js';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
-import { fakeFetch, tmdbRoutes } from './fakes.js';
+import { bodyText, fakeFetch, torrentFile, tmdbRoutes } from './fakes.js';
 
 const INDEXER = 'http://indexer.local';
 const QBIT = 'http://qbit.local:8080';
@@ -140,10 +140,11 @@ describe('request → download → import', () => {
                 { title: 'Paddington.2014.1080p.WEB-DL-NOSEED', seeders: 0 },
               ]),
         ),
+      [`${INDEXER}/dl/`]: torrentFile,
       [`${QBIT}/api/v2/auth/login`]: () => new Response('Ok.', { headers: { 'set-cookie': 'SID=abc; path=/' } }),
       [`${QBIT}/api/v2/app/version`]: () => new Response('v5.0.0'),
       [`${QBIT}/api/v2/torrents/add`]: (_u: URL, init?: RequestInit) => {
-        added.push(String(init?.body));
+        added.push(bodyText(init?.body));
         return new Response('Ok.');
       },
       [`${QBIT}/api/v2/torrents/info`]: () => qbitTorrents,
@@ -282,9 +283,10 @@ describe('request → download → import', () => {
     fakeFetch({
       ...tmdbRoutes,
       [`${INDEXER}/api`]: () => new Response(torznab(items)),
+      [`${INDEXER}/dl/`]: torrentFile,
       [`${QBIT}/api/v2/auth/login`]: () => new Response('Ok.', { headers: { 'set-cookie': 'SID=abc; path=/' } }),
       [`${QBIT}/api/v2/torrents/add`]: (_u: URL, init?: RequestInit) => {
-        added.push(String(init?.body));
+        added.push(bodyText(init?.body));
         return new Response('Ok.');
       },
       [`${QBIT}/api/v2/torrents/info`]: () => qbitTorrents,
@@ -308,6 +310,33 @@ describe('request → download → import', () => {
     const dl2 = (await owner.req('GET', '/api/downloads')).json()[0];
     expect(dl2.title).toBe('Paddington.2014.1080p.BluRay.x264-BIG');
     expect(dl2.warning).toMatch(/Bigger than the 2\.0 GB limit: 8\.0 GB/);
+  });
+
+  it('holds an oversize pick until a manager confirms it, or skips it, as set', async () => {
+    indexerReturns([{ title: 'Paddington.2014.1080p.BluRay.x264-BIG', size: 8 * 1024 ** 3, seeders: 90 }]);
+    await owner.req('PUT', '/api/settings/downloading', { maxMovieSizeGb: 4, oversize: 'skip' });
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149 })).json();
+    expect((await owner.req('POST', `/api/monitored/${m.id}/search`, {})).json().grabbed).toBe(0);
+    expect(grabbed()).toEqual([]);
+
+    await owner.req('PUT', '/api/settings/downloading', { oversize: 'ask' });
+    await owner.req('POST', `/api/monitored/${m.id}/search`, {});
+    const held = (await owner.req('GET', '/api/downloads')).json()[0];
+    expect(held).toMatchObject({ status: 'held', title: 'Paddington.2014.1080p.BluRay.x264-BIG' });
+    expect(held.heldRelease).toBeUndefined();
+    expect(added).toHaveLength(0);
+    // Searching again doesn't hold a second copy.
+    await owner.req('POST', `/api/monitored/${m.id}/search`, {});
+    expect(grabbed()).toHaveLength(1);
+
+    expect((await kid.req('POST', `/api/downloads/${held.id}/confirm`)).statusCode).toBe(403);
+    expect((await owner.req('POST', `/api/downloads/${held.id}/confirm`)).statusCode).toBe(200);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toContain('torrents=mm-');
+    const [sent] = (await owner.req('GET', '/api/downloads')).json();
+    expect(sent).toMatchObject({ status: 'queued', title: 'Paddington.2014.1080p.BluRay.x264-BIG' });
+    expect(sent.warning).toMatch(/Bigger than/);
+    expect((await owner.req('POST', `/api/downloads/${held.id}/confirm`)).statusCode).toBe(404);
   });
 
   it('puts titles in their own root folder with its own download category, and moves them between folders', async () => {
@@ -336,9 +365,10 @@ describe('request → download → import', () => {
   it('downloads a link under a chosen name into a chosen folder', async () => {
     fakeFetch({
       'http://files.example/clip.mkv': () => new Response('home video', { headers: { 'content-length': '10' } }),
+      [`${INDEXER}/dl/`]: torrentFile,
       [`${QBIT}/api/v2/auth/login`]: () => new Response('Ok.', { headers: { 'set-cookie': 'SID=abc; path=/' } }),
       [`${QBIT}/api/v2/torrents/add`]: (_u: URL, init?: RequestInit) => {
-        added.push(String(init?.body));
+        added.push(bodyText(init?.body));
         return new Response('Ok.');
       },
       [`${QBIT}/api/v2/torrents/info`]: () => qbitTorrents,
@@ -390,6 +420,7 @@ describe('request → download → import', () => {
     const removed: string[] = [];
     fakeFetch({
       [`${INDEXER}/api`]: () => new Response(torznab([{ title: 'Home.Movies.2020' }])),
+      [`${INDEXER}/dl/`]: torrentFile,
       [`${QBIT}/api/v2/auth/login`]: () => new Response('Ok.', { headers: { 'set-cookie': 'SID=abc; path=/' } }),
       [`${QBIT}/api/v2/torrents/add`]: () => new Response('Ok.'),
       [`${QBIT}/api/v2/torrents/delete`]: (_u: URL, init?: RequestInit) => (removed.push(String(init?.body)), new Response('')),
@@ -480,16 +511,29 @@ describe('episode size by length', () => {
   });
 });
 
+describe('torrent files', () => {
+  it('hashes the info dictionary the way clients do', async () => {
+    const { torrentHash } = await import('../src/server/arr/clients.js');
+    const { createHash } = await import('node:crypto');
+    const info = 'd6:lengthi5e4:name4:test12:piece lengthi16384e6:pieces0:e';
+    const file = Buffer.from(`d8:announce14:http://t.local4:info${info}e`);
+    expect(torrentHash(file)).toBe(createHash('sha1').update(info).digest('hex'));
+  });
+});
+
 describe('SABnzbd tracking', () => {
   afterEach(() => vi.unstubAllGlobals());
   const sab = () => createClient({ type: 'sabnzbd', name: 'SABnzbd', url: 'http://sab.local:8080', password: 'key' });
 
   it('finds a job by id after SABnzbd moved it to another category, and counts unpacking as downloaded', async () => {
     fakeFetch({
-      'http://sab.local:8080/api': (url) => {
+      'http://prowlarr.local/1/download': () => new Response('<nzb></nzb>', { headers: { 'content-type': 'application/x-nzb' } }),
+      'http://sab.local:8080/api': (url, init) => {
         const p = url.searchParams;
-        if (p.get('mode') === 'addurl') {
+        if (p.get('mode') === 'addfile') {
+          // Cinemask fetches the NZB itself and uploads it, so SABnzbd never needs to reach the indexer.
           expect(p.get('nzbname')).toBe('Paddington.2014.1080p');
+          expect(bodyText(init?.body)).toBe('name=Paddington.2014.1080p.nzb');
           return { status: true, nzo_ids: ['SABnzbd_nzo_a'] };
         }
         if (p.get('mode') === 'queue') return { queue: { slots: [] } };

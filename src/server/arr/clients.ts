@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { DownloadClientType } from '../db/schema.js';
 import { connectError, IntegrationError } from '../integrations/http.js';
 
@@ -66,6 +67,65 @@ function ensureOk(service: string, res: Response) {
   if (!res.ok) throw new IntegrationError(service, `responded with HTTP ${res.status}`, res.status);
 }
 
+/**
+ * Fetches a release's .torrent or .nzb here and hands the client the file, as Sonarr and Radarr do.
+ * Passing the link would make the client fetch it itself, which fails silently when the client
+ * can't reach the indexer (a VPN container, or a host name only Cinemask resolves). A link that
+ * redirects to a magnet comes back as that magnet.
+ */
+export async function fetchRelease(service: string, url: string): Promise<{ magnet: string } | { file: Buffer }> {
+  if (/^magnet:/i.test(url)) return { magnet: url };
+  let next = url;
+  for (let hop = 0; hop < 5; hop++) {
+    const res = await request(service, next, { redirect: 'manual' });
+    const location = res.headers.get('location');
+    if (res.status >= 300 && res.status < 400 && location) {
+      if (/^magnet:/i.test(location)) return { magnet: location };
+      next = new URL(location, next).toString();
+      continue;
+    }
+    if (!res.ok) throw new IntegrationError(service, `the indexer answered HTTP ${res.status} when fetching the release`, res.status);
+    const file = Buffer.from(await res.arrayBuffer());
+    if (file.length > 20 * 1024 * 1024) throw new IntegrationError(service, 'the release file is too big to be a .torrent or .nzb');
+    return { file };
+  }
+  throw new IntegrationError(service, 'too many redirects fetching the release');
+}
+
+/** The info hash of a .torrent file (SHA-1 of its bencoded "info" dictionary), or null if it can't be read. */
+export function torrentHash(file: Buffer): string | null {
+  // Walks the bencoding just far enough to find where the top-level "info" value starts and ends.
+  const skip = (i: number): number => {
+    const c = file[i];
+    if (c === 0x69) return file.indexOf(0x65, i) + 1; // i…e
+    if (c === 0x6c || c === 0x64) {
+      i++;
+      while (file[i] !== 0x65) {
+        if (i >= file.length) throw new Error('truncated');
+        i = skip(i);
+      }
+      return i + 1;
+    }
+    const colon = file.indexOf(0x3a, i);
+    if (colon < 0) throw new Error('bad string');
+    return colon + 1 + Number(file.subarray(i, colon).toString('latin1'));
+  };
+  try {
+    if (file[0] !== 0x64) return null;
+    let i = 1;
+    while (i < file.length && file[i] !== 0x65) {
+      const keyEnd = skip(i);
+      const key = file.subarray(file.indexOf(0x3a, i) + 1, keyEnd).toString('latin1');
+      const valueEnd = skip(keyEnd);
+      if (key === 'info') return createHash('sha1').update(file.subarray(keyEnd, valueEnd)).digest('hex');
+      i = valueEnd;
+    }
+  } catch {
+    // not a torrent file
+  }
+  return null;
+}
+
 export function magnetHash(url: string): string | null {
   const m = /xt=urn:btih:([a-f0-9]{40}|[a-z2-7]{32})/i.exec(url);
   return m ? m[1]!.toLowerCase() : null;
@@ -115,9 +175,21 @@ class QBittorrent implements DownloadClient {
   }
 
   async add(url: string, o: AddOptions) {
-    const body = new URLSearchParams({ urls: url, category: o.category, tags: o.tag });
-    await this.call('/torrents/add', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body });
-    return magnetHash(url);
+    const got = await fetchRelease(this.c.name, url);
+    let res: Response;
+    if ('magnet' in got) {
+      const body = new URLSearchParams({ urls: got.magnet, category: o.category, tags: o.tag });
+      res = await this.call('/torrents/add', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body });
+    } else {
+      const form = new FormData();
+      form.append('torrents', new Blob([new Uint8Array(got.file)], { type: 'application/x-bittorrent' }), `${o.tag}.torrent`);
+      form.append('category', o.category);
+      form.append('tags', o.tag);
+      res = await this.call('/torrents/add', { method: 'POST', body: form });
+    }
+    // qBittorrent answers 200 "Fails." when it couldn't add the torrent (older versions) or 415 (newer).
+    if ((await res.text()).trim() === 'Fails.') throw new IntegrationError(this.c.name, "couldn't add the torrent (it may already be in qBittorrent, or the file isn't a valid torrent)");
+    return 'magnet' in got ? magnetHash(got.magnet) : torrentHash(got.file);
   }
 
   async list(category: string) {
@@ -174,7 +246,9 @@ class Transmission implements DownloadClient {
   }
 
   async add(url: string, o: AddOptions) {
-    const r = await this.rpc<{ 'torrent-added'?: { hashString: string }; 'torrent-duplicate'?: { hashString: string } }>('torrent-add', { filename: url, labels: [o.category, o.tag] });
+    const got = await fetchRelease(this.c.name, url);
+    const source = 'magnet' in got ? { filename: got.magnet } : { metainfo: got.file.toString('base64') };
+    const r = await this.rpc<{ 'torrent-added'?: { hashString: string }; 'torrent-duplicate'?: { hashString: string } }>('torrent-add', { ...source, labels: [o.category, o.tag] });
     return (r['torrent-added'] ?? r['torrent-duplicate'])?.hashString ?? null;
   }
 
@@ -478,7 +552,16 @@ class Sabnzbd implements DownloadClient {
   async add(url: string, o: AddOptions) {
     // Jobs are followed by the nzo_id this returns, so the name stays the release title. (A "{{tag}}" in
     // the name, as before, is read by SABnzbd as the archive password.)
-    const r = await this.api<{ nzo_ids?: string[] }>({ mode: 'addurl', name: url, cat: o.category, nzbname: o.title });
+    const got = await fetchRelease(this.c.name, url);
+    if ('magnet' in got) throw new IntegrationError(this.c.name, 'that release is a torrent, not an NZB');
+    // Uploaded rather than passed as a link, so SABnzbd needn't reach the indexer itself.
+    const form = new FormData();
+    form.append('name', new Blob([new Uint8Array(got.file)], { type: 'application/x-nzb' }), `${o.title}.nzb`);
+    const qs = new URLSearchParams({ mode: 'addfile', cat: o.category, nzbname: o.title, apikey: this.c.password ?? '', output: 'json' });
+    const res = await request(this.c.name, `${base(this.c.url)}/api?${qs.toString()}`, { method: 'POST', body: form });
+    ensureOk(this.c.name, res);
+    const r = (await res.json()) as { nzo_ids?: string[]; error?: string; status?: boolean };
+    if (r.error || r.status === false) throw new IntegrationError(this.c.name, r.error ?? 'refused the NZB');
     return r.nzo_ids?.[0] ?? null;
   }
 

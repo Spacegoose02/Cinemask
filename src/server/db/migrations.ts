@@ -439,6 +439,13 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE collections ADD COLUMN library TEXT;
     `,
   },
+  {
+    id: 12,
+    name: 'held downloads',
+    sql: `
+      ALTER TABLE downloads ADD COLUMN held_release TEXT;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;
