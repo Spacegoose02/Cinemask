@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
-import { blocklist, downloadClients, downloads, indexers, monitored, type DownloadClientType } from '../db/schema.js';
+import { blocklist, downloadClients, downloads, indexers, monitored, monitoredEpisodes, type DownloadClientType } from '../db/schema.js';
 import { media } from '../db/schema.js';
 import { bestDecision, decide, type Decision, type Target } from './decision.js';
 import { createClient } from './clients.js';
@@ -68,12 +68,26 @@ export interface SearchResult {
   errors: string[];
 }
 
-const recentReleases = new Map<string, { release: Release; at: number }>();
+const recentReleases = new Map<string, { release: Release; covers: Decision['covers']; at: number }>();
 
-/** Releases shown in a manual search, so a grab can only use something the indexers actually returned. */
-export function rememberedRelease(guid: string): Release | null {
-  const hit = recentReleases.get(guid);
-  return hit && Date.now() - hit.at < 60 * 60 * 1000 ? hit.release : null;
+/**
+ * Releases shown in a title's manual search, so a grab can only use something the indexers actually
+ * returned for that same title, along with the episodes it was judged to cover.
+ */
+export function rememberedRelease(monitoredId: number, guid: string): { release: Release; covers: Decision['covers'] } | null {
+  const hit = recentReleases.get(`${monitoredId}:${guid}`);
+  return hit && Date.now() - hit.at < 60 * 60 * 1000 ? hit : null;
+}
+
+/** Every episode of a season (or just one) as a manual-search target, for when nothing in it is wanted. */
+function seasonEpisodes(ctx: AppContext, monitoredId: number, season: number, episode?: number): NonNullable<Target['episodes']> {
+  if (episode !== undefined) return [{ season, episode, currentQuality: null }];
+  const eps = ctx.db
+    .select({ episode: monitoredEpisodes.episode })
+    .from(monitoredEpisodes)
+    .where(and(eq(monitoredEpisodes.monitoredId, monitoredId), eq(monitoredEpisodes.season, season)))
+    .all();
+  return (eps.length ? eps : [{ episode: 1 }]).map((e) => ({ season, episode: e.episode, currentQuality: null }));
 }
 
 export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter?: { season?: number; episode?: number }): Promise<SearchResult> {
@@ -83,7 +97,7 @@ export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter
     title: row.title,
     year: row.year,
     // Nothing wanted: still show results for a manual search, judged as if missing.
-    episodes: filter?.season !== undefined ? [{ season: filter.season, episode: filter.episode ?? 1, currentQuality: null }] : undefined,
+    episodes: filter?.season !== undefined ? seasonEpisodes(ctx, row.id, filter.season, filter.episode) : undefined,
   };
   if (!profile) return { decisions: [], errors: ['Quality profile is missing'] };
   const queries = queriesFor(ctx, row, target);
@@ -95,10 +109,11 @@ export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter
     errors.push(...r.errors);
   }
   const unique = [...new Map(all.map((r) => [r.title, r])).values()];
-  for (const r of unique) recentReleases.set(r.guid, { release: r, at: Date.now() });
-  if (recentReleases.size > 5000) for (const k of [...recentReleases.keys()].slice(0, 1000)) recentReleases.delete(k);
   const bl = blocked(ctx, row.id);
-  const decisions = unique.map((r) => decide(r, target, profile, bl)).sort((a, b) => Number(b.accepted) - Number(a.accepted) || b.score - a.score);
+  const opts = { skipCam: ctx.settings.get('downloading').skipCamReleases };
+  const decisions = unique.map((r) => decide(r, target, profile, bl, opts)).sort((a, b) => Number(b.accepted) - Number(a.accepted) || b.score - a.score);
+  for (const d of decisions) recentReleases.set(`${row.id}:${d.release.guid}`, { release: d.release, covers: d.covers, at: Date.now() });
+  if (recentReleases.size > 5000) for (const k of [...recentReleases.keys()].slice(0, 1000)) recentReleases.delete(k);
   ctx.db.update(monitored).set({ lastSearchAt: Date.now() }).where(eq(monitored.id, row.id)).run();
   return { decisions, errors: [...new Set(errors)] };
 }

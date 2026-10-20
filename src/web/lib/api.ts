@@ -57,7 +57,7 @@ export function formatDate(ms: number | null | undefined): string {
 }
 
 export function formatBytes(n: number): string {
-  const units = ['B', 'KB', 'MB', 'GB'];
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let i = 0;
   while (n >= 1024 && i < units.length - 1) {
     n /= 1024;

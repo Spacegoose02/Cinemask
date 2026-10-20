@@ -151,18 +151,18 @@ export function TrailerManager({ monitoredId, onClose }: { monitoredId: number; 
       </ul>
       {preview && (
         <div className="mt-3 aspect-video w-full">
-          <iframe className="h-full w-full rounded" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(preview)}`} title="Trailer preview" allow="encrypted-media; picture-in-picture" allowFullScreen />
+          <iframe className="h-full w-full rounded" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(preview)}`} title="Trailer preview" referrerPolicy="strict-origin-when-cross-origin" allow="encrypted-media; picture-in-picture" allowFullScreen />
         </div>
       )}
     </Modal>
   );
 }
 
-/** "Make a collection" from the TMDB film series a movie belongs to. */
+/** Adds the TMDB film series a movie belongs to as a collection on Plex and Jellyfin, then opens it. */
 export function useCreateSeriesCollection() {
   const navigate = useNavigate();
   return async (collection: { id: number; name: string }) => {
-    const c = await api<{ id: number }>('/api/collections', { body: { name: collection.name, source: 'tmdb', sourceId: collection.id, syncPlex: true } });
+    const c = await api<{ id: number }>('/api/collections', { body: { name: collection.name, source: 'tmdb', sourceId: collection.id, toServers: true } });
     navigate(`/collections/${c.id}`);
   };
 }

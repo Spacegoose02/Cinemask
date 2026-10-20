@@ -17,7 +17,7 @@ import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
 import { autoSearch, grab, rememberedRelease, searchMonitored } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
-import { failDownload } from './tracker.js';
+import { failDownload, liveStats } from './tracker.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const kind = z.enum(MEDIA_KINDS);
@@ -242,10 +242,11 @@ export async function arrRoutes(app: FastifyInstance) {
     const { guid } = parse(z.object({ guid: z.string().min(1).max(2000) }), req.body);
     const row = getMonitored(id);
     // Only releases returned by our own indexer search can be grabbed; never an arbitrary URL.
-    const release = rememberedRelease(guid);
-    if (!release) throw badRequest('That search result expired. Search again.');
+    const hit = rememberedRelease(id, guid);
+    if (!hit) throw badRequest('That search result expired. Search again.');
+    const { release, covers } = hit;
     const parsed = parseRelease(release.title);
-    const covers = row.kind === 'show' && parsed.season !== null ? { season: parsed.season, episodes: parsed.episodes } : null;
+    if (row.kind === 'show' && !covers?.episodes.length) throw badRequest("Can't tell which episodes this release has, so it couldn't be imported");
     try {
       const dlId = await grab(ctx, release, row, { covers, userId: req.user!.id, quality: parsed.quality });
       audit(db(), req, 'release.grabbed', { target: release.title, details: { indexer: release.indexer } });
@@ -266,7 +267,7 @@ export async function arrRoutes(app: FastifyInstance) {
       .orderBy(desc(downloads.addedAt))
       .limit(300)
       .all()
-      .map((d) => ({ ...d, sourceUrl: undefined }));
+      .map((d) => ({ ...d, sourceUrl: undefined, speed: liveStats.get(d.id)?.speed ?? null, eta: liveStats.get(d.id)?.eta ?? null }));
   });
 
   app.get('/api/downloads/count', { config: { access: 'manager' } }, async () => ({

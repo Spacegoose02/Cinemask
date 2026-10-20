@@ -75,6 +75,12 @@ describe('release decisions', () => {
     expect(decide(rel('Paddington.2014.1080p.BluRay', { seeders: 0 }), movie, profile, new Set()).accepted).toBe(false);
   });
 
+  it('skips CAM and telesync copies when asked to', () => {
+    const cam = rel('Paddington.2014.1080p.HDCAM.x264');
+    expect(decide(cam, movie, profile, new Set(), { skipCam: true }).rejections[0]).toMatch(/CAM copy/);
+    expect(decide(cam, movie, profile, new Set(), { skipCam: false }).accepted).toBe(true);
+  });
+
   it('matches episodes and season packs to wanted episodes', () => {
     const show = { kind: 'show' as const, title: 'Bluey', year: 2018, episodes: [{ season: 1, episode: 3, currentQuality: null }] };
     expect(decide(rel('Bluey.S01E03.1080p.WEB-DL'), show, profile, new Set()).accepted).toBe(true);
@@ -211,6 +217,36 @@ describe('request → download → import', () => {
     const guid = res.releases.find((r: { title: string }) => r.title.includes('720p')).guid;
     expect((await owner.req('POST', `/api/monitored/${m.id}/grab`, { guid })).statusCode).toBe(200);
     expect(grabbed()[0]).toContain('720p');
+  });
+
+  it("a manual search result can only be grabbed for the title it was found for", async () => {
+    const movie = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    const show = (await owner.req('POST', '/api/monitored', { kind: 'show', tmdbId: 82728, search: false })).json();
+    const res = (await owner.req('GET', `/api/monitored/${movie.id}/releases`)).json();
+    const guid = res.releases[0].guid;
+    expect((await owner.req('POST', `/api/monitored/${show.id}/grab`, { guid })).statusCode).toBe(400);
+    expect(grabbed()).toEqual([]);
+  });
+
+  it('shows speed, time left and queue totals from the download client', async () => {
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    const res = (await owner.req('GET', `/api/monitored/${m.id}/releases`)).json();
+    await owner.req('POST', `/api/monitored/${m.id}/grab`, { guid: res.releases.find((r: { accepted: boolean }) => r.accepted).guid });
+    qbitTorrents = [{ hash: 'h1', name: 'Paddington', progress: 0.5, state: 'downloading', size: 100, save_path: dl, tags: 'mm-1', dlspeed: 2048, eta: 8640000 }];
+    await trackDownloads(t.app.ctx);
+    // qBittorrent's 8640000 means "unknown".
+    expect((await owner.req('GET', '/api/downloads')).json()[0]).toMatchObject({ status: 'downloading', progress: 0.5, speed: 2048, eta: null });
+    qbitTorrents[0]!.eta = 90;
+    await trackDownloads(t.app.ctx);
+    expect((await owner.req('GET', '/api/downloads')).json()[0].eta).toBe(90);
+  });
+
+  it('skips CAM copies by default', async () => {
+    fakeFetch({ ...tmdbRoutes, [`${INDEXER}/api`]: () => new Response(torznab([{ title: 'Paddington.2014.1080p.HDCAM.x264-GRP', seeders: 90 }])) });
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    expect((await owner.req('GET', `/api/monitored/${m.id}/releases`)).json().releases[0].accepted).toBe(false);
+    await owner.req('PUT', '/api/settings/downloading', { skipCamReleases: false });
+    expect((await owner.req('GET', `/api/monitored/${m.id}/releases`)).json().releases[0].accepted).toBe(true);
   });
 
   it('changing the profile reports upgrade candidates without grabbing anything', async () => {

@@ -22,6 +22,16 @@ describe('release parser', () => {
     it(name, () => expect(parseRelease(name)).toMatchObject(expected));
   }
 
+  it('spots cinema and pre-release copies without tripping on titles or groups', () => {
+    expect(parseRelease('Movie.2024.1080p.CAM.x264-GRP')).toMatchObject({ title: 'Movie', theatrical: 'cam' });
+    expect(parseRelease('Movie 2024 HDTS 720p-X').theatrical).toBe('telesync');
+    expect(parseRelease('Movie.2024.TS.x264').theatrical).toBe('telesync');
+    expect(parseRelease('Movie.2024.HDTC.720p').theatrical).toBe('telecine');
+    expect(parseRelease('Movie.2024.DVDSCR.XviD').theatrical).toBe('screener');
+    expect(parseRelease('Cam.2018.1080p.WEB-DL-GRP')).toMatchObject({ title: 'Cam', theatrical: null });
+    expect(parseRelease('Movie.2024.1080p.WEB-DL.DDP5.1-SCR').theatrical).toBeNull();
+  });
+
   it('defaults to English when no language is tagged', () => {
     expect(parseRelease('Movie.2020.1080p.WEB-DL').languages).toEqual(['en']);
   });

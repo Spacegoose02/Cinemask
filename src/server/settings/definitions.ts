@@ -165,6 +165,8 @@ export const SETTINGS = {
       allowPrivateDirectUrls: z.boolean().default(false),
       defaultMovieProfile: z.number().int().positive().nullable().default(null),
       defaultShowProfile: z.number().int().positive().nullable().default(null),
+      /** Never grab CAM, telesync, telecine or screener copies recorded in cinemas. */
+      skipCamReleases: z.boolean().default(true),
     }),
     secrets: [],
   },

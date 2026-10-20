@@ -76,14 +76,32 @@ export async function collectionRoutes(app: FastifyInstance) {
         sourceId: z.coerce.number().int().positive().optional(),
         syncPlex: z.boolean().default(false),
         syncJellyfin: z.boolean().default(false),
+        /** Sync to whichever of Plex and Jellyfin are connected, and push straight away. */
+        toServers: z.boolean().default(false),
         items: z.array(itemRef).max(500).default([]),
       }),
       req.body,
     );
+    if (body.toServers) {
+      body.syncPlex = ctx.settings.get('plex').enabled;
+      body.syncJellyfin = ctx.settings.get('jellyfin').enabled;
+      if (!body.syncPlex && !body.syncJellyfin) throw badRequest('Connect Plex or Jellyfin first (Settings → Media servers)');
+      // The same TMDB series again: push the collection that already exists instead of making a copy.
+      const same =
+        body.source === 'tmdb' && body.sourceId
+          ? ctx.db.select().from(collections).where(and(eq(collections.source, 'tmdb'), eq(collections.sourceId, String(body.sourceId)))).get()
+          : undefined;
+      if (same) {
+        ctx.db.update(collections).set({ syncPlex: same.syncPlex || body.syncPlex, syncJellyfin: same.syncJellyfin || body.syncJellyfin }).where(eq(collections.id, same.id)).run();
+        await pushCollection(ctx, same.id).catch(() => undefined);
+        audit(ctx.db, req, 'collection.pushed', { target: same.name });
+        return { ...getCol(same.id), items: withAvailability(ctx, itemsOf(ctx, same.id)) };
+      }
+    }
     await checkPosterUrl(body.poster);
     if (body.source !== 'manual' && !body.sourceId) throw badRequest('Pick a TMDB collection or list');
     if (body.source === 'list' && !ctx.db.select().from(lists).where(eq(lists.id, body.sourceId!)).get()) throw badRequest('Unknown list');
-    const { items, sourceId, ...values } = body;
+    const { items, sourceId, toServers, ...values } = body;
     const row = ctx.db
       .insert(collections)
       .values({ ...values, sourceId: sourceId ? String(sourceId) : null, createdBy: req.user!.id, createdAt: Date.now() })
@@ -105,6 +123,8 @@ export async function collectionRoutes(app: FastifyInstance) {
       }
     }
     audit(ctx.db, req, 'collection.created', { target: row.name, details: { source: body.source } });
+    // Errors land in the collection's lastError, which its page shows.
+    if (toServers) await pushCollection(ctx, row.id).catch(() => undefined);
     return { ...getCol(row.id), items: withAvailability(ctx, itemsOf(ctx, row.id)) };
   });
 

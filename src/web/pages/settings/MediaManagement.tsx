@@ -114,6 +114,12 @@ export function MediaManagementSettings() {
           </Field>
         ))}
         <Toggle
+          label="Skip CAM and telesync copies"
+          checked={d.values.skipCamReleases}
+          onChange={(v) => d.set('skipCamReleases', v)}
+          hint="Never grab releases filmed in a cinema or leaked early (CAM, TS, TC, screener)."
+        />
+        <Toggle
           label="Allow direct downloads from home-network addresses"
           checked={d.values.allowPrivateDirectUrls}
           onChange={(v) => d.set('allowPrivateDirectUrls', v)}

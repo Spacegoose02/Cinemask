@@ -13,6 +13,8 @@ export interface ParsedRelease {
   proper: boolean;
   languages: string[];
   group: string | null;
+  /** Recorded in a cinema or from a pre-release copy: CAM, TELESYNC, TELECINE or SCREENER. */
+  theatrical: 'cam' | 'telesync' | 'telecine' | 'screener' | null;
 }
 
 const LANGUAGES: [RegExp, string][] = [
@@ -95,6 +97,16 @@ export function parseRelease(raw: string): ParsedRelease {
   else if (/\b(web ?dl|web|amzn|nf|dsnp|hmax|atvp|itunes)\b/.test(lower)) source = 'webdl';
   else if (/\b(hdtv|pdtv|sdtv|dsr|tvrip)\b/.test(lower)) source = 'tv';
   else if (/\b(dvd ?rip|dvd|dvdr|ntsc|pal)\b/.test(lower)) source = 'dvd';
+  let theatrical: ParsedRelease['theatrical'] = null;
+  for (const th of s.matchAll(/\b(hd ?cam|cam ?rip|cam|hd ?ts|telesync|pdvd|ts|hd ?tc|tc|telecine|(?:dvd ?)?scr|screener)\b/gi)) {
+    const t = th[1]!.toLowerCase().replace(/ /g, '');
+    // A title can contain these words ("Cam", "TS"), so only count them after a year or resolution.
+    if (s[th.index - 1] === '-' && th.index + th[0].length === s.length) continue; // the release group
+    if (th.index === 0 || !/\b(19|20)\d{2}\b|\b\d{3,4}p\b/i.test(s.slice(0, th.index))) continue;
+    theatrical = t.includes('cam') ? 'cam' : t === 'ts' || t === 'hdts' || t === 'telesync' || t === 'pdvd' ? 'telesync' : t.includes('tc') || t === 'telecine' ? 'telecine' : 'screener';
+    mark(th.index);
+    break;
+  }
   for (const m of [/\b(remux|blu ?ray|bdrip|brrip|web ?dl|web ?rip|web|hdtv|dvd ?rip)\b/i.exec(s)]) if (m) mark(m.index);
 
   const languages = LANGUAGES.filter(([re]) => re.test(s)).map(([, code]) => code);
@@ -123,6 +135,7 @@ export function parseRelease(raw: string): ParsedRelease {
     proper: /\b(proper|repack|rerip)\b/i.test(s),
     languages: languages.length ? languages : ['en'],
     group,
+    theatrical,
   };
 }
 

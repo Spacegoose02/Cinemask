@@ -63,6 +63,17 @@ export function existingTrailers(ctx: AppContext, row: MonitoredRow): { path: st
 }
 
 /**
+ * The yt-dlp program from settings. Only an absolute path to a file named yt-dlp is run, so the
+ * setting can't be pointed at some other program in the container.
+ */
+export function ytDlpBinary(ctx: AppContext): string {
+  const p = ctx.settings.get('extras').ytDlpPath;
+  if (!path.isAbsolute(p) || !/^yt-dlp(_linux)?$/.test(path.basename(p))) throw new Error('The yt-dlp path must be a full path to a program named yt-dlp');
+  if (!fs.existsSync(p)) throw new Error(`yt-dlp was not found at ${p}`);
+  return p;
+}
+
+/**
  * Downloads a YouTube trailer with yt-dlp into the title's folder. Runs in the background;
  * progress is read with trailerJob(). The video key is validated and passed as an argument,
  * never through a shell.
@@ -71,7 +82,7 @@ export function downloadTrailer(ctx: AppContext, row: MonitoredRow, key: string)
   if (!YT_KEY.test(key)) throw new Error('Not a valid YouTube video id');
   const s = ctx.settings.get('extras');
   if (!s.trailersEnabled) throw new Error('Trailer downloads are turned off (Settings → Media management)');
-  if (!fs.existsSync(s.ytDlpPath)) throw new Error(`yt-dlp was not found at ${s.ytDlpPath}`);
+  const bin = ytDlpBinary(ctx);
   if (jobs.get(row.id)?.status === 'downloading') throw new Error('A trailer is already downloading for this title');
   const root = rootFor(ctx, row);
   const { dir, stem } = trailerTarget(ctx, row);
@@ -95,7 +106,7 @@ export function downloadTrailer(ctx: AppContext, row: MonitoredRow, key: string)
   jobs.set(row.id, job);
   // Replace an older trailer only once the new one has arrived.
   const before = existingTrailers(ctx, row).map((t) => t.path);
-  execFile(s.ytDlpPath, args, { timeout: 15 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 }, (err, _stdout, stderr) => {
+  execFile(bin, args, { timeout: 15 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 }, (err, _stdout, stderr) => {
     if (err) {
       job.status = 'failed';
       job.error = (String(stderr).trim().split('\n').pop() || err.message).slice(0, 500);
