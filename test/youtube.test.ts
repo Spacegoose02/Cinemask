@@ -280,6 +280,26 @@ describe("YouTube subscriptions", () => {
     ).toEqual({ queued: 0 });
   });
 
+  it("downloads in the download folder, moves finished videos over, and imports ones already there", async () => {
+    const work = path.join(t.dir, "yt-downloads");
+    await owner.req("PUT", "/api/settings/extras", { youtubeDownloadPath: work });
+    // A video already in the YouTube folder from an earlier tool.
+    const old = path.join(yt, "Old Stuff", "First [video000001].mp4");
+    fs.mkdirSync(path.dirname(old), { recursive: true });
+    fs.writeFileSync(old, "x");
+    const ch = (
+      await owner.req("POST", "/api/youtube/channels", { url: "https://www.youtube.com/@bluey", mode: "all" })
+    ).json();
+    expect(ch.counts).toEqual({ done: 1, wanted: 1 });
+    await downloadWanted(t.app.ctx);
+    const done = (await owner.req("GET", `/api/youtube/channels/${ch.id}/videos?status=done`)).json().videos as { title: string; path: string }[];
+    const second = done.find((v) => v.title !== "First")!;
+    expect(second.path.startsWith(path.join(yt, "Bluey - Official"))).toBe(true);
+    expect(fs.existsSync(second.path)).toBe(true);
+    expect(fs.readdirSync(work)).toEqual([]);
+    expect((await owner.req("POST", `/api/youtube/channels/${ch.id}/import`)).json()).toEqual({ found: 0 });
+  });
+
   it("is for managers, and reports a misconfigured yt-dlp", async () => {
     const u = await createUser(owner, "kid", "user");
     const kid = new Client(t.app);

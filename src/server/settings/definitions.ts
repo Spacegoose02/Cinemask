@@ -181,6 +181,19 @@ export const SETTINGS = {
     }),
     secrets: ['apiKey'],
   },
+  /** Radarr, Sonarr and Overseerr, for importing what they manage (Settings → Import). */
+  radarr: {
+    schema: z.object({ url: httpUrl.default(''), apiKey: z.string().max(200).default('') }),
+    secrets: ['apiKey'],
+  },
+  sonarr: {
+    schema: z.object({ url: httpUrl.default(''), apiKey: z.string().max(200).default('') }),
+    secrets: ['apiKey'],
+  },
+  overseerr: {
+    schema: z.object({ url: httpUrl.default(''), apiKey: z.string().max(200).default('') }),
+    secrets: ['apiKey'],
+  },
   downloading: {
     schema: z.object({
       rssSyncMinutes: z.number().int().min(10).max(1440).default(15),
@@ -259,6 +272,8 @@ export const SETTINGS = {
       autoDownloadTrailers: z.boolean().default(true),
       /** YouTube channel subscriptions: where videos go, best quality, how often channels are checked. */
       youtubePath: z.string().trim().max(1000).default('/media/youtube'),
+      /** Where yt-dlp works on a video before it's moved into the YouTube folder. Empty downloads straight into it. */
+      youtubeDownloadPath: z.string().trim().max(1000).default(''),
       youtubeMaxHeight: z.union([z.literal(720), z.literal(1080), z.literal(2160)]).default(1080),
       youtubeCheckHours: z.number().int().min(1).max(168).default(6),
       /** Also offer posters from ThePosterDB (scraped from its website, so it may break). */

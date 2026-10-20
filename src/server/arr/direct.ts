@@ -21,7 +21,14 @@ export function isPrivateAddress(ip: string): boolean {
     return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
   }
   const v = ip.toLowerCase();
-  if (v.startsWith('::ffff:')) return isPrivateAddress(v.slice(7));
+  // IPv4 inside IPv6 (::ffff:a.b.c.d, NAT64 64:ff9b::, the old ::a.b.c.d). URL parsing writes the
+  // IPv4 part as hex ("::ffff:7f00:1"), so turn that back into dotted form before checking.
+  const embedded = /^(?:::ffff:(?:0:)?|64:ff9b::|::)([\d.]+|[\da-f]{1,4}:[\da-f]{1,4})$/.exec(v)?.[1];
+  if (embedded) {
+    if (net.isIPv4(embedded)) return isPrivateAddress(embedded);
+    const [hi, lo] = embedded.split(':').map((h) => parseInt(h, 16)) as [number, number];
+    return isPrivateAddress(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+  }
   return v === '::1' || v === '::' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe80');
 }
 

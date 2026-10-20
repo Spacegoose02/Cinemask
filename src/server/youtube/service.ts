@@ -321,6 +321,7 @@ export async function addChannel(
       info.entries,
       mode === "all" && !pick ? "wanted" : "skipped",
     );
+  importExisting(ctx, row.id);
   return ctx.db
     .select()
     .from(youtubeChannels)
@@ -348,6 +349,7 @@ export async function checkChannel(
       const r = await flatVideos(ctx, ch.url, CHECK_DEPTH);
       added += recordVideos(ctx, ch.id, r.entries, ch.pick ? "skipped" : "wanted");
     }
+    if (added) importExisting(ctx, ch.id);
     ctx.db
       .update(youtubeChannels)
       .set({ lastCheckedAt: Date.now(), lastError: null })
@@ -427,7 +429,15 @@ export async function downloadVideo(
   if (!insideRoot(root, path.join(seasonDir, stem)))
     throw new Error("Refusing to write outside the YouTube folder");
   fs.mkdirSync(seasonDir, { recursive: true });
-  const h = ctx.settings.get("extras").youtubeMaxHeight;
+  const { youtubeMaxHeight: h, youtubeDownloadPath } = ctx.settings.get("extras");
+  // With a download folder, yt-dlp works in a folder of its own there and the finished files move over.
+  const work = youtubeDownloadPath ? path.join(youtubeDownloadPath, v.videoId) : seasonDir;
+  if (youtubeDownloadPath) {
+    if (!insideRoot(youtubeDownloadPath, work))
+      throw new Error("Refusing to write outside the YouTube download folder");
+    fs.rmSync(work, { recursive: true, force: true });
+    fs.mkdirSync(work, { recursive: true });
+  }
   await ytDlp(
     ctx,
     [
@@ -440,12 +450,22 @@ export async function downloadVideo(
       "--convert-thumbnails",
       "jpg",
       "-o",
-      path.join(seasonDir, `${stem}.%(ext)s`),
+      // "%" in a title would be read as an output-template field.
+      path.join(work, `${stem.replace(/%/g, "%%")}.%(ext)s`),
       "--",
       url,
     ],
     60 * 60 * 1000,
   );
+  if (work !== seasonDir) {
+    for (const f of fs.readdirSync(work)) {
+      if (!f.startsWith(stem)) continue;
+      const to = path.join(seasonDir, f);
+      if (!insideRoot(root, to)) continue;
+      moveFile(path.join(work, f), to);
+    }
+    fs.rmSync(work, { recursive: true, force: true });
+  }
   const file = fs
     .readdirSync(seasonDir)
     .find(
@@ -480,6 +500,65 @@ export async function downloadVideo(
     })
     .where(eq(youtubeVideos.id, v.id))
     .run();
+}
+
+/** Renames, or copies then deletes when the download folder is on another disk. */
+function moveFile(from: string, to: string) {
+  try {
+    fs.renameSync(from, to);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+    fs.copyFileSync(from, to);
+    fs.rmSync(from);
+  }
+}
+
+const ON_DISK = /\[([\w-]{11})\]\.(mkv|mp4|webm|m4v|mov|avi)$/i;
+
+/** Video files under the YouTube folder named the yt-dlp way, "… [videoId].ext", by video id. */
+function filesOnDisk(root: string): Map<string, string> {
+  const found = new Map<string, string>();
+  const walk = (dir: string, depth: number) => {
+    if (depth > 4 || !fs.existsSync(dir)) return;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.isSymbolicLink()) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full, depth + 1);
+      else {
+        const m = ON_DISK.exec(e.name);
+        if (m) found.set(m[1]!, full);
+      }
+    }
+  };
+  walk(root, 0);
+  return found;
+}
+
+/**
+ * Marks a channel's videos that are already in the YouTube folder as downloaded, so nothing is
+ * fetched twice. Files from earlier yt-dlp runs or other tools count when they end in "[videoId]".
+ */
+export function importExisting(ctx: AppContext, channelId: number): number {
+  const root = ctx.settings.get("extras").youtubePath;
+  const files = filesOnDisk(root);
+  if (!files.size) return 0;
+  let n = 0;
+  const rows = ctx.db
+    .select()
+    .from(youtubeVideos)
+    .where(eq(youtubeVideos.channelId, channelId))
+    .all();
+  for (const v of rows) {
+    const file = files.get(v.videoId);
+    if (!file || v.status === "done" || !insideRoot(root, file)) continue;
+    ctx.db
+      .update(youtubeVideos)
+      .set({ status: "done", path: file, error: null })
+      .where(eq(youtubeVideos.id, v.id))
+      .run();
+    n++;
+  }
+  return n;
 }
 
 let queue: Promise<number> = Promise.resolve(0);

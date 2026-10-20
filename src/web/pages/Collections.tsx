@@ -21,6 +21,7 @@ interface Collection {
   fromLabel: string | null;
   lastPushAt: number | null;
   lastError: string | null;
+  library: string | null;
   itemCount?: number;
   previewPosters?: (string | null)[];
   items?: (MediaCardData & { tmdbId: number })[];
@@ -140,6 +141,27 @@ export function CollectionsPage() {
   const cols = useQuery({ queryKey: ['collections'], queryFn: () => api<Collection[]>('/api/collections') });
   const [creating, setCreating] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
+  const [picked, setPicked] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('collections-library');
+    } catch {
+      return null;
+    }
+  });
+  const libraries = [...new Set((cols.data ?? []).map((c) => c.library).filter((l): l is string => Boolean(l)))].sort((a, b) => (a === 'Movies' ? -1 : b === 'Movies' ? 1 : a.localeCompare(b)));
+  // Movies first by default; a library that's gone falls back to it too.
+  const library = picked === 'all' ? 'all' : picked && libraries.includes(picked) ? picked : (libraries[0] ?? 'all');
+  const choose = (v: string) => {
+    setPicked(v);
+    try {
+      localStorage.setItem('collections-library', v);
+    } catch {
+      // private window: the choice just isn't remembered
+    }
+  };
+  // Collections made here, or from Jellyfin, belong to no library and show in every one.
+  const shown = (cols.data ?? []).filter((c) => library === 'all' || !c.library || c.library === library);
+  const unsorted = (cols.data ?? []).some((c) => c.source === 'plex' && !c.library);
   const importFrom = async (server: 'plex' | 'jellyfin') => {
     try {
       const r = await api<{ imported: number; updated: number }>('/api/collections/import', { body: { server } });
@@ -168,13 +190,29 @@ export function CollectionsPage() {
         )}
       </div>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      {libraries.length > 0 && (
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-muted">Library</span>
+          <select className="input w-auto" value={library} onChange={(e) => choose(e.target.value)}>
+            {libraries.map((l) => (
+              <option key={l} value={l}>
+                {l}
+              </option>
+            ))}
+            <option value="all">All libraries</option>
+          </select>
+        </label>
+      )}
+      {isManager && unsorted && <Alert kind="info">Some Plex collections were imported before libraries were recorded. Import from Plex again to sort them into their libraries.</Alert>}
       {cols.data && !cols.data.length && <div className="card text-sm text-muted">No collections yet.</div>}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
-        {cols.data?.map((c) => (
+        {shown.map((c) => (
           <Link key={c.id} to={`/collections/${c.id}`} className="group">
             <Cover c={c} />
             <div className="mt-1.5 truncate text-sm group-hover:text-accent">{c.name}</div>
-            <div className="text-xs text-muted">{c.itemCount} titles</div>
+            <div className="text-xs text-muted">
+              {c.itemCount} titles{library === 'all' && c.library ? ` · ${c.library}` : ''}
+            </div>
           </Link>
         ))}
       </div>

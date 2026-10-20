@@ -43,7 +43,7 @@ export const plexRoutes = {
           },
         }
       : { MediaContainer: { Metadata: [{ ratingKey: '20', type: 'show', title: 'Bluey', year: 2018, addedAt: 1710000000, Guid: [{ id: 'tmdb://82728' }, { id: 'tvdb://353546' }] }] } },
-  [`${PLEX}/library/sections`]: () => ({ MediaContainer: { Directory: [{ key: '1', type: 'movie' }, { key: '2', type: 'show' }, { key: '3', type: 'artist' }] } }),
+  [`${PLEX}/library/sections`]: () => ({ MediaContainer: { Directory: [{ key: '1', type: 'movie', title: 'Movies' }, { key: '2', type: 'show', title: 'TV Shows' }, { key: '3', type: 'artist' }] } }),
   [`${PLEX}/`]: () => ({ MediaContainer: { friendlyName: 'Home Plex', version: '1.41.0', machineIdentifier: 'abc123' } }),
 };
 

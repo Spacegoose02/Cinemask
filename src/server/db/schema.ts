@@ -379,6 +379,8 @@ export const collections = sqliteTable('collections', {
   plexLabel: text('plex_label'),
   /** Keep the items in step with everything on the server carrying this label (Plex) or tag (Jellyfin). */
   fromLabel: text('from_label'),
+  /** The Plex library a collection came from ("Movies", "Kids Movies"); null for collections not tied to one. */
+  library: text('library'),
 });
 
 export const collectionItems = sqliteTable(

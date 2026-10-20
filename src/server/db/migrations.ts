@@ -432,6 +432,13 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE youtube_channels ADD COLUMN pick INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    id: 11,
+    name: 'collection library',
+    sql: `
+      ALTER TABLE collections ADD COLUMN library TEXT;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

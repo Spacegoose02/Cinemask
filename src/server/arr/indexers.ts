@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { XMLParser } from 'fast-xml-parser';
 import { fetchJson, IntegrationError } from '../integrations/http.js';
 
@@ -74,7 +75,8 @@ export function parseFeed(body: string, indexer: Pick<IndexerConfig, 'id' | 'nam
     const pub = text(item.pubDate);
     return [
       {
-        guid: text(item.guid) || link,
+        // An opaque key: an indexer's guid (or the link standing in for one) can carry its API key or passkey.
+        guid: createHash('sha256').update(`${indexer.id}:${text(item.guid) || link}`).digest('hex').slice(0, 32),
         title,
         downloadUrl: link,
         infoUrl: text(item.comments) || null,

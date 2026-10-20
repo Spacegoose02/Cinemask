@@ -7,6 +7,7 @@ import { createClient } from './clients.js';
 import { CATEGORIES, searchIndexer, type IndexerConfig, type Release, type SearchQuery } from './indexers.js';
 import { wantedTarget, type MonitoredRow } from './monitor.js';
 import { getProfile } from './profiles.js';
+import { parseRelease } from './parser.js';
 import { openSecret } from './secrets.js';
 import { rootOf } from './roots.js';
 import { notify } from '../notify/service.js';
@@ -120,6 +121,25 @@ export function rememberedRelease(monitoredId: number, guid: string): { release:
   return hit && Date.now() - hit.at < 60 * 60 * 1000 ? hit : null;
 }
 
+export const MANUAL_TYPES = { any: [] as number[], movies: CATEGORIES.movies, tv: CATEGORIES.tv, audiobooks: CATEGORIES.audiobooks, books: CATEGORIES.books };
+
+/** A free-text search of every indexer, not tied to a title. Results can be grabbed for an hour. */
+export async function manualSearch(ctx: AppContext, q: string, type: keyof typeof MANUAL_TYPES): Promise<{ releases: (Release & { quality: string })[]; errors: string[] }> {
+  const { releases, errors } = await searchAll(ctx, { type: 'search', q, categories: MANUAL_TYPES[type] });
+  for (const r of releases) recentReleases.set(`manual:${r.guid}`, { release: r, covers: null, at: Date.now() });
+  if (recentReleases.size > 5000) for (const k of [...recentReleases.keys()].slice(0, 1000)) recentReleases.delete(k);
+  return {
+    releases: releases.map((r) => ({ ...r, quality: parseRelease(r.title).quality })).sort((a, b) => (b.seeders ?? -1) - (a.seeders ?? -1) || (b.publishedAt ?? 0) - (a.publishedAt ?? 0)),
+    errors: [...new Set(errors)],
+  };
+}
+
+/** A release from a manual search, so a grab can only send what the indexers actually returned. */
+export function rememberedManual(guid: string): Release | null {
+  const hit = recentReleases.get(`manual:${guid}`);
+  return hit && Date.now() - hit.at < 60 * 60 * 1000 ? hit.release : null;
+}
+
 /** Every episode of a season (or just one) as a manual-search target, for when nothing in it is wanted. */
 function seasonEpisodes(ctx: AppContext, monitoredId: number, season: number, episode?: number): NonNullable<Target['episodes']> {
   if (episode !== undefined) return [{ season, episode, currentQuality: null }];
@@ -174,7 +194,7 @@ export function pickClient(ctx: AppContext, protocol: 'torrent' | 'usenet') {
 }
 
 /** Sends a release to a download client and records it for tracking and import. */
-export async function grab(ctx: AppContext, release: Release, row: MonitoredRow | null, opts: { covers?: Decision['covers']; userId?: number | null; quality?: string; warning?: string | null }) {
+export async function grab(ctx: AppContext, release: Release, row: MonitoredRow | null, opts: { covers?: Decision['covers']; userId?: number | null; quality?: string; warning?: string | null; destination?: string | null }) {
   const picked = pickClient(ctx, release.protocol);
   if (!picked) throw new Error(`No ${release.protocol === 'torrent' ? 'torrent' : 'Usenet'} download client is set up`);
   // A root folder can have its own category (e.g. "kids-tv"), so the client files it separately.
@@ -194,6 +214,7 @@ export async function grab(ctx: AppContext, release: Release, row: MonitoredRow 
       sourceUrl: null,
       category,
       warning: opts.warning ?? null,
+      destination: opts.destination ?? null,
       addedBy: opts.userId ?? null,
       addedAt: Date.now(),
     })

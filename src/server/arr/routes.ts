@@ -16,10 +16,11 @@ import { excludeFromAutoMonitor, monitorTitle, refreshEpisodes, upgradeCandidate
 import { defaultProfileId, getProfile, listProfiles } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
-import { autoSearch, grab, rememberedRelease, searchMonitored } from './search.js';
+import { autoSearch, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats } from './tracker.js';
 import { assertRoot, linkDestinations, listRoots } from './roots.js';
+import { sanitizeSegment } from './naming.js';
 import { moveToRoot, scanFolder, titleOnDisk } from '../files/service.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
@@ -363,6 +364,47 @@ export async function arrRoutes(app: FastifyInstance) {
     db().update(downloads).set({ status: 'removed' }).where(eq(downloads.id, id)).run();
     audit(db(), req, 'download.removed', { target: d.title, details: q });
     return { ok: true };
+  });
+
+  // A free-text search of every indexer (Prowlarr included), for grabbing something that isn't a monitored title.
+  app.get('/api/indexers/search', { config: { access: 'manager', rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
+    const q = parse(z.object({ q: z.string().trim().min(2).max(200), type: z.enum(Object.keys(MANUAL_TYPES) as [keyof typeof MANUAL_TYPES]).default('any') }), req.query);
+    const r = await manualSearch(ctx, q.q, q.type);
+    return {
+      errors: r.errors,
+      releases: r.releases.slice(0, 300).map((x) => ({
+        guid: x.guid,
+        title: x.title,
+        size: x.size,
+        quality: x.quality,
+        protocol: x.protocol,
+        indexer: x.indexer,
+        seeders: x.seeders,
+        peers: x.peers,
+        publishedAt: x.publishedAt,
+        infoUrl: x.infoUrl && /^https?:\/\//i.test(x.infoUrl) ? x.infoUrl : null,
+      })),
+    };
+  });
+
+  app.post('/api/downloads/release', { config: { access: 'manager' } }, async (req) => {
+    const body = parse(
+      z.object({ guid: z.string().min(1).max(2000), name: z.string().trim().max(200).nullable().optional(), destination: z.string().max(60).default('downloads') }),
+      req.body,
+    );
+    // Only results from our own search can be grabbed; never an arbitrary URL.
+    const release = rememberedManual(body.guid);
+    if (!release) throw badRequest('That search result expired. Search again.');
+    if (!linkDestinations(ctx).some((d) => d.key === body.destination)) throw badRequest('Unknown destination folder');
+    const name = body.name ? sanitizeSegment(body.name) : null;
+    if (body.name && !name) throw badRequest('That name has no usable characters');
+    try {
+      const id = await grab(ctx, release, null, { userId: req.user!.id, quality: parseRelease(release.title).quality, destination: JSON.stringify({ key: body.destination, name }) });
+      audit(db(), req, 'release.grabbed', { target: release.title, details: { indexer: release.indexer, destination: body.destination } });
+      return { downloadId: id };
+    } catch (err) {
+      throw new HttpError(502, (err as Error).message, 'upstream');
+    }
   });
 
   app.post('/api/downloads/direct', { config: { access: 'manager', rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req) => {

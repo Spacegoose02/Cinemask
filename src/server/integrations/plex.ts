@@ -131,13 +131,13 @@ export class PlexClient implements MediaServerClient {
     await this.send('PUT', `/library/sections/${encodeURIComponent(section)}/all?${qs.toString()}`);
   }
 
-  async collections(): Promise<{ ratingKey: string; title: string; summary?: string; thumb?: string; section: string; subtype?: string }[]> {
-    const sections = await this.get<{ Directory?: { key: string; type: string }[] }>('/library/sections');
-    const out: { ratingKey: string; title: string; summary?: string; thumb?: string; section: string; subtype?: string }[] = [];
+  async collections(): Promise<{ ratingKey: string; title: string; summary?: string; thumb?: string; section: string; sectionTitle?: string; subtype?: string }[]> {
+    const sections = await this.get<{ Directory?: { key: string; type: string; title?: string }[] }>('/library/sections');
+    const out: { ratingKey: string; title: string; summary?: string; thumb?: string; section: string; sectionTitle?: string; subtype?: string }[] = [];
     for (const sec of sections.Directory ?? []) {
       if (sec.type !== 'movie' && sec.type !== 'show') continue;
       const r = await this.get<{ Metadata?: { ratingKey: string; title: string; summary?: string; thumb?: string; subtype?: string }[] }>(`/library/sections/${sec.key}/collections`);
-      for (const c of r.Metadata ?? []) out.push({ ...c, section: sec.key });
+      for (const c of r.Metadata ?? []) out.push({ ...c, section: sec.key, sectionTitle: sec.title });
     }
     return out;
   }

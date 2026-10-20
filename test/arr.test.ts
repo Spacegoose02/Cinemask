@@ -101,6 +101,10 @@ describe('direct download safety', () => {
   it('blocks private, non-http and credentialed URLs', async () => {
     await expect(assertSafeUrl('http://127.0.0.1/x', false)).rejects.toThrow(/private/);
     await expect(assertSafeUrl('http://[::1]/x', false)).rejects.toThrow(/private/);
+    // IPv4 inside IPv6, which URL parsing rewrites to hex ("::ffff:7f00:1").
+    for (const u of ['http://[::ffff:127.0.0.1]:8080/x', 'http://[::ffff:169.254.169.254]/latest', 'http://[64:ff9b::10.0.0.1]/', 'http://[::ffff:0:192.168.1.1]/'])
+      await expect(assertSafeUrl(u, false), u).rejects.toThrow(/private/);
+    await expect(assertSafeUrl('http://[::ffff:8.8.8.8]/x', false)).resolves.toBeInstanceOf(URL);
     await expect(assertSafeUrl('file:///etc/passwd', false)).rejects.toThrow(/http/);
     await expect(assertSafeUrl('http://user:pw@8.8.8.8/x', false)).rejects.toThrow(/passwords/);
     await expect(assertSafeUrl('http://192.168.1.10/x', true)).resolves.toBeInstanceOf(URL);
@@ -363,6 +367,42 @@ describe('request → download → import', () => {
     expect(fs.existsSync(path.join(media, 'tv', 'Pilot', 'extras', 'bts.mkv'))).toBe(true);
   });
 
+  it('searches the indexers for anything and delivers a result to the folder picked', async () => {
+    expect((await kid.req('GET', '/api/indexers/search?q=paddington')).statusCode).toBe(403);
+    const found = (await owner.req('GET', '/api/indexers/search?q=paddington&type=movies')).json();
+    expect(found.releases[0]).toMatchObject({ title: 'Paddington.2014.1080p.BluRay.x264-SPARKS', quality: 'Bluray-1080p', seeders: 50 });
+    // Only a guid from the search can be sent, never a URL.
+    expect((await owner.req('POST', '/api/downloads/release', { guid: 'http://evil.example/x.torrent' })).statusCode).toBe(400);
+    expect((await owner.req('POST', '/api/downloads/release', { guid: found.releases[0].guid, destination: 'movie:nowhere' })).statusCode).toBe(400);
+    const { downloadId } = (await owner.req('POST', '/api/downloads/release', { guid: found.releases[0].guid, destination: 'movie:default', name: 'Paddington (2014)' })).json();
+    expect(added.at(-1)).toContain(`tags=mm-${downloadId}`);
+    const folder = path.join(dl, 'Paddington.2014.1080p.BluRay.x264-SPARKS');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'paddington.mkv'), 'video');
+    qbitTorrents = [{ hash: 'h9', name: 'Paddington', progress: 1, state: 'uploading', size: 5, content_path: folder, save_path: dl, tags: `mm-${downloadId}` }];
+    await trackDownloads(t.app.ctx);
+    expect(fs.readFileSync(path.join(media, 'movies', 'Paddington (2014)', 'paddington.mkv'), 'utf8')).toBe('video');
+    expect((await owner.req('GET', '/api/downloads?history=true')).json().find((d: { id: number }) => d.id === downloadId).status).toBe('imported');
+    expect(found.releases.every((r: { guid: string }) => /^[0-9a-f]{32}$/.test(r.guid))).toBe(true);
+
+    // Left in the downloads folder, the client's copy is the only one, so "remove completed" leaves it alone.
+    await owner.req('PUT', '/api/settings/media', { removeCompletedDownloads: true, importMode: 'copy' });
+    const removed: string[] = [];
+    fakeFetch({
+      [`${INDEXER}/api`]: () => new Response(torznab([{ title: 'Home.Movies.2020' }])),
+      [`${QBIT}/api/v2/auth/login`]: () => new Response('Ok.', { headers: { 'set-cookie': 'SID=abc; path=/' } }),
+      [`${QBIT}/api/v2/torrents/add`]: () => new Response('Ok.'),
+      [`${QBIT}/api/v2/torrents/delete`]: (_u: URL, init?: RequestInit) => (removed.push(String(init?.body)), new Response('')),
+      [`${QBIT}/api/v2/torrents/info`]: () => qbitTorrents,
+    });
+    const home = (await owner.req('GET', '/api/indexers/search?q=home')).json().releases[0];
+    const kept = (await owner.req('POST', '/api/downloads/release', { guid: home.guid })).json().downloadId;
+    qbitTorrents = [{ hash: 'h10', name: 'Home', progress: 1, state: 'uploading', size: 5, content_path: folder, save_path: dl, tags: `mm-${kept}` }];
+    await trackDownloads(t.app.ctx);
+    expect((await owner.req('GET', '/api/downloads?history=true')).json().find((d: { id: number }) => d.id === kept).status).toBe('completed');
+    expect(removed).toEqual([]);
+  });
+
   it('RSS sync grabs a new release for a monitored title', async () => {
     await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false });
     const r = await rssSync(t.app.ctx);
@@ -437,5 +477,40 @@ describe('episode size by length', () => {
     } finally {
       await t.close();
     }
+  });
+});
+
+describe('SABnzbd tracking', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const sab = () => createClient({ type: 'sabnzbd', name: 'SABnzbd', url: 'http://sab.local:8080', password: 'key' });
+
+  it('finds a job by id after SABnzbd moved it to another category, and counts unpacking as downloaded', async () => {
+    fakeFetch({
+      'http://sab.local:8080/api': (url) => {
+        const p = url.searchParams;
+        if (p.get('mode') === 'addurl') {
+          expect(p.get('nzbname')).toBe('Paddington.2014.1080p');
+          return { status: true, nzo_ids: ['SABnzbd_nzo_a'] };
+        }
+        if (p.get('mode') === 'queue') return { queue: { slots: [] } };
+        // The category filter misses both jobs: they landed in the default category.
+        if (p.get('category')) return { history: { slots: [] } };
+        expect(p.get('nzo_ids')).toBe('SABnzbd_nzo_a,SABnzbd_nzo_b');
+        return {
+          history: {
+            slots: [
+              { nzo_id: 'SABnzbd_nzo_a', name: 'Paddington.2014.1080p', status: 'Completed', storage: '/downloads/Paddington.2014.1080p', bytes: 10, category: '*', fail_message: '' },
+              { nzo_id: 'SABnzbd_nzo_b', name: 'Other', status: 'Extracting', storage: '', bytes: 10, category: '*', fail_message: '' },
+            ],
+          },
+        };
+      },
+    });
+    expect(await sab().add('http://prowlarr.local/1/download', { category: 'cinemask', tag: 'mm-7', title: 'Paddington.2014.1080p' })).toBe('SABnzbd_nzo_a');
+    const items = await sab().list('cinemask', ['SABnzbd_nzo_a', 'SABnzbd_nzo_b']);
+    expect(items.map((i) => [i.id, i.status, i.progress, i.outputPath])).toEqual([
+      ['SABnzbd_nzo_a', 'completed', 1, '/downloads/Paddington.2014.1080p'],
+      ['SABnzbd_nzo_b', 'downloading', 1, null],
+    ]);
   });
 });

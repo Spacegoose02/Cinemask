@@ -54,7 +54,8 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
     const client = createClient({ type: c.type as DownloadClientType, name: c.name, url: c.url, username: c.username, password: openSecret(ctx, c.password) });
     let items: ClientItem[];
     try {
-      items = (await Promise.all(categories.map((cat) => client.list(cat)))).flat();
+      const ids = active.filter((x) => x.clientId === cid && x.downloadId).map((x) => x.downloadId!);
+      items = (await Promise.all(categories.map((cat, i) => client.list(cat, i === 0 ? ids : [])))).flat();
     } catch {
       continue; // client offline; try next time
     }
@@ -93,7 +94,9 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
       if (!d.monitoredId && !d.bookId && d.destination && item.outputPath) {
         deliverLink(ctx, d.id, mapRemotePath(ctx, item.outputPath), ctx.settings.get('media').importMode);
         const media = ctx.settings.get('media');
-        if (media.removeCompletedDownloads) await client.remove(item.id, media.importMode !== 'hardlink').catch(() => undefined);
+        // Only once it's safely in its folder: left in the downloads folder, or not delivered, the client's copy is the only one.
+        const delivered = ctx.db.select({ status: downloads.status }).from(downloads).where(eq(downloads.id, d.id)).get()?.status === 'imported';
+        if (delivered && media.removeCompletedDownloads) await client.remove(item.id, media.importMode !== 'hardlink').catch(() => undefined);
         continue;
       }
       if (!d.monitoredId || !item.outputPath) {

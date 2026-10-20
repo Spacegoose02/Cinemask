@@ -67,6 +67,108 @@ function QueueTotals({ rows }: { rows: DownloadRow[] }) {
   );
 }
 
+
+interface FoundRelease {
+  guid: string;
+  title: string;
+  size: number;
+  quality: string;
+  protocol: string;
+  indexer: string;
+  seeders: number | null;
+  peers: number | null;
+  publishedAt: number | null;
+  infoUrl: string | null;
+}
+
+/** A free-text search of the indexers (Prowlarr included); a result goes to the folder picked here. */
+function IndexerSearch({ destinations }: { destinations: { key: string; name: string; path: string }[] }) {
+  const qc = useQueryClient();
+  const [q, setQ] = useState('');
+  const [type, setType] = useState('any');
+  const [destination, setDestination] = useState('downloads');
+  const [busy, setBusy] = useState(false);
+  const [found, setFound] = useState<{ releases: FoundRelease[]; errors: string[] } | null>(null);
+  const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const [sent, setSent] = useState<Set<string>>(new Set());
+  const search = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      setFound(await api<{ releases: FoundRelease[]; errors: string[] }>(`/api/indexers/search?q=${encodeURIComponent(q)}&type=${type}`));
+    } catch (err) {
+      setMsg({ kind: 'error', text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const grab = async (r: FoundRelease) => {
+    setMsg(null);
+    try {
+      await api('/api/downloads/release', { body: { guid: r.guid, destination } });
+      setSent((s) => new Set([...s, r.guid]));
+      const where = destinations.find((d) => d.key === destination);
+      setMsg({ kind: 'success', text: destination === 'downloads' ? `Sent "${r.title}" to the download client.` : `Sent "${r.title}". When it finishes it goes to ${where?.name ?? 'the folder you picked'}.` });
+      await qc.invalidateQueries({ queryKey: ['downloads'] });
+    } catch (err) {
+      setMsg({ kind: 'error', text: (err as Error).message });
+    }
+  };
+  return (
+    <div className="card space-y-3">
+      <h2 className="font-semibold">Search indexers</h2>
+      <p className="text-sm text-muted">Search Prowlarr and your other indexers for anything, and pick where it goes when it finishes. For movies and shows you follow, the title's own search keeps them upgraded and renamed.</p>
+      <form onSubmit={search} className="grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
+        <input className="input" placeholder="What are you looking for?" value={q} onChange={(e) => setQ(e.target.value)} minLength={2} required aria-label="Search indexers" />
+        <select className="input w-auto" value={type} onChange={(e) => setType(e.target.value)} aria-label="Category">
+          <option value="any">Everything</option>
+          <option value="movies">Movies</option>
+          <option value="tv">TV</option>
+          <option value="audiobooks">Audiobooks</option>
+          <option value="books">Books</option>
+        </select>
+        <select className="input w-auto" value={destination} onChange={(e) => setDestination(e.target.value)} aria-label="When it finishes, put it in">
+          {destinations.map((d) => (
+            <option key={d.key} value={d.key}>
+              {d.key === 'downloads' ? 'Leave it in the downloads folder' : `Put it in ${d.name}`}
+            </option>
+          ))}
+        </select>
+        <button className="btn-primary" disabled={busy}>
+          {busy ? 'Searching…' : 'Search'}
+        </button>
+      </form>
+      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      {found?.errors.map((e) => (
+        <Alert key={e} kind="info">
+          {e}
+        </Alert>
+      ))}
+      {found && (
+        <ul className="max-h-[32rem] divide-y divide-border overflow-y-auto text-sm">
+          {found.releases.map((r) => (
+            <li key={r.guid} className="flex items-center justify-between gap-3 py-2">
+              <div className="min-w-0">
+                <div className="break-all">{r.infoUrl ? <a className="hover:underline" href={r.infoUrl} target="_blank" rel="noreferrer">{r.title}</a> : r.title}</div>
+                <div className="text-xs text-muted">
+                  {[r.quality !== 'Unknown' ? r.quality : null, formatBytes(r.size), r.protocol === 'torrent' && r.seeders !== null ? `${r.seeders} seeders` : null, r.protocol, r.indexer, r.publishedAt ? formatDate(r.publishedAt) : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </div>
+              </div>
+              <button className="btn-secondary shrink-0 text-xs" disabled={sent.has(r.guid)} onClick={() => void grab(r)}>
+                {sent.has(r.guid) ? 'Sent' : 'Download'}
+              </button>
+            </li>
+          ))}
+          {!found.releases.length && <li className="py-2 text-muted">Nothing found.</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function DownloadsPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<'queue' | 'history'>('queue');
@@ -160,6 +262,8 @@ export function DownloadsPage() {
         ))}
         {list.data?.length === 0 && <li className="card text-sm text-muted">{tab === 'queue' ? 'Nothing downloading.' : 'No history yet.'}</li>}
       </ul>
+
+      <IndexerSearch destinations={roots.data?.destinations ?? [{ key: 'downloads', name: 'Downloads folder (leave it there)', path: '' }]} />
 
       <form onSubmit={direct} className="card max-w-2xl space-y-3">
         <h2 className="font-semibold">Download from a link</h2>

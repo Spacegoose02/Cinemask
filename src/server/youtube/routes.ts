@@ -11,6 +11,7 @@ import {
   channelPlaylists,
   checkChannel,
   downloadWanted,
+  importExisting,
   parseChannelUrl,
   type ChannelRow,
 } from "./service.js";
@@ -201,6 +202,19 @@ export async function youtubeRoutes(app: FastifyInstance) {
       ctx.db.delete(youtubeChannels).where(eq(youtubeChannels.id, id)).run();
       audit(ctx.db, req, "youtube.unsubscribed", { target: c.name });
       return { ok: true };
+    },
+  );
+
+  // Videos already in the YouTube folder ("… [videoId].mkv") count as downloaded.
+  app.post(
+    "/api/youtube/channels/:id/import",
+    { config: { access: "manager" } },
+    async (req) => {
+      const { id } = parse(idParam, req.params);
+      const c = getChannel(id);
+      const found = importExisting(ctx, c.id);
+      audit(ctx.db, req, "youtube.imported", { target: c.name, details: { found } });
+      return { found };
     },
   );
 
