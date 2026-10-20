@@ -12,6 +12,8 @@ interface UserRow {
   role: Role;
   isOwner: boolean;
   disabled: boolean;
+  autoApproveMovies: boolean;
+  autoApproveShows: boolean;
   hasPassword: boolean;
   linked: { oidc: boolean; plex: boolean };
   locked: boolean;
@@ -19,7 +21,7 @@ interface UserRow {
 }
 
 const ROLE_HELP: Record<Role, string> = {
-  user: 'Can browse and request movies and shows. Requests need approval.',
+  user: 'Can browse and request movies and shows. Requests need approval, unless you let their movies or shows download without it.',
   manager: 'Can approve requests, download and manage media, posters and collections.',
   admin: 'Full control, including settings, API keys and users.',
 };
@@ -91,6 +93,17 @@ export function UserSettings() {
                       </select>
                     ) : (
                       u.role
+                    )}
+                    {editable && u.role === 'user' && (
+                      <div className="mt-2 space-y-1 text-xs" title="Their requests download right away instead of waiting for a manager.">
+                        <div className="text-muted">Downloads without approval</div>
+                        <label className="flex items-center gap-1.5">
+                          <input type="checkbox" checked={u.autoApproveMovies} onChange={(e) => patch(u.id, { autoApproveMovies: e.target.checked })} /> Movies
+                        </label>
+                        <label className="flex items-center gap-1.5">
+                          <input type="checkbox" checked={u.autoApproveShows} onChange={(e) => patch(u.id, { autoApproveShows: e.target.checked })} /> Shows
+                        </label>
+                      </div>
                     )}
                   </td>
                   <td className="p-3 text-xs text-muted">{[u.hasPassword && 'password', u.linked.oidc && 'SSO', u.linked.plex && 'Plex'].filter(Boolean).join(', ') || 'none'}</td>

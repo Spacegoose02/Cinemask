@@ -446,6 +446,14 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE downloads ADD COLUMN held_release TEXT;
     `,
   },
+  {
+    id: 13,
+    name: 'user auto approve',
+    sql: `
+      ALTER TABLE users ADD COLUMN auto_approve_movies INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN auto_approve_shows INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

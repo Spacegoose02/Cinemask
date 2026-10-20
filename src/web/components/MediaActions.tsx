@@ -233,27 +233,30 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] });
 
-  const run = async (fn: () => Promise<unknown>, success: string) => {
+  const run = async (fn: () => Promise<unknown>, success: string | ((result: unknown) => string)) => {
     setMsg(null);
     try {
-      await fn();
-      setMsg({ kind: 'success', text: success });
+      const result = await fn();
+      setMsg({ kind: 'success', text: typeof success === 'string' ? success : success(result) });
       await refresh();
     } catch (e) {
       setMsg({ kind: 'error', text: (e as Error).message });
     }
   };
 
+  // A user an admin trusts with this kind gets an approved request straight away.
+  const requested = (r: unknown) => ((r as { status?: string } | null)?.status === 'approved' ? 'Added and searching.' : 'Requested. A manager will review it.');
   const mon = lookup.data?.monitored;
   const req = lookup.data?.request;
   const fullyAvailable = m.availability.status === 'on_server';
 
   return (
     <>
-      {!mon && !req && !(m.kind === 'movie' && fullyAvailable) && (
+      {/* Users can ask for a title even when it's already monitored but not on the server yet. */}
+      {(!mon || !isManager) && !req && !(m.kind === 'movie' && fullyAvailable) && (
         <>
           {isManager && m.kind === 'movie' && <RootPicker roots={roots} value={rootId} onChange={setRootId} />}
-          <button className="btn-primary" onClick={() => (m.kind === 'show' ? setRequesting(true) : run(() => api('/api/requests', { body: { kind: m.kind, tmdbId: m.tmdbId, ...(isManager ? { rootId } : {}) } }), isManager ? 'Added and searching.' : 'Requested. A manager will review it.'))}>
+          <button className="btn-primary" onClick={() => (m.kind === 'show' ? setRequesting(true) : run(() => api('/api/requests', { body: { kind: m.kind, tmdbId: m.tmdbId, ...(isManager ? { rootId } : {}) } }), requested))}>
             {isManager ? 'Download' : 'Request'}
           </button>
         </>
@@ -267,7 +270,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           {fullyAvailable ? 'Monitor for upgrades' : 'Monitor only'}
         </button>
       )}
-      {req && !mon && <span className="self-center text-sm text-muted">Requested by {req.requestedByName} · {req.status}</span>}
+      {req && (!mon || !isManager) && <span className="self-center text-sm text-muted">Requested by {req.requestedByName} · {req.status}</span>}
       {req?.status === 'declined' && req.reason && <span className="self-center text-sm text-danger">Declined: {req.reason}</span>}
       {mon && isManager && 'profileId' in mon && (
         <>
@@ -330,7 +333,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
             className="btn-primary mt-4"
             disabled={!seasons.length}
             onClick={async () => {
-              await run(() => api('/api/requests', { body: { kind: 'show', tmdbId: m.tmdbId, seasons, ...(isManager ? { rootId } : {}) } }), isManager ? 'Added and searching.' : 'Requested. A manager will review it.');
+              await run(() => api('/api/requests', { body: { kind: 'show', tmdbId: m.tmdbId, seasons, ...(isManager ? { rootId } : {}) } }), requested);
               setRequesting(false);
             }}
           >

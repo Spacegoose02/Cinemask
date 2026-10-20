@@ -209,6 +209,25 @@ describe('request → download → import', () => {
     expect(r.status).toBe('approved');
   });
 
+  it('an admin can let a user download movies or shows without approval, each on its own', async () => {
+    const kidId = (await owner.req('GET', '/api/users')).json().find((u: { username: string }) => u.username === 'kid').id;
+    expect((await kid.req('PATCH', `/api/users/${kidId}`, { autoApproveMovies: true })).statusCode).toBe(403);
+    expect((await owner.req('PATCH', `/api/users/${kidId}`, { autoApproveMovies: true })).json()).toMatchObject({ autoApproveMovies: true, autoApproveShows: false });
+    expect((await kid.req('POST', '/api/requests', { kind: 'show', tmdbId: 82728 })).json().status).toBe('pending');
+    const movie = (await kid.req('POST', '/api/requests', { kind: 'movie', tmdbId: 116149 })).json();
+    expect(movie).toMatchObject({ status: 'approved', decidedByName: 'Auto-approved' });
+    await vi.waitFor(() => expect(added).toHaveLength(1));
+  });
+
+  it('a request for a title that is already monitored keeps its profile and adds the seasons', async () => {
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, profileId: await profileId('HD-720p'), search: false })).json();
+    // Monitored but not on the server: a user can still ask for it.
+    const r = (await kid.req('POST', '/api/requests', { kind: 'movie', tmdbId: 116149 })).json();
+    expect(r.status).toBe('pending');
+    await owner.req('POST', `/api/requests/${r.id}/approve`, {});
+    expect((await owner.req('GET', `/api/monitored/lookup/movie/116149`)).json().monitored).toMatchObject({ id: m.id, profileId: await profileId('HD-720p') });
+  });
+
   it('users only see their own requests and cannot cancel others', async () => {
     const own = (await owner.req('POST', '/api/requests', { kind: 'show', tmdbId: 82728 })).json();
     expect((await kid.req('GET', '/api/requests')).json()).toHaveLength(0);

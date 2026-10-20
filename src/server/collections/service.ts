@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { collectionItems, collections, libraryItems, listItems, media, monitored, SERVERS, type MediaKind, type ServerType } from '../db/schema.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
@@ -31,9 +31,11 @@ export function pushablePosterUrl(poster: string | null): string | null {
 }
 
 export function itemsOf(ctx: AppContext, id: number): ListItem[] {
+  // Items copied from Plex or Jellyfin have no poster of their own; the title's TMDB poster fills in.
   return ctx.db
-    .select({ kind: collectionItems.kind, tmdbId: collectionItems.tmdbId, title: collectionItems.title, year: collectionItems.year, posterPath: collectionItems.posterPath })
+    .select({ kind: collectionItems.kind, tmdbId: collectionItems.tmdbId, title: collectionItems.title, year: collectionItems.year, posterPath: sql<string | null>`coalesce(${collectionItems.posterPath}, ${media.posterPath})` })
     .from(collectionItems)
+    .leftJoin(media, and(eq(media.kind, collectionItems.kind), eq(media.tmdbId, collectionItems.tmdbId)))
     .where(eq(collectionItems.collectionId, id))
     .orderBy(asc(collectionItems.position))
     .all();

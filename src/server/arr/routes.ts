@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
 import { hasRole } from '../auth/guard.js';
-import { DOWNLOAD_CLIENT_TYPES, downloadClients, downloads, indexers, MEDIA_KINDS, monitored, monitoredEpisodes, qualityProfiles, requests, type DownloadClientType } from '../db/schema.js';
+import { DOWNLOAD_CLIENT_TYPES, downloadClients, downloads, indexers, MEDIA_KINDS, monitored, monitoredEpisodes, qualityProfiles, requests, users, type DownloadClientType } from '../db/schema.js';
 import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { availabilityFor, refreshMetadata } from '../library/service.js';
@@ -53,9 +53,14 @@ export async function arrRoutes(app: FastifyInstance) {
   const approve = async (requestId: number, profileId: number | undefined, deciderName: string, deciderId: number, rootId?: string) => {
     const r = db().select().from(requests).where(eq(requests.id, requestId)).get();
     if (!r) throw notFound('Request not found');
-    const profile = profileId ?? defaultProfileId(ctx, r.kind);
+    // A title that's already monitored keeps its profile, and gains the requested seasons.
+    const existing = db().select().from(monitored).where(and(eq(monitored.kind, r.kind), eq(monitored.tmdbId, r.tmdbId))).get();
+    const profile = profileId ?? existing?.profileId ?? defaultProfileId(ctx, r.kind);
     if (!getProfile(ctx, profile)) throw badRequest('Unknown quality profile');
-    const row = await monitorTitle(ctx, { kind: r.kind, tmdbId: r.tmdbId, profileId: profile, seasons: r.seasons ? (JSON.parse(r.seasons) as number[]) : null, addedBy: deciderId, rootId }).catch((err: Error) => {
+    const asked = r.seasons ? (JSON.parse(r.seasons) as number[]) : null;
+    const had = existing ? (existing.seasons ? (JSON.parse(existing.seasons) as number[]) : null) : [];
+    const seasons = asked === null || had === null ? null : [...had, ...asked];
+    const row = await monitorTitle(ctx, { kind: r.kind, tmdbId: r.tmdbId, profileId: profile, seasons, addedBy: deciderId, rootId }).catch((err: Error) => {
       throw err.message === 'Unknown root folder' ? badRequest(err.message) : err;
     });
     db().update(requests).set({ status: 'approved', decidedByName: deciderName, decidedAt: Date.now(), monitoredId: row.id }).where(eq(requests.id, requestId)).run();
@@ -94,8 +99,11 @@ export async function arrRoutes(app: FastifyInstance) {
       .get();
     audit(db(), req, 'request.created', { target: `${meta.title} (${meta.year ?? '?'})` });
     notify(ctx, { event: 'request.created', title: 'New request', message: `${created.requestedByName} requested ${meta.title}${meta.year ? ` (${meta.year})` : ''}`, data: { kind: body.kind, tmdbId: body.tmdbId, requestId: created.id } });
-    // Managers and admins don't need anyone's approval.
+    // Managers and admins don't need anyone's approval, nor do users an admin trusts with this kind.
+    const me = db().select().from(users).where(eq(users.id, req.user!.id)).get();
+    const trusted = body.kind === 'movie' ? me?.autoApproveMovies : me?.autoApproveShows;
     if (hasRole(req.user!.role, 'manager')) await approve(created.id, undefined, req.user!.username, req.user!.id, body.rootId);
+    else if (trusted) await approve(created.id, undefined, 'Auto-approved', req.user!.id);
     return db().select().from(requests).where(eq(requests.id, created.id)).get();
   });
 
