@@ -2,6 +2,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Alert } from '../components/ui';
 import { useRootFolders } from '../components/MediaActions';
+import { MatchPicker } from '../components/MatchPicker';
+import { Modal } from '../components/Modal';
+import type { MediaKind } from '../lib/media';
 import { api, formatBytes, formatDate } from '../lib/api';
 
 interface DownloadRow {
@@ -192,9 +195,131 @@ function IndexerSearch({ destinations }: { destinations: { key: string; name: st
   );
 }
 
+interface ImportableFile {
+  path: string;
+  folder: string;
+  name: string;
+  size: number;
+  modifiedAt: number;
+  guess: { kind: MediaKind; title: string; year: number | null; season: number | null; episodes: number[]; quality: string };
+  imported: boolean;
+}
+
+const guessText = (g: ImportableFile['guess']) =>
+  `${g.kind === 'movie' ? 'Movie' : 'Show'}: ${g.title || 'unknown'}${g.year ? ` (${g.year})` : ''}${g.season !== null ? ` S${String(g.season).padStart(2, '0')}${g.episodes.map((e) => `E${String(e).padStart(2, '0')}`).join('')}` : ''}${g.quality !== 'Unknown' ? ` · ${g.quality}` : ''}`;
+
+/** One file: say what it is (movie, or show with season and episode), then pick the title on TMDB. */
+function ImportDialog({ file, onDone, onClose }: { file: ImportableFile; onDone: (text: string) => void; onClose: () => void }) {
+  const [kind, setKind] = useState<MediaKind>(file.guess.kind);
+  const [season, setSeason] = useState(file.guess.season ?? 1);
+  const [episodes, setEpisodes] = useState(file.guess.episodes.join(', ') || '1');
+  const [mode, setMode] = useState('');
+  const [picking, setPicking] = useState(false);
+  const eps = episodes
+    .split(/[,\s]+/)
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n >= 0);
+  const send = async (tmdbId: number) => {
+    const body = { path: file.path, kind, tmdbId, ...(kind === 'show' ? { season, episodes: eps } : {}), ...(mode ? { mode } : {}) };
+    const r = await api<{ imported: string[]; skipped: string[] }>('/api/manual-import', { body });
+    onDone(`Imported to ${r.imported.join(', ')}${r.skipped.length ? `. Skipped: ${r.skipped.join('; ')}` : ''}`);
+  };
+  if (picking) return <MatchPicker kind={kind} title={file.guess.title} heading={`Which ${kind === 'movie' ? 'movie' : 'show'} is ${file.name}?`} onPick={send} onClose={onClose} />;
+  return (
+    <Modal title={`Import ${file.name}`} onClose={onClose}>
+      <div className="space-y-3">
+        <label className="block">
+          <span className="label">This file is</span>
+          <select className="input" value={kind} onChange={(e) => setKind(e.target.value as MediaKind)}>
+            <option value="movie">A movie</option>
+            <option value="show">An episode of a show</option>
+          </select>
+        </label>
+        {kind === 'show' && (
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="label">Season</span>
+              <input className="input" type="number" min={0} value={season} onChange={(e) => setSeason(Number(e.target.value))} />
+            </label>
+            <label className="block">
+              <span className="label">Episode (or several, like 1, 2)</span>
+              <input className="input" value={episodes} onChange={(e) => setEpisodes(e.target.value)} />
+            </label>
+          </div>
+        )}
+        <label className="block">
+          <span className="label">How</span>
+          <select className="input" value={mode} onChange={(e) => setMode(e.target.value)}>
+            <option value="">As set in Media management</option>
+            <option value="move">Move it into the library</option>
+            <option value="copy">Copy it, leave the original</option>
+            <option value="hardlink">Hardlink (keeps seeding, no extra space)</option>
+          </select>
+        </label>
+        <p className="hint">It replaces any file the title or episode already has.</p>
+        <button className="btn-primary" disabled={kind === 'show' && !eps.length} onClick={() => setPicking(true)}>
+          Pick the {kind === 'movie' ? 'movie' : 'show'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Files in the downloads and watch folders that can be imported by hand, e.g. ones that got stuck. */
+function ManualImport() {
+  const qc = useQueryClient();
+  const [showImported, setShowImported] = useState(false);
+  const [file, setFile] = useState<ImportableFile | null>(null);
+  const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const list = useQuery({ queryKey: ['manual-import'], queryFn: () => api<{ folders: { name: string; path: string }[]; files: ImportableFile[] }>('/api/manual-import') });
+  const files = (list.data?.files ?? []).filter((f) => showImported || !f.imported);
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted">
+        Video files in {list.data?.folders.map((f) => `${f.name} (${f.path})`).join(' and ') || 'the downloads folder'}. Pick one, say which movie or episode it is, and it's renamed into your library.
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={showImported} onChange={(e) => setShowImported(e.target.checked)} /> Show files already imported
+        </label>
+        <button className="btn-secondary text-xs" onClick={() => void list.refetch()}>
+          Refresh
+        </button>
+      </div>
+      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      {list.error && <Alert>{(list.error as Error).message}</Alert>}
+      <ul className="space-y-2">
+        {files.map((f) => (
+          <li key={f.path} className="card flex flex-wrap items-center justify-between gap-2 p-3">
+            <div className="min-w-0">
+              <div className="break-all text-sm font-medium">{f.name}</div>
+              <div className="text-xs text-muted">{[f.folder, formatBytes(f.size), formatDate(f.modifiedAt), guessText(f.guess), f.imported ? 'already imported' : null].filter(Boolean).join(' · ')}</div>
+            </div>
+            <button className="btn-primary text-xs" onClick={() => setFile(f)}>
+              Import…
+            </button>
+          </li>
+        ))}
+        {list.data && !files.length && <li className="card text-sm text-muted">Nothing waiting to be imported.</li>}
+      </ul>
+      {file && (
+        <ImportDialog
+          file={file}
+          onClose={() => setFile(null)}
+          onDone={(text) => {
+            setMsg({ kind: 'success', text });
+            void qc.invalidateQueries({ queryKey: ['manual-import'] });
+            void qc.invalidateQueries({ queryKey: ['downloads'] });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 export function DownloadsPage() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'queue' | 'history'>('queue');
+  const [tab, setTab] = useState<'queue' | 'history' | 'import'>('queue');
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
   const [destination, setDestination] = useState('downloads');
@@ -241,14 +366,15 @@ export function DownloadsPage() {
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Downloads</h1>
       <div className="flex gap-1 border-b border-border">
-        {(['queue', 'history'] as const).map((t) => (
+        {(['queue', 'history', 'import'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={`border-b-2 px-3 py-2 text-sm capitalize ${tab === t ? 'border-accent text-accent' : 'border-transparent text-muted'}`}>
             {t}
           </button>
         ))}
       </div>
+      {tab === 'import' && <ManualImport />}
       {tab === 'queue' && list.data && <QueueTotals rows={list.data} />}
-      <ul className="space-y-2">
+      <ul className={`space-y-2 ${tab === 'import' ? 'hidden' : ''}`}>
         {list.data?.map((d) => (
           <li key={d.id} className="card space-y-2 p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">

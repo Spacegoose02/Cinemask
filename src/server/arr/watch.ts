@@ -73,7 +73,7 @@ export async function scanWatchFolder(ctx: AppContext): Promise<number> {
       const existing = ctx.db.select().from(monitored).where(and(eq(monitored.kind, match.kind), eq(monitored.tmdbId, match.tmdbId))).get();
       const row = existing ?? (await monitorTitle(ctx, { kind: match.kind, tmdbId: match.tmdbId, profileId: defaultProfileId(ctx, match.kind) }));
       ctx.db.update(downloads).set({ monitoredId: row.id }).where(eq(downloads.id, dl.id)).run();
-      const result = importDownload(ctx, dl.id, full, 'move');
+      const result = importDownload(ctx, dl.id, full, { mode: 'move' });
       if (!result.imported.length) throw new Error(result.skipped.join('; ') || 'Nothing to import');
       imported += result.imported.length;
       // A folder whose videos all moved only holds leftovers (samples, .nfo, artwork) now.

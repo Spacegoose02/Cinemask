@@ -4,6 +4,15 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-20
+
+### Added
+- Downloads → Import: every video in the downloads and watch folders, with what its name suggests. Pick a file, say whether it's a movie or which episode it is, pick the title on TMDB, and it's renamed into your library (moved, copied or hardlinked). A manual import replaces the file the title or episode already has.
+
+### Fixed
+- Downloads stuck at "completed" forever. When the client finished a download but never said where the files were, or dropped it before Cinemask imported it, the download now fails after 30 minutes with a note to import it from Downloads → Import.
+- "No video files found" now points to remote path mappings, the usual cause.
+
 ## [0.13.0] - 2026-10-20
 
 ### Added

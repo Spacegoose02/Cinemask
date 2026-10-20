@@ -66,6 +66,9 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
         // Removed in the client by hand before finishing.
         if (Date.now() - d.addedAt > 10 * 60 * 1000 && d.status !== 'completed') {
           ctx.db.update(downloads).set({ status: 'removed', error: 'No longer in the download client' }).where(eq(downloads.id, d.id)).run();
+        } else if (d.status === 'completed' && d.monitoredId && Date.now() - (d.completedAt ?? d.addedAt) > 30 * 60 * 1000) {
+          // Finished but never imported, and the client has dropped it: say so instead of waiting forever.
+          ctx.db.update(downloads).set({ status: 'failed', error: `Finished but not imported, and ${c.name} no longer lists it. Import the files from Downloads → Import.` }).where(eq(downloads.id, d.id)).run();
         }
         continue;
       }
@@ -100,7 +103,13 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
         continue;
       }
       if (!d.monitoredId || !item.outputPath) {
-        ctx.db.update(downloads).set({ status: 'completed' }).where(eq(downloads.id, d.id)).run();
+        // A client that never says where it saved a finished download would leave it here forever.
+        const stuck = d.monitoredId && Date.now() - (d.completedAt ?? Date.now()) > 30 * 60 * 1000;
+        ctx.db
+          .update(downloads)
+          .set(stuck ? { status: 'failed', error: `${c.name} finished it but didn't say where the files are. Import them from Downloads → Import.` } : { status: 'completed' })
+          .where(eq(downloads.id, d.id))
+          .run();
         continue;
       }
       try {

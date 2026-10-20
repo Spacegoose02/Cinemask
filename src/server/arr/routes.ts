@@ -18,7 +18,8 @@ import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
 import { autoSearch, confirmHeld, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
-import { failDownload, liveStats } from './tracker.js';
+import { failDownload, liveStats, refreshMediaServers } from './tracker.js';
+import { importFolders, listImportable, manualImport } from './manual.js';
 import { assertRoot, linkDestinations, listRoots } from './roots.js';
 import { sanitizeSegment } from './naming.js';
 import { moveToRoot, scanFolder, titleOnDisk } from '../files/service.js';
@@ -427,6 +428,31 @@ export async function arrRoutes(app: FastifyInstance) {
       return { downloadId: id };
     } catch (err) {
       throw new HttpError(502, (err as Error).message, 'upstream');
+    }
+  });
+
+  // Manual import: files in the downloads or watch folder, matched by hand to a movie or episode.
+  app.get('/api/manual-import', { config: { access: 'manager' } }, async () => ({ folders: importFolders(ctx), files: listImportable(ctx) }));
+
+  app.post('/api/manual-import', { config: { access: 'manager' } }, async (req) => {
+    const body = parse(
+      z.object({
+        path: z.string().min(1).max(4000),
+        kind,
+        tmdbId: z.number().int().positive(),
+        season: z.number().int().min(0).max(1000).optional(),
+        episodes: z.array(z.number().int().min(0).max(10_000)).min(1).max(50).optional(),
+        mode: z.enum(['hardlink', 'copy', 'move']).optional(),
+      }),
+      req.body,
+    );
+    try {
+      const r = await manualImport(ctx, { ...body, userId: req.user!.id });
+      audit(db(), req, 'download.manual_import', { target: body.path, details: { kind: body.kind, tmdbId: body.tmdbId, season: body.season, episodes: body.episodes } });
+      void refreshMediaServers(ctx);
+      return r;
+    } catch (err) {
+      throw badRequest((err as Error).message);
     }
   });
 

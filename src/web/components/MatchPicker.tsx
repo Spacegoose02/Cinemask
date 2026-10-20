@@ -9,7 +9,7 @@ import { Alert } from './ui';
  * Fixes a wrong match: search TMDB (or paste a TMDB id) and pick the right title of the same kind.
  * `onPick` does the saving; an error it throws is shown in the dialog.
  */
-export function MatchPicker({ kind, title, onPick, onClose }: { kind: MediaKind; title: string; onPick: (tmdbId: number) => Promise<unknown>; onClose: () => void }) {
+export function MatchPicker({ kind, title, heading, onPick, onClose }: { kind: MediaKind; title: string; heading?: string; onPick: (tmdbId: number) => Promise<unknown>; onClose: () => void }) {
   const [q, setQ] = useState(title);
   const [query, setQuery] = useState(title);
   const [error, setError] = useState('');
@@ -35,7 +35,7 @@ export function MatchPicker({ kind, title, onPick, onClose }: { kind: MediaKind;
   const typedId = /^\d+$/.test(q.trim()) ? Number(q.trim()) : null;
 
   return (
-    <Modal title={`Fix the match for ${title}`} onClose={onClose}>
+    <Modal title={heading ?? `Fix the match for ${title}`} onClose={onClose}>
       <form
         className="flex gap-2"
         onSubmit={(e) => {
