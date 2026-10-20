@@ -190,9 +190,9 @@ export async function importServerCollections(ctx: AppContext, server: ServerTyp
       .map((r) => ({ kind: r.kind, tmdbId: r.tmdbId!, title: r.title, year: r.year, posterPath: null }));
   let imported = 0;
   let updated = 0;
-  const upsert = (sourceId: string, name: string, description: string | null, poster: string | null, items: ListItem[]) => {
+  const upsert = (sourceId: string, name: string, description: string | null, poster: string | null, items: ListItem[], library: string | null = null) => {
     const existing = ctx.db.select().from(collections).where(and(eq(collections.source, server), eq(collections.sourceId, sourceId))).get();
-    const values = { name, description, poster, ...(server === 'plex' ? { plexKey: sourceId, syncPlex: true } : { jellyfinId: sourceId, syncJellyfin: true }) };
+    const values = { name, description, poster, library, ...(server === 'plex' ? { plexKey: sourceId, syncPlex: true } : { jellyfinId: sourceId, syncJellyfin: true }) };
     const id = existing
       ? ctx.db.update(collections).set(values).where(eq(collections.id, existing.id)).returning().get().id
       : ctx.db.insert(collections).values({ ...values, source: server, sourceId, createdBy: userId, createdAt: Date.now() }).returning().get().id;
@@ -203,7 +203,7 @@ export async function importServerCollections(ctx: AppContext, server: ServerTyp
   if (server === 'plex') {
     const plex = plexClient(ctx);
     if (!plex) throw new Error('Plex is not connected');
-    for (const c of await plex.collections()) upsert(c.ratingKey, c.title, c.summary ?? null, c.thumb ? `plex:${c.thumb}` : null, toItems(await plex.collectionChildren(c.ratingKey)));
+    for (const c of await plex.collections()) upsert(c.ratingKey, c.title, c.summary ?? null, c.thumb ? `plex:${c.thumb}` : null, toItems(await plex.collectionChildren(c.ratingKey)), c.sectionTitle ?? null);
   } else {
     const jf = jellyfinClient(ctx);
     if (!jf) throw new Error('Jellyfin is not connected');
