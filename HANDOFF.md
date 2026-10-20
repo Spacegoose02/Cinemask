@@ -17,8 +17,8 @@ The second board (35 cards) is being worked through in five pull requests. 14 ca
 | 1. Fixes | YouTube trailer error, turn off CAM/TS copies, download totals on the Downloads tab, collection button for Plex and Jellyfin, Handoff.md, bug and security check | PR #10 |
 | 2. Folders and sizes | Custom root folders (Kids Movies, 4K…), download tag per media path, size limits for movies and per show, download from a link with a name and destination, auto-monitor what the library sync finds | PR #13 (with PR 3) |
 | 3. Library | Watch trailers already on the server, trailer management (auto, sources, quality), manually map media, watched / play count, Plex labels with collections | PR #13 |
-| 4. YouTube and ReadMeABook | Subscribe to channels (new, all, playlists), metadata for Plex and Jellyfin, audiobooks through ReadMeABook | In review |
-| 5. Themes | Five themes in each style (dark, light, retro, futuristic, 16-bit, cinemas) plus Blockbuster | To do |
+| 4. YouTube and ReadMeABook | Subscribe to channels (new, all, playlists), metadata for Plex and Jellyfin, audiobooks through ReadMeABook | PR #14 |
+| 5. Themes | Five themes in each style (dark, light, retro, futuristic, 16-bit, cinemas) plus Blockbuster | In review |
 
 Already done in 0.9 (no work needed): delete episodes, seasons and movies; download or manually search one episode; manual search on a movie; collection maker synced to Plex and Jellyfin; download and import paths; Shelfmark search and download; rename and manage files; ask to search for upgrades after a profile change; Prowlarr search; change posters on Plex and Jellyfin; upgrades.
 
@@ -38,6 +38,7 @@ Already done in 0.9 (no work needed): delete episodes, seasons and movies; downl
 - **Labels**: `library_items.labels` holds Plex labels / Jellyfin tags. `collections.from_label` fills a collection from them; `collections.plex_label` is put on (and taken off) Plex items on each push.
 - **YouTube** (`youtube/`): `youtube_channels` and `youtube_videos`. `parseChannelUrl()` only lets youtube.com channel and playlist links through; video and playlist ids are checked before reaching yt-dlp, always after `--`. Checks run hourly for channels that are due; `downloadWanted()` drains the queue every 5 minutes (calls are serialised). Everything is written inside `extras.youtubePath` via `insideRoot()`.
 - **ReadMeABook** (`integrations/readmeabook.ts`): uses its API-token endpoints (`/api/audiobooks/search`, `POST /api/requests`, `GET /api/requests/:id`). Books handed over have `external_id` `readmeabook:<id>`; `pollReadMeABook()` follows them every 2 minutes. An HTTP 409 (already requested or in the library) is accepted and left for the Audiobookshelf sync to mark ready.
+- **Themes**: `THEME_LIST` in `web/lib/theme.ts` (id, style, swatch colours) is the list; each theme's colours are a `[data-theme]` block in `styles.css`, and shared touches per style hang off `[data-style]`. Add new ones to `THEME_NAMES` in `auth/apikey-routes.ts` too; `test/themes.test.ts` checks all three agree.
 - **Auto-monitor** (`monitorLibrary()` in `arr/monitor.ts`) runs after each library sync, 50 titles per run; `monitor_exclusions` remembers titles removed by hand.
 
 ## Working here

@@ -20,7 +20,7 @@ interface Report {
 }
 
 const ICON = { ok: '✓', warning: '!', error: '✕' };
-const COLOR = { ok: 'bg-success text-black', warning: 'bg-warning text-black', error: 'bg-danger text-white' };
+const COLOR = { ok: 'bg-success text-bg', warning: 'bg-warning text-bg', error: 'bg-danger text-bg' };
 const ORDER = ['Connections', 'Storage', 'Downloads', 'Backups'];
 
 export function HealthSettings() {
