@@ -12,6 +12,8 @@
   --color-accent-fg: var(--mm-accent-fg);
   --color-danger: var(--mm-danger);
   --color-success: var(--mm-success);
+  --color-warning: var(--mm-warning);
+  --color-info: var(--mm-info);
 }
 
 :root,
@@ -26,6 +28,8 @@
   --mm-accent-fg: #1a1205;
   --mm-danger: #f05252;
   --mm-success: #31c48d;
+  --mm-warning: #e3a008;
+  --mm-info: #76a9fa;
 }
 
 [data-theme='light'] {
@@ -39,19 +43,116 @@
   --mm-accent-fg: #ffffff;
   --mm-danger: #c81e1e;
   --mm-success: #057a55;
+  --mm-warning: #9f580a;
+  --mm-info: #1a56db;
+}
+
+/* Retro: a 1970s picture palace. Warm browns, cream text, marquee orange. */
+[data-theme='retro'] {
+  --mm-bg: #24170f;
+  --mm-surface: #33231a;
+  --mm-surface-2: #402c20;
+  --mm-border: #5c4030;
+  --mm-text: #f6e7c8;
+  --mm-muted: #c9a982;
+  --mm-accent: #f08a24;
+  --mm-accent-fg: #24170f;
+  --mm-danger: #e8553d;
+  --mm-success: #9cc75b;
+  --mm-warning: #f2c14e;
+  --mm-info: #7fb7be;
+  --mm-font: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, ui-serif, serif;
+  --mm-heading-font: 'Rockwell', 'Roboto Slab', 'Iowan Old Style', Georgia, ui-serif, serif;
+}
+[data-theme='retro'] h1,
+[data-theme='retro'] h2 {
+  font-family: var(--mm-heading-font);
+  letter-spacing: 0.02em;
+}
+[data-theme='retro'] body {
+  background-image: repeating-linear-gradient(90deg, transparent 0 46px, rgb(255 255 255 / 0.015) 46px 48px);
+}
+
+/* Futuristic: deep space navy, neon cyan and violet, glowing edges. */
+[data-theme='futuristic'] {
+  --mm-bg: #05070f;
+  --mm-surface: #0a1020;
+  --mm-surface-2: #10182e;
+  --mm-border: #1f2c50;
+  --mm-text: #dbe6ff;
+  --mm-muted: #8696bf;
+  --mm-accent: #22d3ee;
+  --mm-accent-fg: #00151a;
+  --mm-danger: #ff4d8d;
+  --mm-success: #34f5a4;
+  --mm-warning: #ffd166;
+  --mm-info: #a78bfa;
+  --mm-font: 'Segoe UI', 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+[data-theme='futuristic'] body {
+  background: radial-gradient(1200px 600px at 80% -10%, rgb(34 211 238 / 0.08), transparent), radial-gradient(900px 500px at -10% 110%, rgb(167 139 250 / 0.08), transparent), var(--mm-bg);
+  background-attachment: fixed;
+}
+[data-theme='futuristic'] h1 {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+[data-theme='futuristic'] .card {
+  box-shadow: 0 0 0 1px rgb(34 211 238 / 0.06), 0 0 24px rgb(34 211 238 / 0.05);
+}
+[data-theme='futuristic'] .btn-primary {
+  box-shadow: 0 0 14px rgb(34 211 238 / 0.45);
+}
+
+/* 16-bit: console-era palette, square corners, chunky borders and drop shadows. */
+[data-theme='16bit'] {
+  --mm-bg: #181838;
+  --mm-surface: #282860;
+  --mm-surface-2: #303078;
+  --mm-border: #000000;
+  --mm-text: #f8f8f8;
+  --mm-muted: #b8b8e8;
+  --mm-accent: #f8d030;
+  --mm-accent-fg: #181838;
+  --mm-danger: #f85050;
+  --mm-success: #58d858;
+  --mm-warning: #f8a030;
+  --mm-info: #58b8f8;
+  --mm-font: 'Press Start 2P', 'Lucida Console', 'Courier New', ui-monospace, monospace;
+}
+[data-theme='16bit'] * {
+  border-radius: 0 !important;
+}
+[data-theme='16bit'] .card,
+[data-theme='16bit'] .btn,
+[data-theme='16bit'] .input {
+  border-width: 2px;
+  box-shadow: 4px 4px 0 #000;
+}
+[data-theme='16bit'] .btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 #000;
+}
+[data-theme='16bit'] img {
+  image-rendering: pixelated;
+}
+[data-theme='16bit'] h1,
+[data-theme='16bit'] h2 {
+  text-transform: uppercase;
+  text-shadow: 2px 2px 0 #000;
 }
 
 body {
   background: var(--mm-bg);
   color: var(--mm-text);
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--mm-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
 }
 
 @utility input {
   @apply w-full rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text outline-none focus:border-accent;
 }
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50;
+  @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50;
 }
 @utility btn-primary {
   @apply btn bg-accent text-accent-fg hover:brightness-110;

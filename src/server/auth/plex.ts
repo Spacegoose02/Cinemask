@@ -17,7 +17,7 @@ interface PlexState {
 
 export function plexHeaders(app: FastifyInstance): plextv.PlexHeaders {
   // Stable per install, derived from the instance key so it survives restarts without being stored.
-  return { clientId: `mm-${sha256(app.ctx.secretKey.toString('hex')).slice(0, 24)}`, product: 'Media Manager' };
+  return { clientId: `mm-${sha256(app.ctx.secretKey.toString('hex')).slice(0, 24)}`, product: 'Cinemask' };
 }
 
 export async function plexAuthRoutes(app: FastifyInstance) {

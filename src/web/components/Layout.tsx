@@ -1,6 +1,8 @@
+import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { api, hasRole } from '../lib/api';
+import { SearchBar } from './SearchBar';
 import { useAuth } from '../lib/auth';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -10,6 +12,12 @@ export function Layout({ children }: { children: ReactNode }) {
   const { me, refresh } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const isManager = hasRole(me, 'manager');
+  const dlCount = useQuery({ queryKey: ['download-count'], queryFn: () => api<{ active: number }>('/api/downloads/count'), enabled: isManager, refetchInterval: 15000 });
+  const isAdmin = hasRole(me, 'admin');
+  const health = useQuery({ queryKey: ['health-summary'], queryFn: () => api<{ level: string | null; problems: number }>('/api/system/health/summary'), enabled: isAdmin, refetchInterval: 300000 });
+  const reqCount = useQuery({ queryKey: ['request-count'], queryFn: () => api<{ pending: number }>('/api/requests/count'), enabled: isManager, refetchInterval: 30000 });
+  const badge = (n: number | undefined) => (n ? <span className="ml-auto rounded-full bg-accent px-1.5 text-xs font-semibold text-accent-fg">{n}</span> : null);
 
   const logout = async () => {
     await api('/api/auth/logout', { method: 'POST' });
@@ -22,9 +30,38 @@ export function Layout({ children }: { children: ReactNode }) {
       <NavLink to="/" end className={linkClass}>
         Home
       </NavLink>
-      {hasRole(me, 'admin') && (
-        <NavLink to="/settings" className={linkClass}>
+      <NavLink to="/library" className={linkClass}>
+        Library
+      </NavLink>
+      <NavLink to="/discover" className={linkClass}>
+        Discover
+      </NavLink>
+      <NavLink to="/collections" className={linkClass}>
+        Collections
+      </NavLink>
+      <NavLink to="/lists" className={linkClass}>
+        Lists
+      </NavLink>
+      <NavLink to="/books" className={linkClass}>
+        Books
+      </NavLink>
+      <NavLink to="/calendar" className={linkClass}>
+        Calendar
+      </NavLink>
+      <NavLink to="/requests" className={(p) => `${linkClass(p)} flex items-center`}>
+        Requests {badge(reqCount.data?.pending)}
+      </NavLink>
+      {isManager && (
+        <NavLink to="/downloads" className={(p) => `${linkClass(p)} flex items-center`}>
+          Downloads {badge(dlCount.data?.active)}
+        </NavLink>
+      )}
+      {isAdmin && (
+        <NavLink to="/settings" className={(p) => `${linkClass(p)} flex items-center`}>
           Settings
+          {health.data?.problems ? (
+            <span className={`ml-auto h-2 w-2 rounded-full ${health.data.level === 'error' ? 'bg-danger' : 'bg-warning'}`} title={`${health.data.problems} health problem(s)`} />
+          ) : null}
         </NavLink>
       )}
       <NavLink to="/account" className={linkClass}>
@@ -36,14 +73,14 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen md:flex">
       <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-3 md:hidden">
-        <span className="font-semibold">Media Manager</span>
+        <span className="flex items-center gap-2 font-semibold"><img src="/logo-128.png" alt="" className="h-7 w-7" />Cinemask</span>
         <button className="btn-secondary" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Menu">
           ☰
         </button>
       </header>
       {open && <div className="border-b border-border bg-surface p-3 md:hidden">{nav}</div>}
       <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-surface p-4 md:flex">
-        <div className="mb-6 px-3 text-lg font-semibold">Media Manager</div>
+        <div className="mb-6 flex items-center gap-2 px-2 text-lg font-semibold"><img src="/logo-128.png" alt="" className="h-9 w-9" />Cinemask</div>
         {nav}
         <div className="mt-auto space-y-2 px-3 text-sm">
           <div className="text-muted">
@@ -54,7 +91,12 @@ export function Layout({ children }: { children: ReactNode }) {
           </button>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 p-4 md:p-8">{children}</main>
+      <div className="min-w-0 flex-1">
+        <div className="sticky top-0 z-10 border-b border-border bg-bg/90 px-4 py-3 backdrop-blur md:px-8">
+          <SearchBar />
+        </div>
+        <main className="p-4 md:p-8">{children}</main>
+      </div>
     </div>
   );
 }

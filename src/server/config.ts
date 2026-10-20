@@ -21,6 +21,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     trustProxy: env.TRUST_PROXY === 'true',
     webDir: env.WEB_DIR,
     logLevel: env.LOG_LEVEL ?? 'info',
-    version: env.APP_VERSION ?? '0.1.0',
+    version: env.APP_VERSION ?? '0.9.0',
   };
 }

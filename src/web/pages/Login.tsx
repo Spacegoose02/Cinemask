@@ -1,3 +1,4 @@
+import { Brand } from '../components/Brand';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -62,7 +63,8 @@ export function LoginPage({ status }: { status: AuthStatus }) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
+      <Brand />
       <div className="card w-full max-w-sm space-y-4">
         <h1 className="text-xl font-semibold">Sign in</h1>
         {error && <Alert>{error}</Alert>}

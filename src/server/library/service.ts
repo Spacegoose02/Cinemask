@@ -1,0 +1,314 @@
+import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { requestAvailable } from '../notify/events.js';
+import type { AppContext } from '../context.js';
+import { libraryEpisodes, libraryItems, media, requests, type MediaKind, type ServerType } from '../db/schema.js';
+import { bestResolution } from '../integrations/http.js';
+import { JellyfinClient } from '../integrations/jellyfin.js';
+import type { MediaServerClient, ServerItem } from '../integrations/mediaserver.js';
+import { MdblistClient } from '../integrations/mdblist.js';
+import { PlexClient } from '../integrations/plex.js';
+import { pickTrailer, releaseDates, TmdbClient, type TmdbSearchResult } from '../integrations/tmdb.js';
+
+export type Availability = 'on_server' | 'partial' | 'not_on_server' | 'not_available';
+
+const METADATA_MAX_AGE = 3 * 24 * 60 * 60 * 1000;
+const today = () => new Date().toISOString().slice(0, 10);
+
+export function tmdbClient(ctx: AppContext): TmdbClient {
+  const m = ctx.settings.get('metadata');
+  return new TmdbClient(() => ctx.db, m.tmdbApiKey, m.language, m.region);
+}
+
+export function mdblistClient(ctx: AppContext): MdblistClient {
+  return new MdblistClient(ctx.settings.get('metadata').mdblistApiKey);
+}
+
+export function mediaServers(ctx: AppContext): { server: ServerType; client: MediaServerClient }[] {
+  const out: { server: ServerType; client: MediaServerClient }[] = [];
+  const plex = ctx.settings.get('plex');
+  if (plex.enabled && plex.url && plex.token) out.push({ server: 'plex', client: new PlexClient(plex.url, plex.token) });
+  const jf = ctx.settings.get('jellyfin');
+  if (jf.enabled && jf.url && jf.apiKey) out.push({ server: 'jellyfin', client: new JellyfinClient(jf.url, jf.apiKey) });
+  return out;
+}
+
+/** Returns the media row id for a TMDB title, creating a placeholder row if it is new. */
+export function ensureMedia(ctx: AppContext, kind: MediaKind, tmdbId: number, fallback: { title: string; year?: number | null }): number {
+  const existing = ctx.db.select({ id: media.id }).from(media).where(and(eq(media.kind, kind), eq(media.tmdbId, tmdbId))).get();
+  if (existing) return existing.id;
+  return ctx.db.insert(media).values({ kind, tmdbId, title: fallback.title, year: fallback.year ?? null }).returning({ id: media.id }).get().id;
+}
+
+/** Fetches details from TMDB into the media table when missing or older than a few days. */
+export async function refreshMetadata(ctx: AppContext, kind: MediaKind, tmdbId: number, force = false) {
+  const tmdb = tmdbClient(ctx);
+  const row = ctx.db.select().from(media).where(and(eq(media.kind, kind), eq(media.tmdbId, tmdbId))).get();
+  if (row && !force && row.metadataUpdatedAt && Date.now() - row.metadataUpdatedAt < METADATA_MAX_AGE) return row;
+  if (!tmdb.configured) return row ?? null;
+  const region = ctx.settings.get('metadata').region;
+  let values: Omit<typeof media.$inferInsert, 'id' | 'kind' | 'tmdbId'>;
+  if (kind === 'movie') {
+    const m = await tmdb.movie(tmdbId);
+    const dates = releaseDates(m, region);
+    values = {
+      title: m.title,
+      year: m.release_date ? Number(m.release_date.slice(0, 4)) : null,
+      overview: m.overview,
+      posterPath: m.poster_path,
+      backdropPath: m.backdrop_path,
+      releaseDate: m.release_date || null,
+      digitalRelease: dates.digital,
+      physicalRelease: dates.physical,
+      tmdbStatus: m.status,
+      runtime: m.runtime,
+      genres: JSON.stringify(m.genres.map((g) => g.name)),
+      rating: m.vote_average,
+      imdbId: m.imdb_id,
+      trailerKey: pickTrailer(m.videos?.results),
+      metadataUpdatedAt: Date.now(),
+    };
+  } else {
+    const s = await tmdb.show(tmdbId);
+    values = {
+      title: s.name,
+      year: s.first_air_date ? Number(s.first_air_date.slice(0, 4)) : null,
+      overview: s.overview,
+      posterPath: s.poster_path,
+      backdropPath: s.backdrop_path,
+      releaseDate: s.first_air_date || null,
+      nextAirDate: s.next_episode_to_air?.air_date ?? null,
+      tmdbStatus: s.status,
+      runtime: s.episode_run_time[0] ?? null,
+      genres: JSON.stringify(s.genres.map((g) => g.name)),
+      network: s.networks[0]?.name ?? null,
+      rating: s.vote_average,
+      imdbId: s.external_ids?.imdb_id ?? null,
+      tvdbId: s.external_ids?.tvdb_id ?? null,
+      trailerKey: pickTrailer(s.videos?.results),
+      metadataUpdatedAt: Date.now(),
+    };
+  }
+  return ctx.db
+    .insert(media)
+    .values({ kind, tmdbId, ...values })
+    .onConflictDoUpdate({ target: [media.kind, media.tmdbId], set: values })
+    .returning()
+    .get();
+}
+
+/** Has the title been released for home viewing yet? Uses digital/physical dates for movies when known. */
+export function isReleased(kind: MediaKind, dates: { releaseDate?: string | null; digitalRelease?: string | null; physicalRelease?: string | null }): boolean {
+  const t = today();
+  if (kind === 'movie' && (dates.digitalRelease || dates.physicalRelease)) {
+    return [dates.digitalRelease, dates.physicalRelease].some((d) => d && d <= t);
+  }
+  return Boolean(dates.releaseDate && dates.releaseDate <= t);
+}
+
+export interface AvailabilityInfo {
+  status: Availability;
+  resolution: string | null;
+  servers: ServerType[];
+}
+
+/** Availability for many TMDB ids at once (for lists and search results). */
+export function availabilityFor(ctx: AppContext, kind: MediaKind, items: { tmdbId: number; releaseDate?: string | null }[]): Map<number, AvailabilityInfo> {
+  const ids = [...new Set(items.map((i) => i.tmdbId))];
+  const rows = ids.length
+    ? ctx.db
+        .select({ tmdbId: libraryItems.tmdbId, server: libraryItems.server, resolution: libraryItems.resolution, id: libraryItems.id })
+        .from(libraryItems)
+        .where(and(eq(libraryItems.kind, kind), inArray(libraryItems.tmdbId, ids)))
+        .all()
+    : [];
+  const mediaRows = ids.length
+    ? ctx.db.select().from(media).where(and(eq(media.kind, kind), inArray(media.tmdbId, ids))).all()
+    : [];
+  const out = new Map<number, AvailabilityInfo>();
+  for (const item of items) {
+    const found = rows.filter((r) => r.tmdbId === item.tmdbId);
+    const m = mediaRows.find((r) => r.tmdbId === item.tmdbId);
+    if (found.length) {
+      let resolution = bestResolution(found.map((f) => f.resolution));
+      if (kind === 'show') {
+        const eps = ctx.db
+          .select({ resolution: libraryEpisodes.resolution })
+          .from(libraryEpisodes)
+          .where(inArray(libraryEpisodes.libraryItemId, found.map((f) => f.id)))
+          .all();
+        resolution = bestResolution(eps.map((e) => e.resolution));
+      }
+      out.set(item.tmdbId, { status: 'on_server', resolution, servers: [...new Set(found.map((f) => f.server))] });
+    } else {
+      const released = isReleased(kind, { releaseDate: m?.releaseDate ?? item.releaseDate, digitalRelease: m?.digitalRelease, physicalRelease: m?.physicalRelease });
+      out.set(item.tmdbId, { status: released ? 'not_on_server' : 'not_available', resolution: null, servers: [] });
+    }
+  }
+  return out;
+}
+
+/** Episodes on any server for a show, keyed "season:episode". */
+export function episodesOnServer(ctx: AppContext, tmdbId: number): Map<string, { resolution: string | null; servers: ServerType[] }> {
+  const items = ctx.db.select().from(libraryItems).where(and(eq(libraryItems.kind, 'show'), eq(libraryItems.tmdbId, tmdbId))).all();
+  const map = new Map<string, { resolution: string | null; servers: ServerType[] }>();
+  for (const item of items) {
+    const eps = ctx.db.select().from(libraryEpisodes).where(eq(libraryEpisodes.libraryItemId, item.id)).all();
+    for (const e of eps) {
+      const k = `${e.season}:${e.episode}`;
+      const prev = map.get(k);
+      map.set(k, {
+        resolution: bestResolution([prev?.resolution ?? null, e.resolution]),
+        servers: [...new Set([...(prev?.servers ?? []), item.server])],
+      });
+    }
+  }
+  return map;
+}
+
+export function toCard(kind: MediaKind, r: TmdbSearchResult) {
+  return {
+    kind,
+    tmdbId: r.id,
+    title: r.title ?? r.name ?? '',
+    year: (r.release_date ?? r.first_air_date ?? '').slice(0, 4) || null,
+    releaseDate: r.release_date ?? r.first_air_date ?? null,
+    posterPath: r.poster_path ?? null,
+    backdropPath: r.backdrop_path ?? null,
+    overview: r.overview ?? '',
+    rating: r.vote_average ?? null,
+  };
+}
+
+export type Card = ReturnType<typeof toCard> & { availability: AvailabilityInfo };
+
+/** Converts TMDB results into cards annotated with server availability. */
+export function cards(ctx: AppContext, results: TmdbSearchResult[], fixedKind?: MediaKind): Card[] {
+  const typed = results
+    .map((r) => {
+      const kind: MediaKind | null = fixedKind ?? (r.media_type === 'movie' ? 'movie' : r.media_type === 'tv' ? 'show' : null);
+      return kind ? toCard(kind, r) : null;
+    })
+    .filter((c): c is ReturnType<typeof toCard> => c !== null);
+  const out: Card[] = [];
+  for (const kind of ['movie', 'show'] as const) {
+    const ofKind = typed.filter((c) => c.kind === kind);
+    const avail = availabilityFor(ctx, kind, ofKind);
+    for (const c of ofKind) out.push({ ...c, availability: avail.get(c.tmdbId)! });
+  }
+  // Keep TMDB's ordering.
+  return typed.map((c) => out.find((o) => o.kind === c.kind && o.tmdbId === c.tmdbId)!);
+}
+
+export interface SyncStatus {
+  running: boolean;
+  lastRunAt: number | null;
+  results: Partial<Record<ServerType, { ok: boolean; movies?: number; shows?: number; episodes?: number; error?: string }>>;
+}
+
+export class LibrarySync {
+  status: SyncStatus = { running: false, lastRunAt: null, results: {} };
+
+  constructor(private readonly ctx: AppContext) {}
+
+  async run(): Promise<SyncStatus> {
+    if (this.status.running) return this.status;
+    this.status.running = true;
+    try {
+      for (const { server, client } of mediaServers(this.ctx)) {
+        try {
+          const items = await client.fetchLibrary();
+          await this.resolveMissingTmdbIds(items);
+          this.store(server, items);
+          this.status.results[server] = {
+            ok: true,
+            movies: items.filter((i) => i.kind === 'movie').length,
+            shows: items.filter((i) => i.kind === 'show').length,
+            episodes: items.reduce((n, i) => n + (i.episodes?.length ?? 0), 0),
+          };
+        } catch (err) {
+          this.status.results[server] = { ok: false, error: (err as Error).message };
+        }
+      }
+      this.status.lastRunAt = Date.now();
+      this.markRequestsAvailable();
+      return this.status;
+    } finally {
+      this.status.running = false;
+    }
+  }
+
+  /** Approved requests whose title is now on a server are marked available. */
+  private markRequestsAvailable() {
+    const approved = this.ctx.db.select().from(requests).where(eq(requests.status, 'approved')).all();
+    for (const r of approved) {
+      const status = availabilityFor(this.ctx, r.kind, [{ tmdbId: r.tmdbId }]).get(r.tmdbId)!.status;
+      if (status !== 'on_server') continue;
+      this.ctx.db.update(requests).set({ status: 'available' }).where(eq(requests.id, r.id)).run();
+      requestAvailable(this.ctx, r);
+    }
+  }
+
+  /** Items matched by IMDb or TVDB id only (older Plex agents) get their TMDB id looked up. */
+  private async resolveMissingTmdbIds(items: ServerItem[]) {
+    const tmdb = tmdbClient(this.ctx);
+    if (!tmdb.configured) return;
+    for (const item of items.filter((i) => !i.tmdbId && (i.imdbId || i.tvdbId))) {
+      try {
+        const found = item.imdbId ? await tmdb.findByExternal(item.imdbId, 'imdb_id') : await tmdb.findByExternal(String(item.tvdbId), 'tvdb_id');
+        const hit = item.kind === 'movie' ? found.movie_results[0] : found.tv_results[0];
+        if (hit) item.tmdbId = hit.id;
+      } catch {
+        // Leave unmatched; it still shows in the library by title.
+      }
+    }
+  }
+
+  /** Replaces everything known about one server in a single transaction. */
+  store(server: ServerType, items: ServerItem[]) {
+    const { sqlite } = this.ctx.dbHandle;
+    sqlite.transaction(() => {
+      this.ctx.db.delete(libraryItems).where(eq(libraryItems.server, server)).run();
+      for (const item of items) {
+        const mediaId = item.tmdbId ? ensureMedia(this.ctx, item.kind, item.tmdbId, item) : null;
+        const row = this.ctx.db
+          .insert(libraryItems)
+          .values({
+            server,
+            externalKey: item.externalKey,
+            kind: item.kind,
+            title: item.title,
+            year: item.year,
+            tmdbId: item.tmdbId,
+            tvdbId: item.tvdbId,
+            imdbId: item.imdbId,
+            // A show's quality is its best episode's.
+            resolution: item.kind === 'show' ? bestResolution((item.episodes ?? []).map((e) => e.resolution)) : item.resolution,
+            addedAt: item.addedAt,
+            mediaId,
+          })
+          .onConflictDoNothing()
+          .returning({ id: libraryItems.id })
+          .get();
+        if (row && item.episodes?.length) {
+          for (const e of item.episodes) {
+            this.ctx.db.insert(libraryEpisodes).values({ libraryItemId: row.id, ...e }).run();
+          }
+        }
+      }
+    })();
+  }
+
+  /** Fills TMDB details for library titles that have none yet, a few at a time. */
+  async backfillMetadata(limit = 25) {
+    if (!tmdbClient(this.ctx).configured) return 0;
+    const missing = this.ctx.db.select().from(media).where(isNull(media.metadataUpdatedAt)).limit(limit).all();
+    for (const m of missing) {
+      try {
+        await refreshMetadata(this.ctx, m.kind, m.tmdbId);
+      } catch {
+        // try again next run
+      }
+    }
+    return missing.length;
+  }
+}

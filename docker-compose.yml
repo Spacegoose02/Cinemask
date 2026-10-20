@@ -1,8 +1,8 @@
 services:
-  media-manager:
-    image: ghcr.io/spacegoose02/media-manager:latest
+  cinemask:
+    image: ghcr.io/spacegoose02/cinemask:latest
     build: .
-    container_name: media-manager
+    container_name: cinemask
     restart: unless-stopped
     ports:
       - "7979:7979"
@@ -14,4 +14,6 @@ services:
       - TRUST_PROXY=false
     volumes:
       - ./config:/config
-      # Media and downloads paths are added in Phase 3.
+      # Put downloads and media on the same disk/share so imports can hardlink.
+      - /mnt/user/data/downloads:/downloads
+      - /mnt/user/data/media:/media

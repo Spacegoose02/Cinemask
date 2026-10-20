@@ -5,7 +5,8 @@ import { Alert, Field } from '../components/ui';
 import { api, formatDate } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { signInWithPlex } from '../lib/plex';
-import { setTheme, THEMES } from '../lib/theme';
+import { ApiKeys } from '../components/ApiKeys';
+import { ThemePicker } from '../components/ThemePicker';
 
 interface SessionRow {
   id: string;
@@ -60,13 +61,7 @@ export function AccountPage() {
 
       <section className="card space-y-3">
         <h2 className="font-semibold">Appearance</h2>
-        <div className="flex gap-2">
-          {THEMES.map((t) => (
-            <button key={t} className="btn-secondary capitalize" onClick={() => setTheme(t)}>
-              {t}
-            </button>
-          ))}
-        </div>
+        <ThemePicker current={me?.theme ?? null} />
       </section>
 
       <section className="card space-y-3">
@@ -125,6 +120,7 @@ export function AccountPage() {
           ))}
         </ul>
       </section>
+      <ApiKeys />
     </div>
   );
 }

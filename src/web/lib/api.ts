@@ -40,6 +40,7 @@ export interface Me {
   role: Role;
   isOwner: boolean;
   hasPassword: boolean;
+  theme: string | null;
 }
 
 export interface AuthStatus {

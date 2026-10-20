@@ -6,17 +6,34 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ZodError } from 'zod';
+import { seedProfiles } from './arr/profiles.js';
+import { bookRoutes } from './books/routes.js';
+import { calendarRoutes } from './calendar/routes.js';
+import { collectionRoutes } from './collections/routes.js';
+import { discoverRoutes } from './discover/routes.js';
+import { homeRoutes } from './home/routes.js';
+import { listRoutes } from './lists/routes.js';
+import { posterRoutes } from './posters/routes.js';
+import { trailerRoutes } from './trailers/routes.js';
+import { fileRoutes } from './files/routes.js';
+import { healthRoutes } from './health/routes.js';
+import { apiRoutes } from './api/routes.js';
+import { arrRoutes } from './arr/routes.js';
 import { auditRoutes } from './audit/routes.js';
 import { registerGuard } from './auth/guard.js';
 import { oidcRoutes } from './auth/oidc.js';
 import { plexAuthRoutes } from './auth/plex.js';
 import { authRoutes } from './auth/routes.js';
+import { apiKeyRoutes } from './auth/apikey-routes.js';
 import { backupRoutes } from './backup/routes.js';
 import { BackupService, writeBackupArchive } from './backup/service.js';
 import type { AppConfig } from './config.js';
 import type { AppContext } from './context.js';
 import { databasePath, migrate, openDatabase, pendingMigrations, schemaVersion } from './db/database.js';
+import { integrationRoutes } from './integrations/routes.js';
 import { Scheduler } from './jobs/scheduler.js';
+import { libraryRoutes } from './library/routes.js';
+import { LibrarySync } from './library/service.js';
 import { HttpError } from './lib/errors.js';
 import { loadOrCreateSecretKey } from './security/crypto.js';
 import { settingsRoutes } from './settings/routes.js';
@@ -27,6 +44,7 @@ export interface BuiltApp {
   app: FastifyInstance;
   backups: BackupService;
   scheduler: Scheduler;
+  librarySync: LibrarySync;
 }
 
 export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {}): Promise<BuiltApp> {
@@ -56,10 +74,12 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
     settings: undefined as unknown as SettingsStore,
   };
   ctx.settings = new SettingsStore(() => ctx.db, () => ctx.secretKey);
+  seedProfiles(ctx);
   app.decorate('ctx', ctx);
 
   const backups = new BackupService(ctx);
-  const scheduler = new Scheduler(app, backups);
+  const librarySync = new LibrarySync(ctx);
+  const scheduler = new Scheduler(app, backups, librarySync);
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.message, code: err.code });
@@ -99,6 +119,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
 
   app.get('/api/health', { config: { access: 'public' } }, async () => ({ status: 'ok' }));
   await app.register(authRoutes);
+  await app.register(apiKeyRoutes);
   await app.register(oidcRoutes);
   await app.register(plexAuthRoutes);
   await app.register(userRoutes);
@@ -106,9 +127,25 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   await app.register(settingsRoutes, {
     onChange: (section: string) => {
       if (section === 'backup') scheduler.rescheduleBackups();
+      if (section === 'library') scheduler.rescheduleLibrarySync();
+      if (section === 'downloading') scheduler.rescheduleDownloading();
     },
   });
   await app.register(backupRoutes, { backups, nextRun: () => scheduler.nextBackup() });
+  await app.register(integrationRoutes);
+  await app.register(libraryRoutes, { sync: librarySync });
+  await app.register(arrRoutes);
+  await app.register(fileRoutes);
+  await app.register(calendarRoutes);
+  await app.register(healthRoutes, { backups, librarySync });
+  await app.register(discoverRoutes);
+  await app.register(listRoutes);
+  await app.register(collectionRoutes);
+  await app.register(posterRoutes);
+  await app.register(trailerRoutes);
+  await app.register(homeRoutes);
+  await app.register(bookRoutes);
+  await app.register(apiRoutes);
 
   if (config.webDir && fs.existsSync(config.webDir)) {
     await app.register(fastifyStatic, { root: path.resolve(config.webDir), wildcard: false });
@@ -125,5 +162,5 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
     ctx.dbHandle.sqlite.close();
   });
 
-  return { app, backups, scheduler };
+  return { app, backups, scheduler, librarySync };
 }

@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { z } from 'zod';
+import { NOTIFY_EVENTS } from '../notify/service.js';
 
 // New SSO accounts can never start as admin; admin comes only from the owner or an admin group mapping.
 const newAccountRole = z.enum(['user', 'manager']);
@@ -22,6 +23,8 @@ export const SETTINGS = {
     schema: z.object({
       localLoginEnabled: z.boolean().default(true),
       sessionDays: z.number().int().min(1).max(365).default(30),
+      /** Let people create API keys (Account → API keys) for scripts and Home Assistant. */
+      apiKeysEnabled: z.boolean().default(true),
       oidc: z
         .object({
           enabled: z.boolean().default(false),
@@ -68,7 +71,7 @@ export const SETTINGS = {
               endpoint: httpUrl.default(''),
               region: z.string().trim().max(100).default('us-east-1'),
               bucket: z.string().trim().max(255).default(''),
-              prefix: z.string().trim().max(500).default('media-manager/'),
+              prefix: z.string().trim().max(500).default('cinemask/'),
               accessKeyId: z.string().trim().max(500).default(''),
               secretAccessKey: z.string().max(2000).default(''),
               forcePathStyle: z.boolean().default(true),
@@ -78,6 +81,139 @@ export const SETTINGS = {
         .prefault({}),
     }),
     secrets: ['passphrase', 'remote.s3.secretAccessKey'],
+  },
+  plex: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      name: z.string().trim().max(100).default(''),
+      /** e.g. http://192.168.1.10:32400 */
+      url: httpUrl.default(''),
+      token: z.string().max(500).default(''),
+      machineId: z.string().trim().max(200).default(''),
+    }),
+    secrets: ['token'],
+  },
+  jellyfin: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      name: z.string().trim().max(100).default(''),
+      url: httpUrl.default(''),
+      apiKey: z.string().max(500).default(''),
+    }),
+    secrets: ['apiKey'],
+  },
+  metadata: {
+    schema: z.object({
+      /** TMDB v3 API key or v4 read access token. */
+      tmdbApiKey: z.string().max(1000).default(''),
+      mdblistApiKey: z.string().max(500).default(''),
+      language: z.string().trim().regex(/^[a-z]{2}(-[A-Z]{2})?$/, 'Use a code like en-US').default('en-US'),
+      region: z.string().trim().regex(/^[A-Z]{2}$/, 'Use a country code like US').default('US'),
+    }),
+    secrets: ['tmdbApiKey', 'mdblistApiKey'],
+  },
+  library: {
+    schema: z.object({
+      /** Periodically scan Plex/Jellyfin to learn what is on the server. */
+      syncEnabled: z.boolean().default(true),
+      syncIntervalHours: z.number().int().min(1).max(24).default(6),
+    }),
+    secrets: [],
+  },
+  media: {
+    schema: z.object({
+      /** Where download clients put finished files, as seen inside this container. */
+      downloadsPath: z.string().trim().max(1000).default('/downloads'),
+      moviesPath: z.string().trim().max(1000).default('/media/movies'),
+      tvPath: z.string().trim().max(1000).default('/media/tv'),
+      audiobooksPath: z.string().trim().max(1000).default('/media/audiobooks'),
+      booksPath: z.string().trim().max(1000).default('/media/books'),
+      /** hardlink keeps torrents seeding without using extra space (needs the same disk/share). */
+      importMode: z.enum(['hardlink', 'copy', 'move']).default('hardlink'),
+      /** Translate paths a download client reports (its own container) into paths here. */
+      remotePathMappings: z
+        .array(z.object({ remote: z.string().trim().min(1).max(1000), local: z.string().trim().min(1).max(1000) }))
+        .max(20)
+        .default([]),
+      removeCompletedDownloads: z.boolean().default(false),
+    }),
+    secrets: [],
+  },
+  naming: {
+    schema: z.object({
+      renameFiles: z.boolean().default(true),
+      movieFolder: z.string().max(300).default('{Movie Title} ({Year})'),
+      movieFile: z.string().max(300).default('{Movie Title} ({Year}) - {Quality}'),
+      seriesFolder: z.string().max(300).default('{Series Title} ({Year})'),
+      seasonFolder: z.string().max(300).default('Season {season:00}'),
+      episodeFile: z.string().max(300).default('{Series Title} - S{season:00}E{episode:00} - {Episode Title}'),
+    }),
+    secrets: [],
+  },
+  prowlarr: {
+    schema: z.object({
+      url: httpUrl.default(''),
+      apiKey: z.string().max(200).default(''),
+    }),
+    secrets: ['apiKey'],
+  },
+  downloading: {
+    schema: z.object({
+      rssSyncMinutes: z.number().int().min(10).max(1440).default(15),
+      searchMissingHours: z.number().int().min(1).max(168).default(12),
+      /** Allow direct URL downloads from LAN/private addresses. Off by default to prevent SSRF. */
+      allowPrivateDirectUrls: z.boolean().default(false),
+      defaultMovieProfile: z.number().int().positive().nullable().default(null),
+      defaultShowProfile: z.number().int().positive().nullable().default(null),
+    }),
+    secrets: [],
+  },
+  audiobookshelf: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      url: httpUrl.default(''),
+      /** API token from Audiobookshelf → Settings → Users → your user. */
+      apiKey: z.string().max(2000).default(''),
+      audiobookLibraryId: z.string().max(100).default(''),
+      podcastLibraryId: z.string().max(100).default(''),
+    }),
+    secrets: ['apiKey'],
+  },
+  shelfmark: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      url: httpUrl.default(''),
+      username: z.string().max(200).default(''),
+      password: z.string().max(500).default(''),
+      /** Shelfmark's download folder as seen inside this container; finished books are imported from here. */
+      ingestPath: z.string().trim().max(1000).default('/downloads/books'),
+      /** Which book requests go to Shelfmark first. The rest use your indexers. */
+      useFor: z.enum(['ebooks', 'both']).default('ebooks'),
+    }),
+    secrets: ['password'],
+  },
+  notifications: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      /** Where events are POSTed as JSON, e.g. a Home Assistant webhook: http://homeassistant:8123/api/webhook/<id> */
+      webhookUrl: httpUrl.default(''),
+      events: z.array(z.enum(NOTIFY_EVENTS)).max(NOTIFY_EVENTS.length).default(['request.created', 'request.available', 'download.failed', 'health.problem']),
+    }),
+    // The webhook id in the URL is what authorises calls to it.
+    secrets: ['webhookUrl'],
+  },
+  extras: {
+    schema: z.object({
+      /** yt-dlp downloads trailers into media folders, where Plex and Jellyfin pick them up. */
+      trailersEnabled: z.boolean().default(true),
+      ytDlpPath: z.string().trim().max(500).default('/usr/local/bin/yt-dlp'),
+      trailerMaxHeight: z.union([z.literal(720), z.literal(1080), z.literal(2160)]).default(1080),
+      /** Fetch a trailer automatically after a movie is imported. */
+      autoDownloadTrailers: z.boolean().default(false),
+      /** Also offer posters from ThePosterDB (scraped from its website, so it may break). */
+      thePosterDb: z.boolean().default(false),
+    }),
+    secrets: [],
   },
 } as const satisfies Record<string, { schema: z.ZodObject; secrets: readonly string[] }>;
 

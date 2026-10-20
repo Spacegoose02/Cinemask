@@ -1,4 +1,6 @@
-# Media Management App: Roadmap
+# Cinemask: Roadmap
+
+> **Status (0.9.0):** every phase (0 to 7) is built. Integrations are tested against simulated services; real-world testing comes next.
 
 A self-hosted family media manager in the spirit of Sonarr, Radarr and Overseerr, built from the Kanban board (69 cards across six columns). Duplicate cards are merged, and each phase only depends on phases before it. Foundations and security come first, because every later feature hangs off users, roles, settings and the database.
 

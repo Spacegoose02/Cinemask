@@ -1,16 +1,34 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { ActivitySettings } from './settings/Activity';
+import { ApiSettings } from './settings/ApiSettings';
+import { BookSettings } from './settings/Books';
 import { BackupSettings } from './settings/Backups';
 import { GeneralSettings } from './settings/General';
+import { MediaServerSettings } from './settings/MediaServers';
+import { DownloadClientSettings } from './settings/DownloadClients';
+import { HealthSettings } from './settings/Health';
+import { IndexerSettings } from './settings/Indexers';
+import { MediaManagementSettings } from './settings/MediaManagement';
+import { MetadataSettings } from './settings/Metadata';
+import { ProfileSettings } from './settings/Profiles';
 import { SignInSettings } from './settings/SignIn';
 import { UserSettings } from './settings/Users';
 
 // All settings live under one page with tabs, so nothing is scattered around the app.
 const TABS = [
   { path: 'general', label: 'General', element: <GeneralSettings /> },
+  { path: 'media-servers', label: 'Media servers', element: <MediaServerSettings /> },
+  { path: 'metadata', label: 'Metadata', element: <MetadataSettings /> },
+  { path: 'media-management', label: 'Media management', element: <MediaManagementSettings /> },
+  { path: 'profiles', label: 'Quality', element: <ProfileSettings /> },
+  { path: 'indexers', label: 'Indexers', element: <IndexerSettings /> },
+  { path: 'download-clients', label: 'Download clients', element: <DownloadClientSettings /> },
+  { path: 'books', label: 'Books', element: <BookSettings /> },
   { path: 'users', label: 'Users', element: <UserSettings /> },
   { path: 'sign-in', label: 'Sign-in', element: <SignInSettings /> },
+  { path: 'api', label: 'API and webhooks', element: <ApiSettings /> },
   { path: 'backups', label: 'Backups', element: <BackupSettings /> },
+  { path: 'health', label: 'Health', element: <HealthSettings /> },
   { path: 'activity', label: 'Activity log', element: <ActivitySettings /> },
 ];
 
