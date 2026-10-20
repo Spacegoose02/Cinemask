@@ -4,7 +4,7 @@
 
 A self-hosted media manager for families running Plex or Jellyfin. It does what Sonarr, Radarr and Overseerr do, plus books and audiobooks, in one app with real user accounts, single sign-on and backups.
 
-> **Status:** beta (0.9). Every phase of the [roadmap](docs/ROADMAP.md) is built and covered by automated tests. The integrations with Plex, Jellyfin, TMDB, indexers, download clients, Audiobookshelf and Shelfmark are tested against simulated services; please [report anything](https://github.com/Spacegoose02/cinemask/issues) that behaves differently with the real thing.
+> **Status:** beta (0.10). Every phase of the [roadmap](docs/ROADMAP.md) is built and covered by automated tests. The integrations with Plex, Jellyfin, TMDB, indexers, download clients, Audiobookshelf and Shelfmark are tested against simulated services; please [report anything](https://github.com/Spacegoose02/cinemask/issues) that behaves differently with the real thing.
 
 ## Features
 
@@ -69,5 +69,5 @@ See [CLAUDE.md](CLAUDE.md) for architecture and conventions.
 
 ## Releasing
 
-Update [CHANGELOG.md](CHANGELOG.md) and the version in `package.json`, then push a tag like `v0.9.0`. The release workflow runs the tests, publishes `ghcr.io/spacegoose02/cinemask` as `0.9.0`, `0.9` and `latest` for amd64 and arm64, and creates the GitHub release from the changelog.
+Update [CHANGELOG.md](CHANGELOG.md) and the version in `package.json`, then push a tag like `v0.10.0` (no dot after the `v`). The release workflow runs the tests, publishes `ghcr.io/spacegoose02/cinemask` as `0.10.0`, `0.10` and `latest` for amd64 and arm64, and creates the GitHub release from the changelog.
 
