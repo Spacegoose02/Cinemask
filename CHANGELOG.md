@@ -6,8 +6,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 - Managers can add a title to monitoring without searching ("Monitor only"), and can monitor a movie that's already on the server so it gets upgraded ("Monitor for upgrades").
+- "Manage files" on any title that's on Plex or Jellyfin but not managed by Cinemask yet: it finds the title's folder, so its files can be deleted, renamed and upgraded. Nothing is downloaded.
+- Automatic trailers are on by default, and cover every managed title that has files: after an import, when files are found, and hourly for any title still without one.
 
 ### Fixed
+- Movies and shows on the server couldn't be deleted: the Files panel only appeared for titles Cinemask monitored, auto-monitor added only 50 titles per sync, and a folder was only found when named exactly as Cinemask would name it. Folders like `Paddington.2014.1080p` or `Paddington {tmdb-116149}` are now found in any root folder, and auto-monitor works through the whole library.
+- qBittorrent 5.2 and later: "login was rejected" although the password was right (it now answers a good sign-in with an empty 204). A blocked address after too many failed sign-ins now says so.
 - Library posters missing for most titles on large libraries: a sync filled TMDB details for only 200 titles, and titles that kept failing were retried first and held up the rest. Every title is now filled after each sync, and anything left over is retried hourly.
 
 ## [0.10.0] - 2026-10-20

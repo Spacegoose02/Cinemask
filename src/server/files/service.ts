@@ -8,7 +8,7 @@ import type { MonitoredRow } from '../arr/monitor.js';
 import { renderName } from '../arr/naming.js';
 import { parseRelease } from '../arr/parser.js';
 import { insideRoot } from '../lib/paths.js';
-import { rootOf } from '../arr/roots.js';
+import { listRoots, rootOf } from '../arr/roots.js';
 
 export { insideRoot };
 
@@ -114,14 +114,64 @@ export function expectedFolder(ctx: AppContext, row: MonitoredRow): string {
     : path.join(root, renderName(naming.seriesFolder, { seriesTitle: row.title, year: row.year, tmdbId: row.tmdbId }));
 }
 
+const folderKey = (s: string) =>
+  s
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/^(the|a|an) /, '');
+
+/**
+ * Finds a title's existing folder when it isn't named the way Cinemask would name it, such as
+ * "Paddington (2014) {tmdb-116149}" or "Paddington.2014.1080p", in any root folder of its kind.
+ * A folder carrying the TMDB id wins; otherwise the name must start with the title and, when
+ * the year is known, contain it.
+ */
+export function locateFolder(ctx: AppContext, row: MonitoredRow): { folder: string; rootId: string } | null {
+  const expected = expectedFolder(ctx, row);
+  if (fs.existsSync(expected)) return { folder: expected, rootId: row.rootId ?? 'default' };
+  const title = folderKey(row.title);
+  if (!title) return null;
+  const idTag = new RegExp(`(tmdb(id)?[-= ]?${row.tmdbId})(?!\\d)`, 'i');
+  let byName: { folder: string; rootId: string } | null = null;
+  const roots = listRoots(ctx, row.kind);
+  // The title's own root first.
+  roots.sort((a, b) => Number(b.id === (row.rootId ?? 'default')) - Number(a.id === (row.rootId ?? 'default')));
+  for (const r of roots) {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(r.path, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const folder = path.join(r.path, e.name);
+      if (!insideRoot(r.path, folder)) continue;
+      if (idTag.test(e.name)) return { folder, rootId: r.id };
+      const key = folderKey(e.name);
+      if (!byName && (key === title || key.startsWith(`${title} `)) && (!row.year || key.slice(title.length).split(' ').includes(String(row.year)) || key === title)) byName = { folder, rootId: r.id };
+    }
+  }
+  return byName;
+}
+
 /**
  * Finds video files already in the title's folder and links them to the movie or episodes,
  * so existing libraries can be managed without re-downloading. Tracked files that vanished
  * from disk are forgotten.
  */
 export function scanFolder(ctx: AppContext, row: MonitoredRow): { found: number; missing: number; folder: string } {
+  const located = row.path ? null : locateFolder(ctx, row);
+  if (located && (located.rootId ?? 'default') !== (row.rootId ?? 'default')) {
+    ctx.db.update(monitored).set({ rootId: located.rootId === 'default' ? null : located.rootId }).where(eq(monitored.id, row.id)).run();
+    row = { ...row, rootId: located.rootId === 'default' ? null : located.rootId };
+  }
   const root = rootFor(ctx, row);
-  const folder = row.path ?? expectedFolder(ctx, row);
+  const folder = row.path ?? located?.folder ?? expectedFolder(ctx, row);
   assertInside(root, folder);
   const videos = findVideos(folder);
   let found = 0;

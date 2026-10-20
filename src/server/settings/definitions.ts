@@ -246,8 +246,8 @@ export const SETTINGS = {
       trailersEnabled: z.boolean().default(true),
       ytDlpPath: z.string().trim().max(500).default('/usr/local/bin/yt-dlp'),
       trailerMaxHeight: z.union([z.literal(720), z.literal(1080), z.literal(2160)]).default(1080),
-      /** Fetch a trailer automatically after a movie is imported. */
-      autoDownloadTrailers: z.boolean().default(false),
+      /** Fetch a trailer automatically for titles Cinemask manages: after an import, when added, and hourly for any without one. */
+      autoDownloadTrailers: z.boolean().default(true),
       /** YouTube channel subscriptions: where videos go, best quality, how often channels are checked. */
       youtubePath: z.string().trim().max(1000).default('/media/youtube'),
       youtubeMaxHeight: z.union([z.literal(720), z.literal(1080), z.literal(2160)]).default(1080),

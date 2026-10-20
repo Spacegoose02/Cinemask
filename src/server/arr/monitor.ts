@@ -113,8 +113,8 @@ export function upgradeCandidates(ctx: AppContext, row: MonitoredRow): number {
   return t.kind === 'movie' ? (t.currentQuality ? 1 : 0) : (t.episodes ?? []).filter((e) => e.currentQuality).length;
 }
 
-/** At most this many titles are added per sync, so a big first sync doesn't flood TMDB. The next sync carries on. */
-const AUTO_MONITOR_BATCH = 50;
+/** At most this many titles are added per run, so a huge first sync doesn't flood TMDB. The hourly run carries on. */
+const AUTO_MONITOR_BATCH = 1000;
 
 /**
  * Monitors titles the library sync found on Plex or Jellyfin (Settings → Media servers). Titles
