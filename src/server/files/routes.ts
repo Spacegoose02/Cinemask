@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { excludeFromAutoMonitor } from '../arr/monitor.js';
 import { audit } from '../audit/log.js';
 import { monitored, monitoredEpisodes } from '../db/schema.js';
 import { refreshMediaServers } from '../arr/tracker.js';
@@ -88,6 +89,7 @@ export async function fileRoutes(app: FastifyInstance) {
     const row = getRow(id);
     const freed = withFiles ? safely(() => deleteFolder(ctx, row)) : 0;
     ctx.db.delete(monitored).where(eq(monitored.id, id)).run();
+    excludeFromAutoMonitor(ctx, row.kind, row.tmdbId);
     audit(ctx.db, req, 'monitored.removed', { target: row.title, details: { deleteFiles: withFiles, freed } });
     if (withFiles) void refreshMediaServers(ctx);
     return { ok: true, freed };

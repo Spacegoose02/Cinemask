@@ -1,5 +1,5 @@
 import { fetchJson, IntegrationError, normalizeResolution } from './http.js';
-import type { MediaServerClient, ServerItem } from './mediaserver.js';
+import { rollUpViews, type MediaServerClient, type ServerItem } from './mediaserver.js';
 
 interface PlexGuid {
   id: string;
@@ -15,6 +15,9 @@ interface PlexMetadata {
   grandparentRatingKey?: string;
   parentIndex?: number;
   index?: number;
+  viewCount?: number;
+  lastViewedAt?: number;
+  Label?: { tag: string }[];
 }
 interface Container<T> {
   MediaContainer: T;
@@ -58,6 +61,9 @@ export class PlexClient implements MediaServerClient {
           ...idsFromGuids(m.Guid),
           resolution: section.type === 'movie' ? normalizeResolution(m.Media?.[0]?.videoResolution) : null,
           addedAt: m.addedAt ? m.addedAt * 1000 : null,
+          viewCount: m.viewCount ?? 0,
+          lastViewedAt: m.lastViewedAt ? m.lastViewedAt * 1000 : null,
+          labels: (m.Label ?? []).map((l) => l.tag),
           episodes: section.type === 'show' ? [] : undefined,
         };
         byKey.set(m.ratingKey, item);
@@ -69,8 +75,16 @@ export class PlexClient implements MediaServerClient {
         for (const e of eps.Metadata ?? []) {
           const show = e.grandparentRatingKey ? byKey.get(e.grandparentRatingKey) : undefined;
           if (!show || e.parentIndex === undefined || e.index === undefined) continue;
-          show.episodes!.push({ season: e.parentIndex, episode: e.index, title: e.title, resolution: normalizeResolution(e.Media?.[0]?.videoResolution) });
+          show.episodes!.push({
+            season: e.parentIndex,
+            episode: e.index,
+            title: e.title,
+            resolution: normalizeResolution(e.Media?.[0]?.videoResolution),
+            viewCount: e.viewCount ?? 0,
+            lastViewedAt: e.lastViewedAt ? e.lastViewedAt * 1000 : null,
+          });
         }
+        for (const item of byKey.values()) rollUpViews(item);
       }
     }
     return items;
@@ -101,6 +115,13 @@ export class PlexClient implements MediaServerClient {
     const id = r.Metadata?.[0]?.librarySectionID ?? r.librarySectionID;
     if (id === undefined) throw new IntegrationError('Plex', 'could not find the item\'s library');
     return String(id);
+  }
+
+  /** Adds or removes a label on an item. Labels are what Plex smart collections and sharing filters use. */
+  async setLabel(section: string, kind: 'movie' | 'show', ratingKey: string, label: string, remove = false) {
+    const qs = new URLSearchParams({ type: kind === 'movie' ? '1' : '2', id: ratingKey, includeExternalMedia: '1', 'label.locked': '1' });
+    qs.set(remove ? 'label[].tag.tag-' : 'label[0].tag.tag', label);
+    await this.send('PUT', `/library/sections/${encodeURIComponent(section)}/all?${qs.toString()}`);
   }
 
   /** Adds or removes a collection tag on an item. Plex creates the collection when the first item is tagged. */

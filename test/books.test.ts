@@ -158,6 +158,15 @@ describe('books, audiobooks and podcasts', () => {
     await t.close();
   });
 
+  it('lets a manager fix a request that matched the wrong book', async () => {
+    const r = (await kid.req('POST', '/api/books', { workKey: HOBBIT.key, format: 'audiobook' })).json();
+    expect((await kid.req('POST', `/api/books/${r.id}/match`, { workKey: WILD.key })).statusCode).toBe(403);
+    const fixed = (await owner.req('POST', `/api/books/${r.id}/match`, { workKey: WILD.key })).json();
+    expect(fixed).toMatchObject({ workKey: WILD.key, title: 'The Wild Robot', author: 'Peter Brown' });
+    const other = (await kid.req('POST', '/api/books', { workKey: HOBBIT.key, format: 'audiobook' })).json();
+    expect((await owner.req('POST', `/api/books/${other.id}/match`, { workKey: WILD.key })).statusCode).toBe(409);
+  });
+
   it('search shows request state; an approved audiobook downloads, imports as Author/Title and rescans Audiobookshelf', async () => {
     const r = (await kid.req('POST', '/api/books', { workKey: HOBBIT.key, format: 'audiobook' })).json();
     expect(r).toMatchObject({ status: 'pending', title: 'The Hobbit', author: 'J.R.R. Tolkien', requestedByName: 'kid' });

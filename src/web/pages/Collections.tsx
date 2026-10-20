@@ -17,6 +17,8 @@ interface Collection {
   source: 'manual' | 'tmdb' | 'list' | 'plex' | 'jellyfin';
   syncPlex: boolean;
   syncJellyfin: boolean;
+  plexLabel: string | null;
+  fromLabel: string | null;
   lastPushAt: number | null;
   lastError: string | null;
   itemCount?: number;
@@ -44,7 +46,9 @@ function Cover({ c }: { c: Collection }) {
 function NewCollection({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [source, setSource] = useState<'manual' | 'tmdb' | 'list'>('manual');
+  const [source, setSource] = useState<'manual' | 'tmdb' | 'list' | 'label'>('manual');
+  const [fromLabel, setFromLabel] = useState('');
+  const [plexLabel, setPlexLabel] = useState('');
   const [name, setName] = useState('');
   const [q, setQ] = useState('');
   const [tmdb, setTmdb] = useState<{ id: number; name: string } | null>(null);
@@ -54,10 +58,13 @@ function NewCollection({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const results = useQuery({ queryKey: ['tmdb-collections', q], queryFn: () => api<{ id: number; name: string; posterPath: string | null }[]>(`/api/collections/search-tmdb?q=${encodeURIComponent(q)}`), enabled: source === 'tmdb' && q.trim().length > 1 });
   const lists = useQuery({ queryKey: ['lists'], queryFn: () => api<ListRow[]>('/api/lists'), enabled: source === 'list' });
+  const labels = useLabels();
   const create = async () => {
     try {
       const sourceId = source === 'tmdb' ? tmdb?.id : source === 'list' ? listId : undefined;
-      const c = await api<Collection>('/api/collections', { body: { name: name || tmdb?.name, source, sourceId, syncPlex, syncJellyfin } });
+      const c = await api<Collection>('/api/collections', {
+        body: { name: name || tmdb?.name || fromLabel, source: source === 'label' ? 'manual' : source, sourceId, syncPlex, syncJellyfin, fromLabel: source === 'label' ? fromLabel : null, plexLabel: plexLabel.trim() || null },
+      });
       await qc.invalidateQueries({ queryKey: ['collections'] });
       navigate(`/collections/${c.id}`);
     } catch (e) {
@@ -72,8 +79,14 @@ function NewCollection({ onClose }: { onClose: () => void }) {
             <option value="manual">Nothing: I'll add titles myself</option>
             <option value="tmdb">A TMDB collection (e.g. a film series)</option>
             <option value="list">One of our lists (stays in sync)</option>
+            <option value="label">A Plex label or Jellyfin tag (stays in sync)</option>
           </select>
         </Field>
+        {source === 'label' && (
+          <Field label="Label" hint="Everything carrying this label on Plex or tag on Jellyfin, as of the last library sync.">
+            <input className="input" list="library-labels" value={fromLabel} onChange={(e) => setFromLabel(e.target.value)} placeholder="Kids" />
+          </Field>
+        )}
         {source === 'tmdb' && (
           <Field label="Search TMDB collections">
             <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Paddington" />
@@ -105,8 +118,14 @@ function NewCollection({ onClose }: { onClose: () => void }) {
         </Field>
         <Toggle label="Keep a matching collection on Plex" checked={syncPlex} onChange={setSyncPlex} />
         <Toggle label="Keep a matching collection on Jellyfin" checked={syncJellyfin} onChange={setSyncJellyfin} />
+        {syncPlex && (
+          <Field label="Also label the items on Plex (optional)" hint="Plex smart collections and sharing restrictions can filter on labels. Pick a label only this collection uses: Cinemask takes it off anything not in the collection.">
+            <input className="input" list="library-labels" value={plexLabel} onChange={(e) => setPlexLabel(e.target.value)} placeholder="Movie night" />
+          </Field>
+        )}
+        <LabelOptions labels={labels.data?.labels} />
         {error && <Alert>{error}</Alert>}
-        <button className="btn-primary" disabled={!(name.trim() || tmdb) || (source === 'tmdb' && !tmdb) || (source === 'list' && !listId)} onClick={create}>
+        <button className="btn-primary" disabled={!(name.trim() || tmdb || (source === 'label' && fromLabel.trim())) || (source === 'label' && !fromLabel.trim()) || (source === 'tmdb' && !tmdb) || (source === 'list' && !listId)} onClick={create}>
           Create
         </button>
       </div>
@@ -164,14 +183,29 @@ export function CollectionsPage() {
   );
 }
 
+function useLabels() {
+  return useQuery({ queryKey: ['library-labels'], queryFn: () => api<{ labels: string[] }>('/api/library/labels') });
+}
+
+function LabelOptions({ labels }: { labels?: string[] }) {
+  return (
+    <datalist id="library-labels">
+      {labels?.map((l) => (
+        <option key={l} value={l} />
+      ))}
+    </datalist>
+  );
+}
+
 function EditCollection({ c, onClose }: { c: Collection; onClose: () => void }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [v, setV] = useState({ name: c.name, description: c.description ?? '', poster: c.poster?.startsWith('/') || c.poster?.startsWith('https://') ? c.poster : '', syncPlex: c.syncPlex, syncJellyfin: c.syncJellyfin });
+  const [v, setV] = useState({ name: c.name, description: c.description ?? '', poster: c.poster?.startsWith('/') || c.poster?.startsWith('https://') ? c.poster : '', syncPlex: c.syncPlex, syncJellyfin: c.syncJellyfin, plexLabel: c.plexLabel ?? '', fromLabel: c.fromLabel ?? '' });
+  const labels = useLabels();
   const [error, setError] = useState<string | null>(null);
   const save = async () => {
     try {
-      await api(`/api/collections/${c.id}`, { method: 'PUT', body: { ...v, description: v.description || null, poster: v.poster || (c.poster && /^(plex|jellyfin):/.test(c.poster) ? undefined : null) } });
+      await api(`/api/collections/${c.id}`, { method: 'PUT', body: { ...v, plexLabel: v.plexLabel.trim() || null, fromLabel: c.source === 'manual' ? v.fromLabel.trim() || null : undefined, description: v.description || null, poster: v.poster || (c.poster && /^(plex|jellyfin):/.test(c.poster) ? undefined : null) } });
       await qc.invalidateQueries({ queryKey: ['collection', String(c.id)] });
       onClose();
     } catch (e) {
@@ -198,6 +232,17 @@ function EditCollection({ c, onClose }: { c: Collection; onClose: () => void }) 
         </Field>
         <Toggle label="Sync to Plex" checked={v.syncPlex} onChange={(syncPlex) => setV({ ...v, syncPlex })} />
         <Toggle label="Sync to Jellyfin" checked={v.syncJellyfin} onChange={(syncJellyfin) => setV({ ...v, syncJellyfin })} />
+        {v.syncPlex && (
+          <Field label="Label the items on Plex" hint="Leave empty for no label. Pick a label only this collection uses: Cinemask takes it off anything not in the collection.">
+            <input className="input" list="library-labels" value={v.plexLabel} onChange={(e) => setV({ ...v, plexLabel: e.target.value })} />
+          </Field>
+        )}
+        {c.source === 'manual' && (
+          <Field label="Fill from a label" hint="Keeps the collection to everything with this Plex label or Jellyfin tag. Leave empty to add titles by hand.">
+            <input className="input" list="library-labels" value={v.fromLabel} onChange={(e) => setV({ ...v, fromLabel: e.target.value })} />
+          </Field>
+        )}
+        <LabelOptions labels={labels.data?.labels} />
         {error && <Alert>{error}</Alert>}
         <div className="flex justify-between">
           <button className="btn-primary" onClick={save}>
@@ -262,7 +307,7 @@ export function CollectionDetailPage() {
   const c = q.data;
   if (!c) return <div className="text-muted">Loading…</div>;
   const missing = c.items?.filter((i) => i.availability?.status === 'not_on_server').length ?? 0;
-  const editable = c.source !== 'tmdb' && c.source !== 'list';
+  const editable = c.source !== 'tmdb' && c.source !== 'list' && !c.fromLabel;
   const pushSummary = (r: Record<string, { added: number; removed: number; notOnServer: number } | null>) =>
     Object.entries(r)
       .filter(([k, v]) => v && k !== 'lastError')

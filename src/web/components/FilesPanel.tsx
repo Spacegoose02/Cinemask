@@ -3,8 +3,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, formatBytes, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { mediaPath } from '../lib/media';
 import type { MediaDetail } from '../pages/MediaDetail';
 import { TrailerManager } from './Extras';
+import { MatchPicker } from './MatchPicker';
 import { ManualSearch } from './MediaActions';
 import { Modal } from './Modal';
 import { Alert } from './ui';
@@ -165,6 +167,8 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
   const [deleting, setDeleting] = useState<DeleteTarget | null>(null);
   const [manual, setManual] = useState<{ season: number; episode?: number } | null>(null);
   const [openSeason, setOpenSeason] = useState<number | null>(null);
+  const [matching, setMatching] = useState(false);
+  const navigate = useNavigate();
   if (!isManager || !mon) return null;
 
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] }), qc.invalidateQueries({ queryKey: ['files', mon.id] })]);
@@ -207,6 +211,9 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
           </button>
           <button className="btn-secondary" onClick={() => setTrailers(true)}>
             Trailers
+          </button>
+          <button className="btn-secondary" onClick={() => setMatching(true)} title="Point this at a different TMDB title">
+            Fix match
           </button>
           {m.kind === 'show' && files.data && files.data.files.length > 0 && (
             <button className="btn-secondary" onClick={() => setDeleting({ scope: 'show', label: `all files for ${mon.title}` })}>
@@ -327,7 +334,19 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
 
       {renaming && <RenameModal id={mon.id} onClose={() => setRenaming(false)} onDone={done} />}
       {deleting && <DeleteModal id={mon.id} target={deleting} onClose={() => setDeleting(null)} onDone={done} />}
-      {trailers && <TrailerManager monitoredId={mon.id} onClose={() => setTrailers(false)} />}
+      {trailers && <TrailerManager monitoredId={mon.id} kind={m.kind} tmdbId={m.tmdbId} onClose={() => (setTrailers(false), void qc.invalidateQueries({ queryKey: ['local-trailers'] }))} />}
+      {matching && (
+        <MatchPicker
+          kind={m.kind}
+          title={mon.title}
+          onClose={() => setMatching(false)}
+          onPick={async (tmdbId) => {
+            await api(`/api/monitored/${mon.id}/match`, { body: { tmdbId } });
+            await qc.invalidateQueries({ queryKey: ['lookup'] });
+            navigate(mediaPath(m.kind, tmdbId));
+          }}
+        />
+      )}
       {removing && <RemoveModal mon={mon} onClose={() => setRemoving(false)} />}
       {manual && <ManualSearch monitoredId={mon.id} initialSeason={manual.season} episode={manual.episode} onClose={() => setManual(null)} />}
     </section>

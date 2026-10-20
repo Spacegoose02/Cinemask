@@ -13,7 +13,17 @@ interface Profile {
 }
 
 interface Lookup {
-  monitored: { id: number; monitored: boolean; profileId?: number; wanted?: number; fileQuality?: string | null; seasons?: number[] | null } | null;
+  monitored: {
+    id: number;
+    monitored: boolean;
+    profileId?: number;
+    wanted?: number;
+    fileQuality?: string | null;
+    seasons?: number[] | null;
+    rootId?: string | null;
+    maxSizeMb?: number | null;
+    path?: string | null;
+  } | null;
   request: { id: number; status: string; requestedByName: string | null; reason: string | null } | null;
 }
 
@@ -28,6 +38,92 @@ interface ReleaseRow {
   languages: string[];
   accepted: boolean;
   rejections: string[];
+  /** Size per movie or episode when over the size limit. */
+  oversize: number | null;
+}
+
+export interface RootFolder {
+  id: string;
+  name: string;
+  kind: 'movie' | 'show';
+  path: string;
+}
+
+export function useRootFolders(enabled: boolean) {
+  return useQuery({ queryKey: ['root-folders'], queryFn: () => api<{ roots: RootFolder[]; destinations: { key: string; name: string; path: string }[] }>('/api/root-folders'), enabled });
+}
+
+/** Picks a root folder; renders nothing when there is only the main one. */
+function RootPicker({ roots, value, onChange }: { roots: RootFolder[]; value: string; onChange: (id: string) => void }) {
+  if (roots.length < 2) return null;
+  return (
+    <select className="input w-auto" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Folder">
+      {roots.map((r) => (
+        <option key={r.id} value={r.id}>
+          {r.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Where a monitored title lives and how big a release may be. */
+function FolderAndSize({ mon, kind, roots, onClose, onSaved }: { mon: NonNullable<Lookup['monitored']>; kind: 'movie' | 'show'; roots: RootFolder[]; onClose: () => void; onSaved: () => void }) {
+  const [rootId, setRootId] = useState(mon.rootId ?? 'default');
+  const [mode, setMode] = useState<'default' | 'none' | 'custom'>(mon.maxSizeMb === null || mon.maxSizeMb === undefined ? 'default' : mon.maxSizeMb === 0 ? 'none' : 'custom');
+  const [gb, setGb] = useState(mon.maxSizeMb ? String(Math.round((mon.maxSizeMb / 1024) * 10) / 10) : '');
+  const [msg, setMsg] = useState<string | null>(null);
+  const save = async () => {
+    setMsg(null);
+    try {
+      const maxSizeMb = mode === 'default' ? null : mode === 'none' ? 0 : Math.round(Number(gb) * 1024);
+      if (mode === 'custom' && !(maxSizeMb && maxSizeMb > 0)) throw new Error('Enter a size in GB');
+      await api(`/api/monitored/${mon.id}`, { method: 'PATCH', body: { rootId, maxSizeMb } });
+      onSaved();
+      onClose();
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+  };
+  const per = kind === 'show' ? 'per episode' : 'for the movie';
+  return (
+    <Modal title="Folder and size" onClose={onClose}>
+      <div className="space-y-4">
+        {msg && <Alert>{msg}</Alert>}
+        {roots.length > 1 && (
+          <label className="block">
+            <span className="label">Folder</span>
+            <RootPicker roots={roots} value={rootId} onChange={setRootId} />
+            {mon.path && rootId !== (mon.rootId ?? 'default') && <span className="hint block">The files already downloaded move to the new folder.</span>}
+          </label>
+        )}
+        <fieldset className="space-y-1">
+          <legend className="label">Largest release {per}</legend>
+          {(
+            [
+              ['default', 'Use the default (Settings → Media management)'],
+              ['none', 'No limit'],
+              ['custom', 'Up to'],
+            ] as const
+          ).map(([v, label]) => (
+            <label key={v} className="flex items-center gap-2 text-sm">
+              <input type="radio" name="size" checked={mode === v} onChange={() => setMode(v)} />
+              {label}
+              {v === 'custom' && (
+                <>
+                  <input className="input w-24" type="number" min={0.1} step={0.1} value={gb} onChange={(e) => (setGb(e.target.value), setMode('custom'))} aria-label="Size in GB" /> GB
+                </>
+              )}
+            </label>
+          ))}
+          <p className="hint">Bigger releases are only grabbed when nothing smaller is found, and you get a warning when that happens.</p>
+        </fieldset>
+        <button className="btn-primary" onClick={save}>
+          Save
+        </button>
+      </div>
+    </Modal>
+  );
 }
 
 function SeasonPicker({ seasons, value, onChange }: { seasons: MediaDetail['seasons']; value: number[]; onChange: (v: number[]) => void }) {
@@ -97,6 +193,7 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
                     {r.indexer} · {r.protocol} · {r.languages.join(', ')}
                   </div>
                   {!r.accepted && <div className="text-xs text-danger">{r.rejections.join('; ')}</div>}
+                  {r.oversize !== null && <div className="text-xs text-warning">Over the size limit ({formatBytes(r.oversize)}{season ? ' per episode' : ''})</div>}
                 </td>
                 <td className="whitespace-nowrap p-2">{r.quality}</td>
                 <td className="whitespace-nowrap p-2">{formatBytes(r.size)}</td>
@@ -127,6 +224,10 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   const [seasons, setSeasons] = useState<number[]>(m.seasons.filter((s) => s.seasonNumber > 0 && s.onServer < s.episodeCount).map((s) => s.seasonNumber));
   const [manual, setManual] = useState(false);
   const [posters, setPosters] = useState(false);
+  const [folderSize, setFolderSize] = useState(false);
+  const rootQuery = useRootFolders(isManager);
+  const roots = rootQuery.data?.roots.filter((r) => r.kind === m.kind) ?? [];
+  const [rootId, setRootId] = useState('default');
   const createSeries = useCreateSeriesCollection();
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] });
@@ -149,9 +250,12 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   return (
     <>
       {!mon && !req && !(m.kind === 'movie' && fullyAvailable) && (
-        <button className="btn-primary" onClick={() => (m.kind === 'show' ? setRequesting(true) : run(() => api('/api/requests', { body: { kind: m.kind, tmdbId: m.tmdbId } }), isManager ? 'Added and searching.' : 'Requested. A manager will review it.'))}>
-          {isManager ? 'Download' : 'Request'}
-        </button>
+        <>
+          {isManager && m.kind === 'movie' && <RootPicker roots={roots} value={rootId} onChange={setRootId} />}
+          <button className="btn-primary" onClick={() => (m.kind === 'show' ? setRequesting(true) : run(() => api('/api/requests', { body: { kind: m.kind, tmdbId: m.tmdbId, ...(isManager ? { rootId } : {}) } }), isManager ? 'Added and searching.' : 'Requested. A manager will review it.'))}>
+            {isManager ? 'Download' : 'Request'}
+          </button>
+        </>
       )}
       {req && !mon && <span className="self-center text-sm text-muted">Requested by {req.requestedByName} · {req.status}</span>}
       {req?.status === 'declined' && req.reason && <span className="self-center text-sm text-danger">Declined: {req.reason}</span>}
@@ -185,6 +289,9 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           <button className="btn-secondary" onClick={() => run(() => api(`/api/monitored/${mon.id}`, { method: 'PATCH', body: { monitored: !mon.monitored } }), mon.monitored ? 'Stopped monitoring.' : 'Monitoring.')}>
             {mon.monitored ? 'Unmonitor' : 'Monitor'}
           </button>
+          <button className="btn-secondary" onClick={() => setFolderSize(true)}>
+            {roots.length > 1 ? 'Folder and size' : 'Size limit'}
+          </button>
         </>
       )}
       {isManager && (
@@ -203,11 +310,17 @@ export function MediaActions({ m }: { m: MediaDetail }) {
         <Modal title={`Request ${m.title}`} onClose={() => setRequesting(false)}>
           <p className="mb-3 text-sm text-muted">Pick the seasons you want.</p>
           <SeasonPicker seasons={m.seasons} value={seasons} onChange={setSeasons} />
+          {isManager && roots.length > 1 && (
+            <label className="mt-3 block">
+              <span className="label">Folder</span>
+              <RootPicker roots={roots} value={rootId} onChange={setRootId} />
+            </label>
+          )}
           <button
             className="btn-primary mt-4"
             disabled={!seasons.length}
             onClick={async () => {
-              await run(() => api('/api/requests', { body: { kind: 'show', tmdbId: m.tmdbId, seasons } }), isManager ? 'Added and searching.' : 'Requested. A manager will review it.');
+              await run(() => api('/api/requests', { body: { kind: 'show', tmdbId: m.tmdbId, seasons, ...(isManager ? { rootId } : {}) } }), isManager ? 'Added and searching.' : 'Requested. A manager will review it.');
               setRequesting(false);
             }}
           >
@@ -216,6 +329,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
         </Modal>
       )}
       {manual && mon && <ManualSearch monitoredId={mon.id} onClose={() => setManual(false)} />}
+      {folderSize && mon && <FolderAndSize mon={mon} kind={m.kind} roots={roots} onClose={() => setFolderSize(false)} onSaved={() => (refresh(), setMsg({ kind: 'success', text: 'Saved.' }))} />}
     </>
   );
 }

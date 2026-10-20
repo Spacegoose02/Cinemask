@@ -1,13 +1,28 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { MatchPicker } from '../components/MatchPicker';
 import { MediaGrid } from '../components/media';
-import { api } from '../lib/api';
+import { api, hasRole } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import type { MediaKind } from '../lib/media';
 
 interface LibraryResponse {
   total: number;
   page: number;
-  items: { kind: MediaKind; tmdbId: number | null; title: string; year: number | null; posterPath: string | null; resolution: string | null; servers: string[] }[];
+  items: LibraryItem[];
+}
+interface LibraryItem {
+  kind: MediaKind;
+  tmdbId: number | null;
+  title: string;
+  year: number | null;
+  posterPath: string | null;
+  resolution: string | null;
+  servers: string[];
+  viewCount: number | null;
+  lastViewedAt: number | null;
+  itemIds: number[];
 }
 
 const PAGE_SIZE = 60;
@@ -18,8 +33,13 @@ export function LibraryPage() {
   const sort = params.get('sort') ?? 'added';
   const resolution = params.get('resolution') ?? '';
   const q = params.get('q') ?? '';
+  const watched = params.get('watched') ?? '';
+  const { me } = useAuth();
+  const isManager = hasRole(me, 'manager');
+  const qc = useQueryClient();
+  const [fixing, setFixing] = useState<LibraryItem | null>(null);
   const page = Number(params.get('page') ?? 1);
-  const qs = new URLSearchParams({ sort, page: String(page), pageSize: String(PAGE_SIZE), ...(kind && { kind }), ...(resolution && { resolution }), ...(q && { q }) });
+  const qs = new URLSearchParams({ sort, page: String(page), pageSize: String(PAGE_SIZE), ...(kind && { kind }), ...(resolution && { resolution }), ...(q && { q }), ...(watched === 'unmatched' ? { unmatched: 'true' } : watched && { watched }) });
   const lib = useQuery({ queryKey: ['library', qs.toString()], queryFn: () => api<LibraryResponse>(`/api/library?${qs}`) });
 
   const set = (key: string, value: string) => {
@@ -49,6 +69,12 @@ export function LibraryPage() {
             <option value="720p">720p</option>
             <option value="SD">SD</option>
           </select>
+          <select className="input w-auto" value={watched} onChange={(e) => set('watched', e.target.value)} aria-label="Watched">
+            <option value="">Watched or not</option>
+            <option value="watched">Watched</option>
+            <option value="unwatched">Not watched</option>
+            {isManager && <option value="unmatched">No TMDB match</option>}
+          </select>
           <select className="input w-auto" value={sort} onChange={(e) => set('sort', e.target.value)} aria-label="Sort">
             <option value="added">Recently added</option>
             <option value="title">Title</option>
@@ -61,7 +87,29 @@ export function LibraryPage() {
       {lib.data && lib.data.total === 0 && (
         <div className="card text-sm text-muted">Nothing here yet. An admin can connect Plex or Jellyfin in Settings → Media servers.</div>
       )}
-      <MediaGrid items={lib.data?.items ?? []} />
+      <MediaGrid
+        items={lib.data?.items ?? []}
+        extra={
+          isManager
+            ? (i) => (
+                <button className="mt-0.5 text-xs text-muted hover:text-text" onClick={() => setFixing(i)}>
+                  Fix match
+                </button>
+              )
+            : undefined
+        }
+      />
+      {fixing && (
+        <MatchPicker
+          kind={fixing.kind}
+          title={fixing.title}
+          onClose={() => setFixing(null)}
+          onPick={async (tmdbId) => {
+            await api('/api/library/match', { body: { itemIds: fixing.itemIds, tmdbId } });
+            await qc.invalidateQueries({ queryKey: ['library'] });
+          }}
+        />
+      )}
       {pages > 1 && (
         <div className="flex items-center justify-center gap-3 text-sm">
           <button className="btn-secondary" disabled={page <= 1} onClick={() => set('page', String(page - 1))}>

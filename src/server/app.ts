@@ -101,7 +101,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
         styleSrc: ["'self'", "'unsafe-inline'"],
         scriptSrc: ["'self'"],
         connectSrc: ["'self'"],
-        frameSrc: ['https://www.youtube-nocookie.com'],
+        frameSrc: ['https://www.youtube-nocookie.com', 'https://player.vimeo.com'],
         frameAncestors: ["'none'"],
         formAction: ["'self'"],
         objectSrc: ["'none'"],

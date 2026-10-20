@@ -8,6 +8,7 @@ import type { MonitoredRow } from '../arr/monitor.js';
 import { renderName } from '../arr/naming.js';
 import { parseRelease } from '../arr/parser.js';
 import { insideRoot } from '../lib/paths.js';
+import { rootOf } from '../arr/roots.js';
 
 export { insideRoot };
 
@@ -17,9 +18,39 @@ export { insideRoot };
  * resolving symlinks) so a bad template or a tampered row can never touch anything else.
  */
 
-export function rootFor(ctx: AppContext, row: Pick<MonitoredRow, 'kind'>): string {
-  const s = ctx.settings.get('media');
-  return row.kind === 'movie' ? s.moviesPath : s.tvPath;
+/** The media root a title lives in: its chosen root folder, or the main Movies or TV folder. */
+export function rootFor(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'rootId'>): string {
+  return rootOf(ctx, row).path;
+}
+
+/**
+ * Moves a title's folder into another root folder (Kids Movies → Movies, say) and points every
+ * tracked file at its new place. Renames on the same disk; copies then deletes across disks.
+ */
+export function moveToRoot(ctx: AppContext, row: MonitoredRow, rootId: string): MonitoredRow {
+  const from = rootFor(ctx, row);
+  const to = rootFor(ctx, { kind: row.kind, rootId });
+  const next = rootId === 'default' ? null : rootId;
+  if (!row.path || !fs.existsSync(row.path) || from === to) {
+    // Nothing on disk yet (or same place): new downloads just go to the new folder.
+    return ctx.db.update(monitored).set({ rootId: next, path: row.path && from !== to ? null : row.path }).where(eq(monitored.id, row.id)).returning().get();
+  }
+  assertInside(from, row.path);
+  const dest = path.join(to, path.basename(row.path));
+  assertInside(to, dest);
+  if (fs.existsSync(dest)) throw new Error(`${dest} already exists`);
+  fs.mkdirSync(to, { recursive: true });
+  try {
+    fs.renameSync(row.path, dest);
+  } catch {
+    fs.cpSync(row.path, dest, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true });
+    fs.rmSync(row.path, { recursive: true });
+  }
+  const moved = (p: string | null) => (p && (p === row.path || p.startsWith(`${row.path}${path.sep}`)) ? path.join(dest, path.relative(row.path!, p)) : p);
+  for (const e of episodesOf(ctx, row.id)) {
+    if (e.filePath) ctx.db.update(monitoredEpisodes).set({ filePath: moved(e.filePath) }).where(eq(monitoredEpisodes.id, e.id)).run();
+  }
+  return ctx.db.update(monitored).set({ rootId: next, path: dest, filePath: moved(row.filePath) }).where(eq(monitored.id, row.id)).returning().get();
 }
 
 function assertInside(root: string, target: string) {

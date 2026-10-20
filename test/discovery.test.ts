@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { parseVideoUrl } from '../src/server/trailers/service.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseCsv, parseListUrl } from '../src/server/lists/service.js';
 import { sniffImage } from '../src/server/posters/service.js';
@@ -76,6 +77,11 @@ describe('discovery, lists, collections, posters and trailers', () => {
       [`${PLEX}/library/metadata/900/thumb/1`]: (_u: URL, init?: RequestInit) =>
         new Response(PNG, { headers: { 'content-type': 'image/png', 'x-token-seen': String((init?.headers as Record<string, string>)['X-Plex-Token']) } }),
       [`${PLEX}/library/sections/1/all`]: (url: URL, init?: RequestInit) => {
+        if (init?.method === 'PUT' && url.searchParams.has('label.locked')) {
+          const add = url.searchParams.get('label[0].tag.tag');
+          plexWrites.push(`${url.searchParams.get('id')} label${add ? '+' : '-'}${add ?? url.searchParams.get('label[].tag.tag-')}`);
+          return new Response('');
+        }
         if (init?.method === 'PUT') {
           plexWrites.push(`${url.searchParams.get('id')} ${url.searchParams.get('collection[0].tag.tag') ? '+' : '-'}${url.searchParams.get('collection[0].tag.tag') ?? url.searchParams.get('collection[].tag.tag-')}`);
           plexCollections = [{ ratingKey: '900', title: 'Bear Films', thumb: '/library/metadata/900/thumb/1' }];
@@ -123,7 +129,8 @@ describe('discovery, lists, collections, posters and trailers', () => {
     expect(list.sync).toMatchObject({ ok: true, items: 3, added: 1 }); // Paddington and Bluey are already on Plex
     const items = (await kid.req('GET', `/api/lists/${list.id}/items`)).json().items;
     expect(items.map((i: { title: string }) => i.title)).toEqual(['Paddington', 'Future Film', 'Bluey']);
-    const monitoredTitles = (t.app.ctx.dbHandle.sqlite.prepare('SELECT title FROM monitored ORDER BY title').all() as { title: string }[]).map((r) => r.title);
+    // Paddington and Bluey were picked up by library sync (added_by is null); the list added Future Film.
+    const monitoredTitles = (t.app.ctx.dbHandle.sqlite.prepare('SELECT title FROM monitored WHERE added_by IS NOT NULL ORDER BY title').all() as { title: string }[]).map((r) => r.title);
     expect(monitoredTitles).toEqual(['Future Film']);
   });
 
@@ -151,6 +158,24 @@ describe('discovery, lists, collections, posters and trailers', () => {
     expect(plexWrites[0]).toBe('10 +Bear Films');
     expect(plexWrites[1]).toBe('11 -Bear Films');
     expect((await kid.req('POST', `/api/collections/${c.id}/push`)).statusCode).toBe(403);
+  });
+
+  it('fills a collection from a Plex label and labels a collection\'s items on Plex', async () => {
+    expect((await owner.req('GET', '/api/library/labels')).json()).toEqual({ labels: ['Kids'] });
+    expect((await kid.req('GET', '/api/library/labels')).statusCode).toBe(403);
+    const kids = (await owner.req('POST', '/api/collections', { name: 'Kids', fromLabel: 'kids' })).json();
+    expect(kids.items.map((i: { title: string }) => i.title)).toEqual(['Paddington']);
+    expect((await owner.req('POST', `/api/collections/${kids.id}/items`, { kind: 'movie', tmdbId: 999 })).statusCode).toBe(400);
+
+    const c = (await owner.req('POST', '/api/collections', { name: 'Bears', plexLabel: 'Bears', syncPlex: true, items: [{ kind: 'movie', tmdbId: 116149 }] })).json();
+    plexWrites.length = 0;
+    await owner.req('POST', `/api/collections/${c.id}/push`);
+    expect(plexWrites).toContain('10 label+Bears');
+    // An item that carries the label but left the collection loses it.
+    t.app.ctx.dbHandle.sqlite.prepare(`UPDATE library_items SET labels = '["Bears"]' WHERE external_key = '11'`).run();
+    plexWrites.length = 0;
+    await owner.req('POST', `/api/collections/${c.id}/push`);
+    expect(plexWrites).toContain('11 label-Bears');
   });
 
   it('adds a collection to the connected servers in one step', async () => {
@@ -205,7 +230,30 @@ describe('discovery, lists, collections, posters and trailers', () => {
     await vi.waitFor(async () => expect((await owner.req('GET', `/api/monitored/${m.id}/trailers`)).json().job.status).toBe('done'));
     const files = (await owner.req('GET', `/api/monitored/${m.id}/trailers`)).json().files;
     expect(files.map((f: { path: string }) => path.relative(movies, f.path))).toEqual([path.join('Paddington (2014)', 'Paddington (2014)-trailer.mkv')]);
+
+    // Anyone who can browse can watch it, with seeking (range requests).
+    expect((await kid.req('GET', '/api/trailers/movie/116149')).json()).toEqual([{ index: 0, name: 'Paddington (2014)-trailer', size: 8, type: 'video/x-matroska' }]);
+    const part = await kid.req('GET', '/api/trailers/movie/116149/0', undefined, { headers: { range: 'bytes=0-3' } });
+    expect(part.statusCode).toBe(206);
+    expect(part.headers['content-range']).toBe('bytes 0-3/8');
+    expect(part.body).toBe('trai');
+    expect((await kid.req('GET', '/api/trailers/movie/116149/1')).statusCode).toBe(404);
+    expect((await kid.req('DELETE', `/api/monitored/${m.id}/trailers`)).statusCode).toBe(403);
+
+    // A pasted link: only YouTube and Vimeo.
+    expect((await owner.req('POST', `/api/monitored/${m.id}/trailers`, { url: 'https://evil.example/video' })).statusCode).toBe(400);
+    expect((await owner.req('POST', `/api/monitored/${m.id}/trailers`, { url: 'https://vimeo.com/76979871' })).json()).toMatchObject({ status: 'downloading', key: '76979871' });
+    await vi.waitFor(async () => expect((await owner.req('GET', `/api/monitored/${m.id}/trailers`)).json().job.status).toBe('done'));
     expect((await owner.req('DELETE', `/api/monitored/${m.id}/trailers`)).json()).toEqual({ removed: 1 });
+  });
+
+  it('reads YouTube and Vimeo links and nothing else', () => {
+    expect(parseVideoUrl('https://www.youtube.com/watch?v=abcDEF12345&t=3')).toEqual({ site: 'YouTube', key: 'abcDEF12345' });
+    expect(parseVideoUrl('https://youtu.be/abcDEF12345')).toEqual({ site: 'YouTube', key: 'abcDEF12345' });
+    expect(parseVideoUrl('https://player.vimeo.com/video/76979871')).toEqual({ site: 'Vimeo', key: '76979871' });
+    expect(parseVideoUrl('https://www.youtube.com/watch?v=--exec=rm')).toBeNull();
+    expect(parseVideoUrl('https://youtube.com.evil.example/watch?v=abcDEF12345')).toBeNull();
+    expect(parseVideoUrl('javascript:alert(1)')).toBeNull();
   });
 
   it('only runs a program named yt-dlp', async () => {

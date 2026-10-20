@@ -1,6 +1,6 @@
 import type { AppContext } from '../context.js';
 
-export const NOTIFY_EVENTS = ['request.created', 'request.available', 'download.imported', 'download.failed', 'health.problem'] as const;
+export const NOTIFY_EVENTS = ['request.created', 'request.available', 'download.imported', 'download.failed', 'download.warning', 'health.problem'] as const;
 export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
 
 export interface Notification {

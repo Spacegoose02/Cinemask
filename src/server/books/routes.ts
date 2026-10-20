@@ -126,6 +126,30 @@ export async function bookRoutes(app: FastifyInstance) {
     return startBookDownload(ctx, id, req.user!.id);
   });
 
+  /** Points a request at a different Open Library work (it was matched to the wrong book). */
+  app.post('/api/books/:id/match', { config: { access: 'manager' } }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(z.object({ workKey }), req.body);
+    const b = getBook(ctx, id);
+    if (!b) throw notFound('Request not found');
+    const clash = ctx.db.select().from(books).where(and(eq(books.workKey, body.workKey), eq(books.format, b.format))).get();
+    if (clash && clash.id !== id) throw conflict(`There is already a request for that ${b.format}`);
+    let work;
+    try {
+      work = await openLibrary(ctx).work(body.workKey);
+    } catch (err) {
+      throw upstream(err);
+    }
+    if (!work) throw badRequest('Could not find that book on Open Library');
+    ctx.db
+      .update(books)
+      .set({ workKey: body.workKey, title: work.title.slice(0, 500), author: work.author?.slice(0, 300) ?? null, year: work.year, coverId: work.coverId, isbn: work.isbn })
+      .where(eq(books.id, id))
+      .run();
+    audit(ctx.db, req, 'book.matched', { target: `${b.title} → ${work.title}` });
+    return getBook(ctx, id);
+  });
+
   app.delete('/api/books/:id', { config: { access: 'user' } }, async (req) => {
     const { id } = parse(idParam, req.params);
     const b = getBook(ctx, id);

@@ -13,7 +13,7 @@ import { badRequest, HttpError, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { withAvailability } from '../lists/routes.js';
 import { postersDir } from '../posters/service.js';
-import { downloadMissing, importServerCollections, itemsOf, jellyfinClient, plexClient, pushCollection, refreshCollectionItems, setItems } from './service.js';
+import { clearPlexLabel, downloadMissing, importServerCollections, itemsOf, libraryLabels, jellyfinClient, plexClient, pushCollection, refreshCollectionItems, setItems } from './service.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const itemRef = z.object({ kind: z.enum(MEDIA_KINDS), tmdbId: z.coerce.number().int().positive() });
@@ -24,6 +24,8 @@ export const posterValue = z
   .trim()
   .max(2000)
   .refine((v) => /^\/[\w-]+\.(jpe?g|png|webp)$/i.test(v) || v.startsWith('https://'), 'Use a TMDB image or an https link');
+
+const labelValue = z.string().trim().min(1).max(100);
 
 export async function checkPosterUrl(value: string | null | undefined) {
   if (value?.startsWith('https://')) {
@@ -61,6 +63,8 @@ export async function collectionRoutes(app: FastifyInstance) {
       .map((c) => ({ ...c, itemCount: counts.get(c.id) ?? 0, previewPosters: itemsOf(ctx, c.id).slice(0, 4).map((i) => i.posterPath) }));
   });
 
+  app.get('/api/library/labels', { config: { access: 'manager' } }, async () => ({ labels: libraryLabels(ctx) }));
+
   app.get('/api/collections/:id', { config: { access: 'user' } }, async (req) => {
     const { id } = parse(idParam, req.params);
     return { ...getCol(id), items: withAvailability(ctx, itemsOf(ctx, id)) };
@@ -76,6 +80,10 @@ export async function collectionRoutes(app: FastifyInstance) {
         sourceId: z.coerce.number().int().positive().optional(),
         syncPlex: z.boolean().default(false),
         syncJellyfin: z.boolean().default(false),
+        /** A Plex label to put on every item, for smart filters and sharing restrictions. */
+        plexLabel: labelValue.nullable().default(null),
+        /** Fill the collection from everything carrying this Plex label or Jellyfin tag. */
+        fromLabel: labelValue.nullable().default(null),
         /** Sync to whichever of Plex and Jellyfin are connected, and push straight away. */
         toServers: z.boolean().default(false),
         items: z.array(itemRef).max(500).default([]),
@@ -107,7 +115,7 @@ export async function collectionRoutes(app: FastifyInstance) {
       .values({ ...values, sourceId: sourceId ? String(sourceId) : null, createdBy: req.user!.id, createdAt: Date.now() })
       .returning()
       .get();
-    if (body.source === 'manual') {
+    if (body.source === 'manual' && !body.fromLabel) {
       const resolved = [];
       for (const i of items) {
         const m = await upstream(() => refreshMetadata(ctx, i.kind, i.tmdbId));
@@ -137,12 +145,17 @@ export async function collectionRoutes(app: FastifyInstance) {
         poster: posterValue.nullable(),
         syncPlex: z.boolean(),
         syncJellyfin: z.boolean(),
+        plexLabel: labelValue.nullable(),
+        fromLabel: labelValue.nullable(),
       }).partial(),
       req.body,
     );
     await checkPosterUrl(body.poster);
     const before = getCol(id);
+    if (body.fromLabel && before.source !== 'manual') throw badRequest('Only a hand-made collection can follow a label');
     ctx.db.update(collections).set(body).where(eq(collections.id, id)).run();
+    if (body.fromLabel && body.fromLabel !== before.fromLabel) await refreshCollectionItems(ctx, id);
+    if (before.plexLabel && body.plexLabel !== undefined && body.plexLabel !== before.plexLabel) await clearPlexLabel(ctx, before.plexLabel).catch(() => undefined);
     audit(ctx.db, req, 'collection.updated', { target: before.name, details: body });
     return getCol(id);
   });
@@ -159,7 +172,7 @@ export async function collectionRoutes(app: FastifyInstance) {
     const { id } = parse(idParam, req.params);
     const item = parse(itemRef, req.body);
     const c = getCol(id);
-    if (c.source === 'tmdb' || c.source === 'list') throw badRequest('This collection follows its source; edit the source instead');
+    if (c.source === 'tmdb' || c.source === 'list' || c.fromLabel) throw badRequest('This collection follows its source; edit the source instead');
     const m = await upstream(() => refreshMetadata(ctx, item.kind, item.tmdbId));
     if (!m) throw badRequest('Could not look up this title');
     const items = itemsOf(ctx, id).filter((i) => !(i.kind === item.kind && i.tmdbId === item.tmdbId));

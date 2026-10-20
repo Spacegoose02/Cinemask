@@ -116,6 +116,11 @@ export const libraryItems = sqliteTable(
     resolution: text('resolution'),
     addedAt: integer('added_at'),
     mediaId: integer('media_id').references(() => media.id, { onDelete: 'set null' }),
+    /** Times played by the server's own account, and when last. Null when the server doesn't say. */
+    viewCount: integer('view_count'),
+    lastViewedAt: integer('last_viewed_at'),
+    /** Plex labels or Jellyfin tags. JSON string[]. */
+    labels: text('labels'),
   },
   (t) => [uniqueIndex('library_server_key').on(t.server, t.externalKey), index('library_items_media_idx').on(t.mediaId)],
 );
@@ -129,7 +134,21 @@ export const libraryEpisodes = sqliteTable('library_episodes', {
   episode: integer('episode').notNull(),
   title: text('title'),
   resolution: text('resolution'),
+  viewCount: integer('view_count'),
+  lastViewedAt: integer('last_viewed_at'),
 });
+
+/** A title fixed by hand to the right TMDB entry. Library sync applies it every time. */
+export const matchOverrides = sqliteTable(
+  'match_overrides',
+  {
+    server: text('server', { enum: SERVERS }).notNull(),
+    externalKey: text('external_key').notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.server, t.externalKey] })],
+);
 
 export const httpCache = sqliteTable('http_cache', {
   key: text('key').primaryKey(),
@@ -168,8 +187,23 @@ export const monitored = sqliteTable(
     addedBy: integer('added_by').references(() => users.id, { onDelete: 'set null' }),
     addedAt: integer('added_at').notNull(),
     lastSearchAt: integer('last_search_at'),
+    /** Which root folder (Settings → Media management) new files go to; null is the default one. */
+    rootId: text('root_id'),
+    /** Largest wanted release in MB, per movie or per episode. Null uses the default from settings; 0 means no limit. */
+    maxSizeMb: integer('max_size_mb'),
   },
   (t) => [uniqueIndex('monitored_kind_tmdb').on(t.kind, t.tmdbId)],
+);
+
+/** Titles removed from monitoring by hand, so library sync doesn't add them back. */
+export const monitorExclusions = sqliteTable(
+  'monitor_exclusions',
+  {
+    kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.kind, t.tmdbId] })],
 );
 
 export const monitoredEpisodes = sqliteTable(
@@ -269,6 +303,12 @@ export const downloads = sqliteTable(
     completedAt: integer('completed_at'),
     importedAt: integer('imported_at'),
     bookId: integer('book_id'), // set for audiobook/ebook grabs instead of monitoredId
+    /** Download-client category or label it was sent with. */
+    category: text('category'),
+    /** Something worth knowing that didn't stop the download, e.g. bigger than the size limit. */
+    warning: text('warning'),
+    /** For links: where the finished download goes, as a destination key (see arr/roots.ts), with an optional name. JSON. */
+    destination: text('destination'),
   },
   (t) => [index('downloads_status_idx').on(t.status)],
 );
@@ -335,6 +375,10 @@ export const collections = sqliteTable('collections', {
   lastError: text('last_error'),
   createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: integer('created_at').notNull(),
+  /** Label put on every item of this collection in Plex, for smart filters and other tools. */
+  plexLabel: text('plex_label'),
+  /** Keep the items in step with everything on the server carrying this label (Plex) or tag (Jellyfin). */
+  fromLabel: text('from_label'),
 });
 
 export const collectionItems = sqliteTable(

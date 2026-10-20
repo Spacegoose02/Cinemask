@@ -87,7 +87,7 @@ Each event is a JSON POST:
 }
 ```
 
-Events: `request.created`, `request.available`, `download.imported`, `download.failed`, `health.problem`.
+Events: `request.created`, `request.available`, `download.imported`, `download.failed`, `download.warning` (grabbed although bigger than the size limit), `health.problem`.
 
 An automation that sends a phone notification:
 

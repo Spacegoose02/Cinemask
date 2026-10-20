@@ -14,9 +14,9 @@ The second board (35 cards) is being worked through in five pull requests. 14 ca
 
 | PR | Cards | Status |
 |---|---|---|
-| 1. Fixes | YouTube trailer error, turn off CAM/TS copies, download totals on the Downloads tab, collection button for Plex and Jellyfin, Handoff.md, bug and security check | In review |
-| 2. Folders and sizes | Custom root folders (Kids Movies, 4K…), download tag per media path, size limits for movies and per show, download from a link with a name and destination, auto-monitor what the library sync finds | To do |
-| 3. Library | Watch trailers already on the server, trailer management (auto, sources, quality), manually map media, watched / play count, Plex labels with collections | To do |
+| 1. Fixes | YouTube trailer error, turn off CAM/TS copies, download totals on the Downloads tab, collection button for Plex and Jellyfin, Handoff.md, bug and security check | PR #10 |
+| 2. Folders and sizes | Custom root folders (Kids Movies, 4K…), download tag per media path, size limits for movies and per show, download from a link with a name and destination, auto-monitor what the library sync finds | PR #13 (with PR 3) |
+| 3. Library | Watch trailers already on the server, trailer management (auto, sources, quality), manually map media, watched / play count, Plex labels with collections | PR #13 |
 | 4. YouTube and ReadMeABook | Subscribe to channels (new, all, playlists), metadata for Plex and Jellyfin, audiobooks through ReadMeABook | To do |
 | 5. Themes | Five themes in each style (dark, light, retro, futuristic, 16-bit, cinemas) plus Blockbuster | To do |
 
@@ -24,9 +24,19 @@ Already done in 0.9 (no work needed): delete episodes, seasons and movies; downl
 
 ## Known gaps
 
-- Direct (link) downloads are saved to `<downloads>/direct` and never imported (fixed in PR 2).
 - Specials (season 0) are not added to monitored episodes, so the per-episode tools can't act on them.
 - Removing a download with "Blocklist and retry" marks it `removed` in history although a retry search runs.
+
+## How the newer pieces fit
+
+- **Root folders** (`arr/roots.ts`): the main Movies/TV folders are id `default`; extra ones live in `media.extraFolders`. `monitored.root_id` picks one; `rootFor()` in `files/service.ts` is the root every path check uses. `moveToRoot()` moves a title's folder.
+- **Size limits**: `decide()` marks `oversize` instead of rejecting; `byPreference()` sorts within-limit first. Limits come from `downloading.maxMovieSizeGb/maxEpisodeSizeGb` or `monitored.max_size_mb`.
+- **Link downloads** (`arr/direct.ts`): `downloads.destination` holds `{key, name}`; `deliverLink()` places the finished file or folder.
+- **Local trailers** (`trailers/routes.ts`): `GET /api/trailers/:kind/:tmdbId` lists trailer files in the title's folder and `/:index` streams one with range support. `parseVideoUrl()` accepts YouTube and Vimeo links only.
+- **Match fixes**: `match_overrides` (server + item key → TMDB id) is applied by `store()` in `library/service.ts` on every sync. Monitored titles and book requests are fixed in place (`/api/monitored/:id/match`, `/api/books/:id/match`).
+- **Watched**: `view_count`/`last_viewed_at` on library items and episodes. A show's count is its least-played episode, so it counts as watched once every episode is. Jellyfin reads plays as the first admin user.
+- **Labels**: `library_items.labels` holds Plex labels / Jellyfin tags. `collections.from_label` fills a collection from them; `collections.plex_label` is put on (and taken off) Plex items on each push.
+- **Auto-monitor** (`monitorLibrary()` in `arr/monitor.ts`) runs after each library sync, 50 titles per run; `monitor_exclusions` remembers titles removed by hand.
 
 ## Working here
 

@@ -59,6 +59,64 @@ describe('library sync', () => {
     expect((await owner.req('GET', '/api/library?kind=show')).json().total).toBe(1);
   });
 
+  it('monitors what it finds without searching for anything already out', async () => {
+    const rows = t.app.ctx.dbHandle.sqlite.prepare('SELECT id, kind, title, monitored FROM monitored ORDER BY title').all() as { id: number; kind: string; title: string; monitored: number }[];
+    expect(rows.map((r) => [r.title, r.monitored])).toContainEqual(['Paddington', 0]);
+    const bluey = rows.find((r) => r.title === 'Bluey')!;
+    expect(bluey.monitored).toBe(1);
+    // Episodes that already aired stay as they are; only future ones would be fetched.
+    const aired = t.app.ctx.dbHandle.sqlite.prepare("SELECT COUNT(*) AS n FROM monitored_episodes WHERE monitored_id = ? AND monitored = 1 AND air_date <= date('now')").get(bluey.id) as { n: number };
+    expect(aired.n).toBe(0);
+    expect(t.librarySync.status.autoMonitored).toBe(rows.length);
+
+    // Removed by hand: the next sync leaves it alone.
+    await owner.req('DELETE', `/api/monitored/${bluey.id}`);
+    await t.librarySync.run();
+    expect(t.app.ctx.dbHandle.sqlite.prepare("SELECT COUNT(*) AS n FROM monitored WHERE title = 'Bluey'").get()).toEqual({ n: 0 });
+  });
+
+  it('can be told not to monitor what it finds', async () => {
+    t.app.ctx.dbHandle.sqlite.prepare('DELETE FROM monitored').run();
+    await owner.req('PUT', '/api/settings/library', { autoMonitor: 'off' });
+    await t.librarySync.run();
+    expect(t.app.ctx.dbHandle.sqlite.prepare('SELECT COUNT(*) AS n FROM monitored').get()).toEqual({ n: 0 });
+  });
+
+  it('reads play counts and filters by watched', async () => {
+    const watched = (await owner.req('GET', '/api/library?watched=watched')).json();
+    // A show counts as watched once every episode has been played.
+    expect(watched.items.map((i: { title: string }) => i.title)).toEqual(['Paddington']);
+    expect(watched.items.find((i: { title: string }) => i.title === 'Paddington')).toMatchObject({ viewCount: 3, lastViewedAt: 1720000000000 });
+    expect((await owner.req('GET', '/api/library?watched=unwatched')).json().total).toBe(2);
+    const m = (await owner.req('GET', '/api/media/movie/116149')).json();
+    expect(m.watch).toEqual({ viewCount: 3, lastViewedAt: 1720000000000 });
+    const season = (await owner.req('GET', '/api/media/show/82728/season/1')).json();
+    expect(season.episodes.map((e: { viewCount: number | null }) => e.viewCount)).toEqual([1, 0, null]);
+  });
+
+  it('keeps a match fixed by hand through the next sync', async () => {
+    const lib = (await owner.req('GET', '/api/library?q=old')).json();
+    const u = await createUser(owner, 'kid', 'user');
+    const c = new Client(t.app);
+    await c.login('kid', u.password);
+    expect((await c.req('POST', '/api/library/match', { itemIds: lib.items[0].itemIds, tmdbId: 555 })).statusCode).toBe(403);
+    const res = await owner.req('POST', '/api/library/match', { itemIds: lib.items[0].itemIds, tmdbId: 555 });
+    expect(res.json()).toMatchObject({ kind: 'movie', tmdbId: 555, title: 'Future Film' });
+    await t.librarySync.run();
+    const after = (await owner.req('GET', '/api/library?q=old')).json();
+    expect(after.items[0].tmdbId).toBe(555);
+  });
+
+  it('re-points a monitored title at a different TMDB entry', async () => {
+    const row = t.app.ctx.dbHandle.sqlite.prepare("SELECT id FROM monitored WHERE title = 'Paddington'").get() as { id: number };
+    const res = await owner.req('POST', `/api/monitored/${row.id}/match`, { tmdbId: 555 });
+    expect(res.json()).toMatchObject({ tmdbId: 555, title: 'Future Film' });
+    // Two monitored rows can't point at the same title.
+    t.app.ctx.dbHandle.sqlite.prepare("UPDATE monitored SET tmdb_id = 116149 WHERE id = ?").run(row.id);
+    const other = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 555 })).json();
+    expect((await owner.req('POST', `/api/monitored/${other.id}/match`, { tmdbId: 116149 })).statusCode).toBe(409);
+  });
+
   it('a second sync replaces, not duplicates, the server contents', async () => {
     await t.librarySync.run();
     expect((await owner.req('GET', '/api/library')).json().total).toBe(3);
