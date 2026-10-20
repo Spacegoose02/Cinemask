@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-20
+
 ### Added
 - Managers can add a title to monitoring without searching ("Monitor only"), and can monitor a movie that's already on the server so it gets upgraded ("Monitor for upgrades").
 - "Manage files" on any title that's on Plex or Jellyfin but not managed by Cinemask yet: it finds the title's folder, so its files can be deleted, renamed and upgraded. Nothing is downloaded.
@@ -75,6 +77,7 @@ The first public beta. Every phase of the roadmap is in.
 - Home Assistant: `/api/stats` for sensors and webhook events for automations.
 - Docker image for amd64 and arm64, and an Unraid template.
 
-[Unreleased]: https://github.com/Spacegoose02/cinemask/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Spacegoose02/cinemask/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/Spacegoose02/cinemask/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/Spacegoose02/cinemask/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Spacegoose02/cinemask/releases/tag/v0.9.0
