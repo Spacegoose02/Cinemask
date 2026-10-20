@@ -324,6 +324,43 @@ describe('request → download → import', () => {
     expect((await owner.req('GET', '/api/downloads?history=true')).json()).toHaveLength(history.length);
   });
 
+  it('imports a file by hand as a movie or an episode, only from the downloads or watch folder', async () => {
+    const movie = path.join(dl, 'stuck', 'weird name.mkv');
+    const ep = path.join(dl, 'bluey-pilot.mkv');
+    fs.mkdirSync(path.dirname(movie), { recursive: true });
+    fs.writeFileSync(movie, 'movie');
+    fs.writeFileSync(ep, 'episode');
+    expect((await kid.req('GET', '/api/manual-import')).statusCode).toBe(403);
+    const list = (await owner.req('GET', '/api/manual-import')).json();
+    expect(list.files.map((f: { name: string }) => f.name).sort()).toEqual(['bluey-pilot.mkv', path.join('stuck', 'weird name.mkv')]);
+
+    expect((await kid.req('POST', '/api/manual-import', { path: movie, kind: 'movie', tmdbId: 116149 })).statusCode).toBe(403);
+    expect((await owner.req('POST', '/api/manual-import', { path: '/etc/passwd', kind: 'movie', tmdbId: 116149 })).statusCode).toBe(400);
+    expect((await owner.req('POST', '/api/manual-import', { path: ep, kind: 'show', tmdbId: 82728 })).statusCode).toBe(400);
+
+    const r = (await owner.req('POST', '/api/manual-import', { path: movie, kind: 'movie', tmdbId: 116149, mode: 'move' })).json();
+    expect(r.imported).toEqual([path.join(media, 'movies', 'Paddington (2014)', 'Paddington (2014) - Unknown.mkv')]);
+    expect(fs.existsSync(movie)).toBe(false);
+    await owner.req('POST', '/api/manual-import', { path: ep, kind: 'show', tmdbId: 82728, season: 1, episodes: [1], mode: 'copy' });
+    expect(fs.readdirSync(path.join(media, 'tv', 'Bluey (2018)', 'Season 01'))).toHaveLength(1);
+    expect(fs.existsSync(ep)).toBe(true);
+    const history = (await owner.req('GET', '/api/downloads?history=true')).json();
+    expect(history.filter((d: { indexer: string; status: string }) => d.indexer === 'Manual import' && d.status === 'imported')).toHaveLength(2);
+  });
+
+  it('a finished download the client never gives a folder for fails after a while instead of sitting there', async () => {
+    await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: true });
+    await vi.waitFor(() => expect(added).toHaveLength(1));
+    qbitTorrents = [{ hash: 'h1', name: 'Paddington', progress: 1, state: 'uploading', size: 5, content_path: '', save_path: '', tags: 'mm-1' }];
+    await trackDownloads(t.app.ctx);
+    expect((await owner.req('GET', '/api/downloads')).json()[0].status).toBe('completed');
+    t.app.ctx.dbHandle.sqlite.prepare('UPDATE downloads SET completed_at = ?').run(Date.now() - 31 * 60 * 1000);
+    await trackDownloads(t.app.ctx);
+    const [d] = (await owner.req('GET', '/api/downloads?history=true')).json();
+    expect(d.status).toBe('failed');
+    expect(d.error).toMatch(/Downloads → Import/);
+  });
+
   it('the upgrades switch stops replacing downloaded files, whatever the profile allows', async () => {
     await owner.req('PUT', '/api/settings/downloading', { upgrades: false });
     const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, profileId: await profileId('1080p or above'), search: false })).json();

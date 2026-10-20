@@ -76,7 +76,16 @@ export interface ImportResult {
   skipped: string[];
 }
 
-export function importDownload(ctx: AppContext, downloadId: number, sourcePath: string, mode?: 'hardlink' | 'copy' | 'move'): ImportResult {
+export interface ImportOptions {
+  mode?: 'hardlink' | 'copy' | 'move';
+  /** The episode(s) a single file is, picked by hand; wins over what the file name says. */
+  episode?: { season: number; episodes: number[] };
+  /** Imported by hand: replaces the current file even when it looks as good. */
+  replace?: boolean;
+}
+
+export function importDownload(ctx: AppContext, downloadId: number, sourcePath: string, opts: ImportOptions = {}): ImportResult {
+  const mode = opts.mode;
   const dl = ctx.db.select().from(downloads).where(eq(downloads.id, downloadId)).get();
   if (!dl?.monitoredId) throw new Error('This download is not linked to a movie or show');
   const row = ctx.db.select().from(monitored).where(eq(monitored.id, dl.monitoredId)).get();
@@ -84,7 +93,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
   const mediaSettings = ctx.settings.get('media');
   const naming = ctx.settings.get('naming');
   const files = findVideos(mapRemotePath(ctx, sourcePath));
-  if (!files.length) throw new Error(`No video files found at ${sourcePath}`);
+  if (!files.length) throw new Error(`No video files found at ${sourcePath}. If the download client sees its folders at different paths, add a remote path mapping in Settings → Media management.`);
   const result: ImportResult = { imported: [], skipped: [] };
 
   if (row.kind === 'movie') {
@@ -95,7 +104,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     const name = naming.renameFiles ? renderName(naming.movieFile, { movieTitle: row.title, year: row.year, quality, tmdbId: row.tmdbId }) : path.parse(file).name;
     const dest = path.join(folder, `${name}${path.extname(file).toLowerCase()}`);
     if (!inside(root, dest)) throw new Error('Refusing to write outside the movies folder');
-    if (row.filePath && row.fileQuality && qualityRank(row.fileQuality) >= qualityRank(quality)) {
+    if (!opts.replace && row.filePath && row.fileQuality && qualityRank(row.fileQuality) >= qualityRank(quality)) {
       result.skipped.push(`${path.basename(file)}: existing file is as good or better`);
     } else {
       placeFile(file, dest, mode ?? mediaSettings.importMode);
@@ -109,8 +118,8 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     const grabbed = dl.episodes ? (JSON.parse(dl.episodes) as { season: number; episodes: number[] }) : null;
     for (const file of files) {
       const parsed = parseRelease(path.basename(file));
-      const season = parsed.season ?? grabbed?.season ?? null;
-      const eps = parsed.episodes.length ? parsed.episodes : grabbed?.episodes.length === 1 ? grabbed.episodes : [];
+      const season = opts.episode?.season ?? parsed.season ?? grabbed?.season ?? null;
+      const eps = opts.episode?.episodes ?? (parsed.episodes.length ? parsed.episodes : grabbed?.episodes.length === 1 ? grabbed.episodes : []);
       if (season === null || !eps.length) {
         result.skipped.push(`${path.basename(file)}: could not tell which episode it is`);
         continue;
@@ -123,7 +132,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
         continue;
       }
       const quality = parsed.quality !== 'Unknown' ? parsed.quality : (dl.quality ?? 'Unknown');
-      if (epRows.every((e) => e.fileQuality && qualityRank(e.fileQuality) >= qualityRank(quality))) {
+      if (!opts.replace && epRows.every((e) => e.fileQuality && qualityRank(e.fileQuality) >= qualityRank(quality))) {
         result.skipped.push(`${path.basename(file)}: existing file is as good or better`);
         continue;
       }
