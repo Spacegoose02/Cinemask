@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { MediaCard } from '../components/media';
 import { Modal } from '../components/Modal';
 import { Alert, Field, Toggle } from '../components/ui';
 import { api, formatDate, hasRole } from '../lib/api';
+import { collectionLibraries, inLibrary } from '../lib/collections';
 import { useAuth } from '../lib/auth';
 import { poster, type MediaCardData } from '../lib/media';
 import type { ListRow } from './Lists';
@@ -141,14 +142,17 @@ export function CollectionsPage() {
   const cols = useQuery({ queryKey: ['collections'], queryFn: () => api<Collection[]>('/api/collections') });
   const [creating, setCreating] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
+  const [params] = useSearchParams();
   const [picked, setPicked] = useState<string | null>(() => {
+    // A link can name the library (the home page's "See all" opens Movies).
+    if (params.get('library')) return params.get('library');
     try {
       return localStorage.getItem('collections-library');
     } catch {
       return null;
     }
   });
-  const libraries = [...new Set((cols.data ?? []).map((c) => c.library).filter((l): l is string => Boolean(l)))].sort((a, b) => (a === 'Movies' ? -1 : b === 'Movies' ? 1 : a.localeCompare(b)));
+  const libraries = collectionLibraries(cols.data ?? []);
   // Movies first by default; a library that's gone falls back to it too.
   const library = picked === 'all' ? 'all' : picked && libraries.includes(picked) ? picked : (libraries[0] ?? 'all');
   const choose = (v: string) => {
@@ -160,7 +164,7 @@ export function CollectionsPage() {
     }
   };
   // Collections made here, or from Jellyfin, belong to no library and show in every one.
-  const shown = (cols.data ?? []).filter((c) => library === 'all' || !c.library || c.library === library);
+  const shown = inLibrary(cols.data ?? [], library);
   const unsorted = (cols.data ?? []).some((c) => c.source === 'plex' && !c.library);
   const importFrom = async (server: 'plex' | 'jellyfin') => {
     try {

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { MediaRow } from '../components/media';
 import { Modal } from '../components/Modal';
 import { Alert } from '../components/ui';
+import { collectionLibraries, inLibrary } from '../lib/collections';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { mediaPath, poster, type MediaCardData } from '../lib/media';
@@ -25,7 +26,7 @@ function rowKey(r: HomeRow) {
 
 function useNames() {
   const lists = useQuery({ queryKey: ['lists'], queryFn: () => api<{ id: number; name: string }[]>('/api/lists') });
-  const cols = useQuery({ queryKey: ['collections'], queryFn: () => api<{ id: number; name: string; poster: string | null; previewPosters: (string | null)[]; itemCount: number }[]>('/api/collections') });
+  const cols = useQuery({ queryKey: ['collections'], queryFn: () => api<{ id: number; name: string; poster: string | null; previewPosters: (string | null)[]; itemCount: number; library: string | null }[]>('/api/collections') });
   const label = (r: HomeRow): string => {
     switch (r.type) {
       case 'featured':
@@ -108,13 +109,16 @@ function Featured() {
   );
 }
 
-function CollectionsRow({ items }: { items: ReturnType<typeof useNames>['collections'] }) {
+function CollectionsRow({ items: all }: { items: ReturnType<typeof useNames>['collections'] }) {
+  // Only the main library's collections (Movies), so one in Movies and Kids Movies shows once.
+  const library = collectionLibraries(all)[0] ?? 'all';
+  const items = inLibrary(all, library);
   if (!items.length) return null;
   return (
     <section className="space-y-2">
       <div className="flex items-baseline justify-between">
         <h2 className="text-lg font-semibold">Collections</h2>
-        <Link to="/collections" className="text-sm text-muted hover:text-accent">
+        <Link to={library === 'all' ? '/collections' : `/collections?library=${encodeURIComponent(library)}`} className="text-sm text-muted hover:text-accent">
           See all
         </Link>
       </div>

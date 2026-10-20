@@ -1,4 +1,4 @@
-import { fetchJson, IntegrationError, normalizeResolution } from './http.js';
+import { connectError, fetchJson, IntegrationError, normalizeResolution } from './http.js';
 import { rollUpViews, type MediaServerClient, type ServerItem } from './mediaserver.js';
 
 interface PlexGuid {
@@ -102,8 +102,8 @@ export class PlexClient implements MediaServerClient {
         headers: { 'X-Plex-Token': this.token, Accept: 'application/json', ...(contentType ? { 'Content-Type': contentType } : {}) },
         signal: AbortSignal.timeout(30_000),
       });
-    } catch {
-      throw new IntegrationError('Plex', 'could not connect');
+    } catch (err) {
+      throw new IntegrationError('Plex', connectError(err));
     }
     if (!res.ok) throw new IntegrationError('Plex', `responded with HTTP ${res.status}`, res.status);
     return res;

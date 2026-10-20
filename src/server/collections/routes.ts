@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -46,7 +46,16 @@ export async function collectionRoutes(app: FastifyInstance) {
   };
   const failure = (err: unknown) => new HttpError(502, (err as Error).message, 'upstream');
 
+  // Plex collections imported before libraries were recorded get theirs from one quiet re-import.
+  let sorting = false;
+  const sortUnsorted = () => {
+    if (sorting || !ctx.db.select({ id: collections.id }).from(collections).where(and(eq(collections.source, 'plex'), isNull(collections.library))).get()) return;
+    sorting = true;
+    void importServerCollections(ctx, 'plex', null).catch((err) => app.log.warn({ err }, 'Sorting Plex collections into libraries failed'));
+  };
+
   app.get('/api/collections', { config: { access: 'user' } }, async () => {
+    sortUnsorted();
     const counts = new Map(
       ctx.db
         .select({ id: collectionItems.collectionId, n: sql<number>`count(*)` })

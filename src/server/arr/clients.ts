@@ -1,5 +1,5 @@
 import type { DownloadClientType } from '../db/schema.js';
-import { IntegrationError } from '../integrations/http.js';
+import { connectError, IntegrationError } from '../integrations/http.js';
 
 export interface ClientItem {
   id: string;
@@ -55,8 +55,8 @@ async function request(service: string, url: string, init: RequestInit = {}): Pr
   try {
     // A named client: some proxies in front of download clients turn away fetch's default agent.
     res = await fetch(url, { ...init, headers: { 'user-agent': 'Cinemask', ...(init.headers as Record<string, string> | undefined) }, signal: AbortSignal.timeout(20_000) });
-  } catch {
-    throw new IntegrationError(service, 'could not connect');
+  } catch (err) {
+    throw new IntegrationError(service, connectError(err));
   }
   return res;
 }

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { XMLParser } from 'fast-xml-parser';
-import { fetchJson, IntegrationError } from '../integrations/http.js';
+import { connectError, fetchJson, IntegrationError } from '../integrations/http.js';
 
 export type Protocol = 'torrent' | 'usenet';
 
@@ -106,8 +106,8 @@ export async function searchIndexer(cfg: IndexerConfig, query: SearchQuery): Pro
   let res: Response;
   try {
     res = await fetch(`${base}/api?${params.toString()}`, { signal: AbortSignal.timeout(30_000) });
-  } catch {
-    throw new IntegrationError(cfg.name, 'could not connect');
+  } catch (err) {
+    throw new IntegrationError(cfg.name, connectError(err));
   }
   if (res.status === 401 || res.status === 403) throw new IntegrationError(cfg.name, 'the API key was rejected', res.status);
   if (!res.ok) throw new IntegrationError(cfg.name, `responded with HTTP ${res.status}`, res.status);

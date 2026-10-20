@@ -1,4 +1,4 @@
-import { fetchJson, IntegrationError } from './http.js';
+import { connectError, fetchJson, IntegrationError } from './http.js';
 
 export interface AbsLibrary {
   id: string;
@@ -51,8 +51,8 @@ export class AudiobookshelfClient {
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(30_000),
       });
-    } catch {
-      throw new IntegrationError('Audiobookshelf', 'could not connect');
+    } catch (err) {
+      throw new IntegrationError('Audiobookshelf', connectError(err));
     }
     if (res.status === 401 || res.status === 403) throw new IntegrationError('Audiobookshelf', 'the API token was rejected', res.status);
     if (!res.ok) throw new IntegrationError('Audiobookshelf', `responded with HTTP ${res.status}`, res.status);
@@ -104,8 +104,8 @@ export class AudiobookshelfClient {
     let res: Response;
     try {
       res = await fetch(`${this.base()}${path}`, { headers: { Authorization: `Bearer ${this.token}` }, signal: AbortSignal.timeout(30_000) });
-    } catch {
-      throw new IntegrationError('Audiobookshelf', 'could not connect');
+    } catch (err) {
+      throw new IntegrationError('Audiobookshelf', connectError(err));
     }
     if (!res.ok) throw new IntegrationError('Audiobookshelf', `responded with HTTP ${res.status}`, res.status);
     return { type: res.headers.get('content-type') ?? 'image/jpeg', body: Buffer.from(await res.arrayBuffer()) };
