@@ -1,6 +1,6 @@
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
-import { monitored, requests, users, type MediaKind } from '../db/schema.js';
+import { monitored, monitorExclusions, requests, users, type MediaKind } from '../db/schema.js';
 import { fetchJson } from '../integrations/http.js';
 import { refreshMetadata, tmdbClient } from '../library/service.js';
 import { monitorTitle } from '../arr/monitor.js';
@@ -95,6 +95,12 @@ export function startImport(ctx: AppContext, source: ImportSource, userId: numbe
   return run;
 }
 
+/** Titles Cinemask already manages keep their settings, and titles removed by hand stay removed. */
+function alreadyHere(ctx: AppContext, kind: MediaKind, tmdbId: number): boolean {
+  const where = (t: typeof monitored | typeof monitorExclusions) => and(eq(t.kind, kind), eq(t.tmdbId, tmdbId));
+  return Boolean(ctx.db.select({ id: monitored.id }).from(monitored).where(where(monitored)).get() || ctx.db.select().from(monitorExclusions).where(where(monitorExclusions)).get());
+}
+
 const note = (run: ImportProgress, title: string, err: unknown) => {
   if (run.errors.length < 50) run.errors.push(`${title}: ${(err as Error).message}`);
 };
@@ -108,7 +114,7 @@ export async function importRadarr(ctx: AppContext, run: ImportProgress, userId:
   run.total = movies.length;
   for (const m of movies) {
     try {
-      if (!m.tmdbId) {
+      if (!m.tmdbId || alreadyHere(ctx, 'movie', m.tmdbId)) {
         run.skipped++;
         continue;
       }
@@ -135,7 +141,7 @@ export async function importSonarr(ctx: AppContext, run: ImportProgress, userId:
       let tmdbId = s.tmdbId || null;
       if (!tmdbId && s.tvdbId) tmdbId = (await tmdb.findByExternal(String(s.tvdbId), 'tvdb_id')).tv_results?.[0]?.id ?? null;
       if (!tmdbId && s.imdbId) tmdbId = (await tmdb.findByExternal(s.imdbId, 'imdb_id')).tv_results?.[0]?.id ?? null;
-      if (!tmdbId) {
+      if (!tmdbId || alreadyHere(ctx, 'show', tmdbId)) {
         run.skipped++;
         continue;
       }
@@ -168,7 +174,7 @@ interface OverseerrUser {
 }
 interface OverseerrRequest {
   id: number;
-  status: number; // 1 pending, 2 approved, 3 declined
+  status: number; // 1 pending, 2 approved, 3 declined, 4 failed, 5 completed
   type: 'movie' | 'tv';
   createdAt: string;
   media: { tmdbId: number; status: number }; // media status 5 = available
@@ -194,11 +200,12 @@ export async function importOverseerr(ctx: AppContext, run: ImportProgress) {
     const kind: MediaKind = r.type === 'movie' ? 'movie' : 'show';
     const tmdbId = r.media?.tmdbId;
     try {
-      if (!tmdbId || ![1, 2, 3].includes(r.status)) {
+      if (!tmdbId || ![1, 2, 3, 4, 5].includes(r.status)) {
         run.skipped++;
         continue;
       }
-      const status = r.status === 1 ? 'pending' : r.status === 3 ? 'declined' : r.media.status === 5 ? 'available' : 'approved';
+      // Failed ones were approved but didn't download; they stay approved here.
+      const status = r.status === 1 ? 'pending' : r.status === 3 ? 'declined' : r.status === 5 || r.media.status === 5 ? 'available' : 'approved';
       // The same title asked for again stays one request.
       const open = ctx.db
         .select()

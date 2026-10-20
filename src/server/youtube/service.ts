@@ -450,7 +450,8 @@ export async function downloadVideo(
       "--convert-thumbnails",
       "jpg",
       "-o",
-      path.join(work, `${stem}.%(ext)s`),
+      // "%" in a title would be read as an output-template field.
+      path.join(work, `${stem.replace(/%/g, "%%")}.%(ext)s`),
       "--",
       url,
     ],

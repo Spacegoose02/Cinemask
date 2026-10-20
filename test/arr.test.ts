@@ -101,6 +101,10 @@ describe('direct download safety', () => {
   it('blocks private, non-http and credentialed URLs', async () => {
     await expect(assertSafeUrl('http://127.0.0.1/x', false)).rejects.toThrow(/private/);
     await expect(assertSafeUrl('http://[::1]/x', false)).rejects.toThrow(/private/);
+    // IPv4 inside IPv6, which URL parsing rewrites to hex ("::ffff:7f00:1").
+    for (const u of ['http://[::ffff:127.0.0.1]:8080/x', 'http://[::ffff:169.254.169.254]/latest', 'http://[64:ff9b::10.0.0.1]/', 'http://[::ffff:0:192.168.1.1]/'])
+      await expect(assertSafeUrl(u, false), u).rejects.toThrow(/private/);
+    await expect(assertSafeUrl('http://[::ffff:8.8.8.8]/x', false)).resolves.toBeInstanceOf(URL);
     await expect(assertSafeUrl('file:///etc/passwd', false)).rejects.toThrow(/http/);
     await expect(assertSafeUrl('http://user:pw@8.8.8.8/x', false)).rejects.toThrow(/passwords/);
     await expect(assertSafeUrl('http://192.168.1.10/x', true)).resolves.toBeInstanceOf(URL);
@@ -379,6 +383,24 @@ describe('request → download → import', () => {
     await trackDownloads(t.app.ctx);
     expect(fs.readFileSync(path.join(media, 'movies', 'Paddington (2014)', 'paddington.mkv'), 'utf8')).toBe('video');
     expect((await owner.req('GET', '/api/downloads?history=true')).json().find((d: { id: number }) => d.id === downloadId).status).toBe('imported');
+    expect(found.releases.every((r: { guid: string }) => /^[0-9a-f]{32}$/.test(r.guid))).toBe(true);
+
+    // Left in the downloads folder, the client's copy is the only one, so "remove completed" leaves it alone.
+    await owner.req('PUT', '/api/settings/media', { removeCompletedDownloads: true, importMode: 'copy' });
+    const removed: string[] = [];
+    fakeFetch({
+      [`${INDEXER}/api`]: () => new Response(torznab([{ title: 'Home.Movies.2020' }])),
+      [`${QBIT}/api/v2/auth/login`]: () => new Response('Ok.', { headers: { 'set-cookie': 'SID=abc; path=/' } }),
+      [`${QBIT}/api/v2/torrents/add`]: () => new Response('Ok.'),
+      [`${QBIT}/api/v2/torrents/delete`]: (_u: URL, init?: RequestInit) => (removed.push(String(init?.body)), new Response('')),
+      [`${QBIT}/api/v2/torrents/info`]: () => qbitTorrents,
+    });
+    const home = (await owner.req('GET', '/api/indexers/search?q=home')).json().releases[0];
+    const kept = (await owner.req('POST', '/api/downloads/release', { guid: home.guid })).json().downloadId;
+    qbitTorrents = [{ hash: 'h10', name: 'Home', progress: 1, state: 'uploading', size: 5, content_path: folder, save_path: dl, tags: `mm-${kept}` }];
+    await trackDownloads(t.app.ctx);
+    expect((await owner.req('GET', '/api/downloads?history=true')).json().find((d: { id: number }) => d.id === kept).status).toBe('completed');
+    expect(removed).toEqual([]);
   });
 
   it('RSS sync grabs a new release for a monitored title', async () => {
@@ -467,7 +489,7 @@ describe('SABnzbd tracking', () => {
       'http://sab.local:8080/api': (url) => {
         const p = url.searchParams;
         if (p.get('mode') === 'addurl') {
-          expect(p.get('nzbname')).toBe('Paddington.2014.1080p [mm-7]');
+          expect(p.get('nzbname')).toBe('Paddington.2014.1080p');
           return { status: true, nzo_ids: ['SABnzbd_nzo_a'] };
         }
         if (p.get('mode') === 'queue') return { queue: { slots: [] } };

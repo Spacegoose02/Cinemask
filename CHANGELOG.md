@@ -15,6 +15,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Fixed
 - SABnzbd downloads stuck in the queue after they finished. Cinemask only looked for jobs under its own category, so a job SABnzbd filed elsewhere (an unknown category becomes the default one) or that fell past the first 100 history entries was never seen finishing. Jobs are now also looked up by their id, and a job being verified or unpacked shows as downloaded instead of 0%.
 - SABnzbd: the job name no longer carries `{{…}}`, which SABnzbd reads as an archive password.
+- "Remove completed downloads" no longer deletes a link download left in the downloads folder, or one that couldn't be delivered: the download client's copy was the only one.
+- YouTube: a `%` in a video title no longer breaks its download.
+
+### Security
+- Link downloads: addresses like `http://[::ffff:127.0.0.1]` got past the check for local and private addresses, because the URL parser writes the IPv4 part in hex. IPv4 inside IPv6 is now checked in every form.
+- Search results no longer send an indexer's guid to the browser, since some indexers put their API key or passkey in it. Results carry an opaque id instead.
 
 ## [0.10.4] - 2026-10-20
 

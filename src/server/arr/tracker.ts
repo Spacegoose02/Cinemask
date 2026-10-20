@@ -94,7 +94,9 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
       if (!d.monitoredId && !d.bookId && d.destination && item.outputPath) {
         deliverLink(ctx, d.id, mapRemotePath(ctx, item.outputPath), ctx.settings.get('media').importMode);
         const media = ctx.settings.get('media');
-        if (media.removeCompletedDownloads) await client.remove(item.id, media.importMode !== 'hardlink').catch(() => undefined);
+        // Only once it's safely in its folder: left in the downloads folder, or not delivered, the client's copy is the only one.
+        const delivered = ctx.db.select({ status: downloads.status }).from(downloads).where(eq(downloads.id, d.id)).get()?.status === 'imported';
+        if (delivered && media.removeCompletedDownloads) await client.remove(item.id, media.importMode !== 'hardlink').catch(() => undefined);
         continue;
       }
       if (!d.monitoredId || !item.outputPath) {

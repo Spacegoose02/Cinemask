@@ -476,8 +476,9 @@ class Sabnzbd implements DownloadClient {
   }
 
   async add(url: string, o: AddOptions) {
-    // Not "{{tag}}": SABnzbd reads {{…}} in a name as the archive password and strips it.
-    const r = await this.api<{ nzo_ids?: string[] }>({ mode: 'addurl', name: url, cat: o.category, nzbname: `${o.title} [${o.tag}]` });
+    // Jobs are followed by the nzo_id this returns, so the name stays the release title. (A "{{tag}}" in
+    // the name, as before, is read by SABnzbd as the archive password.)
+    const r = await this.api<{ nzo_ids?: string[] }>({ mode: 'addurl', name: url, cat: o.category, nzbname: o.title });
     return r.nzo_ids?.[0] ?? null;
   }
 
@@ -493,7 +494,7 @@ class Sabnzbd implements DownloadClient {
       byId ? this.api<Queue>({ mode: 'queue', ...byId }) : null,
       byId ? this.api<History>({ mode: 'history', ...byId }) : null,
     ]);
-    const tagOf = (n: string) => /\[(mm-\d+)\]|\{\{(mm-\d+)\}\}/.exec(n)?.slice(1).find(Boolean);
+    const tagOf = (n: string) => /\{\{(mm-\d+)\}\}/.exec(n)?.[1];
     const seen = new Set<string>();
     const queue = [...q.queue.slots, ...(qIds?.queue.slots ?? [])].filter((s) => !seen.has(s.nzo_id) && seen.add(s.nzo_id));
     const history = [...h.history.slots, ...(hIds?.history.slots ?? [])].filter((s) => !seen.has(s.nzo_id) && seen.add(s.nzo_id));
