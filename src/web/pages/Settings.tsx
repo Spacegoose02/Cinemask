@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { ActivitySettings } from './settings/Activity';
+import { ApiSettings } from './settings/ApiSettings';
 import { BookSettings } from './settings/Books';
 import { BackupSettings } from './settings/Backups';
 import { GeneralSettings } from './settings/General';
@@ -25,6 +26,7 @@ const TABS = [
   { path: 'books', label: 'Books', element: <BookSettings /> },
   { path: 'users', label: 'Users', element: <UserSettings /> },
   { path: 'sign-in', label: 'Sign-in', element: <SignInSettings /> },
+  { path: 'api', label: 'API and webhooks', element: <ApiSettings /> },
   { path: 'backups', label: 'Backups', element: <BackupSettings /> },
   { path: 'health', label: 'Health', element: <HealthSettings /> },
   { path: 'activity', label: 'Activity log', element: <ActivitySettings /> },

@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { requestAvailable } from '../notify/events.js';
 import type { AppContext } from '../context.js';
 import { libraryEpisodes, libraryItems, media, requests, type MediaKind, type ServerType } from '../db/schema.js';
 import { bestResolution } from '../integrations/http.js';
@@ -241,7 +242,9 @@ export class LibrarySync {
     const approved = this.ctx.db.select().from(requests).where(eq(requests.status, 'approved')).all();
     for (const r of approved) {
       const status = availabilityFor(this.ctx, r.kind, [{ tmdbId: r.tmdbId }]).get(r.tmdbId)!.status;
-      if (status === 'on_server') this.ctx.db.update(requests).set({ status: 'available' }).where(eq(requests.id, r.id)).run();
+      if (status !== 'on_server') continue;
+      this.ctx.db.update(requests).set({ status: 'available' }).where(eq(requests.id, r.id)).run();
+      requestAvailable(this.ctx, r);
     }
   }
 

@@ -3,7 +3,7 @@ import { Alert } from '../../components/ui';
 import { api } from '../../lib/api';
 
 /** Runs a saved-settings connection test. Save first, since tests use stored values. */
-export function TestButton({ service, beforeTest }: { service: string; beforeTest?: () => Promise<void> }) {
+export function TestButton({ service, beforeTest, endpoint, label }: { service: string; beforeTest?: () => Promise<void>; endpoint?: string; label?: string }) {
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
   return (
@@ -17,7 +17,7 @@ export function TestButton({ service, beforeTest }: { service: string; beforeTes
           setResult(null);
           try {
             await beforeTest?.();
-            setResult(await api<{ ok: boolean; message: string }>(`/api/integrations/${service}/test`, { method: 'POST' }));
+            setResult(await api<{ ok: boolean; message: string }>(endpoint ?? `/api/integrations/${service}/test`, { method: 'POST' }));
           } catch (e) {
             setResult({ ok: false, message: (e as Error).message });
           } finally {
@@ -25,7 +25,7 @@ export function TestButton({ service, beforeTest }: { service: string; beforeTes
           }
         }}
       >
-        {busy ? 'Testing…' : 'Save and test'}
+        {busy ? 'Testing…' : (label ?? 'Save and test')}
       </button>
       {result && <Alert kind={result.ok ? 'success' : 'error'}>{result.message}</Alert>}
     </div>

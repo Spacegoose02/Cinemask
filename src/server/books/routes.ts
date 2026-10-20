@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { notify } from '../notify/service.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
@@ -87,6 +88,7 @@ export async function bookRoutes(app: FastifyInstance) {
       ? ctx.db.update(books).set(values).where(eq(books.id, open.id)).returning().get()
       : ctx.db.insert(books).values({ workKey: body.workKey, format: body.format, ...values }).returning().get();
     audit(ctx.db, req, 'book.requested', { target: `${row.title} (${row.format})` });
+    notify(ctx, { event: 'request.created', title: 'New book request', message: `${values.requestedByName} requested the ${row.format} of ${row.title}`, data: { kind: row.format, workKey: row.workKey, bookId: row.id } });
     if (hasRole(req.user!.role, 'manager')) await approve(row.id, req.user!.username, req.user!.id);
     return getBook(ctx, row.id);
   });

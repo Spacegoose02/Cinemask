@@ -99,7 +99,7 @@ export async function authRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  app.get('/api/auth/me', { config: { access: 'user' } }, async (req) => ({ user: req.user, csrfToken: req.session!.csrfToken }));
+  app.get('/api/auth/me', { config: { access: 'user' } }, async (req) => ({ user: req.user, csrfToken: req.session?.csrfToken ?? null }));
 
   app.post('/api/auth/password', { config: { access: 'user', ...loginRateLimit } }, async (req) => {
     const body = parse(z.object({ currentPassword: z.string().max(1024).optional(), newPassword: z.string() }), req.body);

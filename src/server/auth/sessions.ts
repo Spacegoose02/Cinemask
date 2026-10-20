@@ -16,6 +16,11 @@ export interface SessionUser {
   role: Role;
   isOwner: boolean;
   hasPassword: boolean;
+  theme: string | null;
+}
+
+export function toSessionUser(u: typeof users.$inferSelect): SessionUser {
+  return { id: u.id, username: u.username, displayName: u.displayName, email: u.email, role: u.role, isOwner: u.isOwner, hasPassword: Boolean(u.passwordHash), theme: u.theme };
 }
 
 export interface SessionInfo {
@@ -74,15 +79,7 @@ export function loadSession(db: Orm, token: string | undefined, sessionDays: num
     db.update(sessions).set({ lastSeenAt: now, expiresAt: now + sessionDays * DAY }).where(eq(sessions.id, id)).run();
   }
   return {
-    user: {
-      id: row.u.id,
-      username: row.u.username,
-      displayName: row.u.displayName,
-      email: row.u.email,
-      role: row.u.role,
-      isOwner: row.u.isOwner,
-      hasPassword: Boolean(row.u.passwordHash),
-    },
+    user: toSessionUser(row.u),
     session: { id, csrfToken: row.s.csrfToken },
   };
 }

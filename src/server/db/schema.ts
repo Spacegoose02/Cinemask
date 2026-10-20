@@ -19,6 +19,7 @@ export const users = sqliteTable('users', {
   createdAt: integer('created_at').notNull(),
   lastLoginAt: integer('last_login_at'),
   homeLayout: text('home_layout'), // JSON HomeRow[]; null means the default layout
+  theme: text('theme'), // null means the browser's last choice (dark by default)
 });
 
 export const sessions = sqliteTable(
@@ -392,3 +393,23 @@ export const absItems = sqliteTable('abs_items', {
   isbn: text('isbn'),
   addedAt: integer('added_at'),
 });
+
+export const API_KEY_ACCESS = ['read', 'full'] as const;
+
+export const apiKeys = sqliteTable(
+  'api_keys',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    prefix: text('prefix').notNull(), // first characters, shown so people can tell keys apart
+    keyHash: text('key_hash').notNull().unique(), // sha256 of the key; the key itself is never stored
+    access: text('access', { enum: API_KEY_ACCESS }).notNull(),
+    createdAt: integer('created_at').notNull(),
+    lastUsedAt: integer('last_used_at'),
+    expiresAt: integer('expires_at'),
+  },
+  (t) => [index('api_keys_user_idx').on(t.userId)],
+);

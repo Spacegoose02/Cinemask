@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
+import { notify } from '../notify/service.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
@@ -82,6 +83,7 @@ export async function arrRoutes(app: FastifyInstance) {
       .returning()
       .get();
     audit(db(), req, 'request.created', { target: `${meta.title} (${meta.year ?? '?'})` });
+    notify(ctx, { event: 'request.created', title: 'New request', message: `${created.requestedByName} requested ${meta.title}${meta.year ? ` (${meta.year})` : ''}`, data: { kind: body.kind, tmdbId: body.tmdbId, requestId: created.id } });
     // Managers and admins don't need anyone's approval.
     if (hasRole(req.user!.role, 'manager')) await approve(created.id, undefined, req.user!.username, req.user!.id);
     return db().select().from(requests).where(eq(requests.id, created.id)).get();

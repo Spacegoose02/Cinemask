@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { z } from 'zod';
+import { NOTIFY_EVENTS } from '../notify/service.js';
 
 // New SSO accounts can never start as admin; admin comes only from the owner or an admin group mapping.
 const newAccountRole = z.enum(['user', 'manager']);
@@ -22,6 +23,8 @@ export const SETTINGS = {
     schema: z.object({
       localLoginEnabled: z.boolean().default(true),
       sessionDays: z.number().int().min(1).max(365).default(30),
+      /** Let people create API keys (Account → API keys) for scripts and Home Assistant. */
+      apiKeysEnabled: z.boolean().default(true),
       oidc: z
         .object({
           enabled: z.boolean().default(false),
@@ -188,6 +191,16 @@ export const SETTINGS = {
       useFor: z.enum(['ebooks', 'both']).default('ebooks'),
     }),
     secrets: ['password'],
+  },
+  notifications: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      /** Where events are POSTed as JSON, e.g. a Home Assistant webhook: http://homeassistant:8123/api/webhook/<id> */
+      webhookUrl: httpUrl.default(''),
+      events: z.array(z.enum(NOTIFY_EVENTS)).max(NOTIFY_EVENTS.length).default(['request.created', 'request.available', 'download.failed', 'health.problem']),
+    }),
+    // The webhook id in the URL is what authorises calls to it.
+    secrets: ['webhookUrl'],
   },
   extras: {
     schema: z.object({

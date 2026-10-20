@@ -335,6 +335,25 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE downloads ADD COLUMN book_id INTEGER REFERENCES books(id) ON DELETE SET NULL;
     `,
   },
+  {
+    id: 6,
+    name: 'api keys and per-user theme',
+    sql: `
+      CREATE TABLE api_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        prefix TEXT NOT NULL,
+        key_hash TEXT NOT NULL UNIQUE,
+        access TEXT NOT NULL CHECK (access IN ('read','full')),
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER,
+        expires_at INTEGER
+      );
+      CREATE INDEX api_keys_user_idx ON api_keys(user_id);
+      ALTER TABLE users ADD COLUMN theme TEXT;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

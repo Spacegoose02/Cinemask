@@ -175,7 +175,7 @@ describe('discovery, lists, collections, posters and trailers', () => {
     expect((await owner.req('POST', '/api/posters/movie/116149', Buffer.from('<svg/>'), { headers: { 'content-type': 'image/png' } })).statusCode).toBe(400);
     expect((await owner.req('POST', '/api/posters/movie/116149', PNG, { headers: { 'content-type': 'image/png' } })).statusCode).toBe(200);
     const override = (await kid.req('GET', '/api/media/movie/116149')).json().posterPath as string;
-    expect(override).toMatch(/^local:movie-116149-\w+\.png$/);
+    expect(override).toMatch(/^local:movie-116149-[\w-]+\.png$/);
     expect((await kid.req('GET', `/api/images?src=${encodeURIComponent(override)}`)).statusCode).toBe(200);
     await owner.req('DELETE', '/api/posters/movie/116149');
     expect((await kid.req('GET', '/api/media/movie/116149')).json().posterPath).toBe('/p.jpg');

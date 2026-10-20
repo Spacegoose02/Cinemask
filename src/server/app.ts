@@ -17,12 +17,14 @@ import { posterRoutes } from './posters/routes.js';
 import { trailerRoutes } from './trailers/routes.js';
 import { fileRoutes } from './files/routes.js';
 import { healthRoutes } from './health/routes.js';
+import { apiRoutes } from './api/routes.js';
 import { arrRoutes } from './arr/routes.js';
 import { auditRoutes } from './audit/routes.js';
 import { registerGuard } from './auth/guard.js';
 import { oidcRoutes } from './auth/oidc.js';
 import { plexAuthRoutes } from './auth/plex.js';
 import { authRoutes } from './auth/routes.js';
+import { apiKeyRoutes } from './auth/apikey-routes.js';
 import { backupRoutes } from './backup/routes.js';
 import { BackupService, writeBackupArchive } from './backup/service.js';
 import type { AppConfig } from './config.js';
@@ -117,6 +119,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
 
   app.get('/api/health', { config: { access: 'public' } }, async () => ({ status: 'ok' }));
   await app.register(authRoutes);
+  await app.register(apiKeyRoutes);
   await app.register(oidcRoutes);
   await app.register(plexAuthRoutes);
   await app.register(userRoutes);
@@ -142,6 +145,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   await app.register(trailerRoutes);
   await app.register(homeRoutes);
   await app.register(bookRoutes);
+  await app.register(apiRoutes);
 
   if (config.webDir && fs.existsSync(config.webDir)) {
     await app.register(fastifyStatic, { root: path.resolve(config.webDir), wildcard: false });

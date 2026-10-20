@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { notify } from '../notify/service.js';
 import type { AppContext } from '../context.js';
 import { blocklist, downloadClients, downloads, monitored, type DownloadClientType } from '../db/schema.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
@@ -108,6 +109,7 @@ export async function failDownload(ctx: AppContext, id: number, reason: string, 
   const d = ctx.db.select().from(downloads).where(eq(downloads.id, id)).get();
   if (!d) return;
   ctx.db.update(downloads).set({ status: 'failed', error: reason }).where(eq(downloads.id, id)).run();
+  notify(ctx, { event: 'download.failed', title: 'Download failed', message: `${d.title}: ${reason}`, data: { downloadId: id } });
   if (d.bookId) failBook(ctx, d.bookId, reason);
   if (!d.monitoredId) return;
   ctx.db.insert(blocklist).values({ monitoredId: d.monitoredId, releaseTitle: d.title, indexer: d.indexer, reason, createdAt: Date.now() }).run();

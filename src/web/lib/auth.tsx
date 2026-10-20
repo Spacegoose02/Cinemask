@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, type ReactNode } from 'react';
 import { api, ApiError, setCsrfToken, type Me } from './api';
+import { applyAccountTheme } from './theme';
 
 interface AuthValue {
   me: Me | null;
@@ -18,6 +19,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const r = await api<{ user: Me; csrfToken: string }>('/api/auth/me');
         setCsrfToken(r.csrfToken);
+        applyAccountTheme(r.user.theme);
         return r.user;
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) {

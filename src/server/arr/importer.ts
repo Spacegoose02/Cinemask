@@ -1,4 +1,6 @@
 import { and, eq } from 'drizzle-orm';
+import { requestAvailable } from '../notify/events.js';
+import { notify } from '../notify/service.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext } from '../context.js';
@@ -142,8 +144,11 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
   if (result.imported.length) {
     ctx.db.update(downloads).set({ status: 'imported', importedAt: Date.now(), outputPath: sourcePath, error: null }).where(eq(downloads.id, dl.id)).run();
     if (row.kind === 'movie') {
+      const open = ctx.db.select().from(requests).where(and(eq(requests.monitoredId, row.id), eq(requests.status, 'approved'))).all();
       ctx.db.update(requests).set({ status: 'available' }).where(and(eq(requests.monitoredId, row.id), eq(requests.status, 'approved'))).run();
+      for (const r of open) requestAvailable(ctx, r);
     }
+    notify(ctx, { event: 'download.imported', title: 'Download imported', message: `${row.title}${row.year ? ` (${row.year})` : ''} is ready to watch`, data: { kind: row.kind, tmdbId: row.tmdbId, release: dl.title } });
   } else {
     ctx.db.update(downloads).set({ status: 'failed', error: result.skipped.join('; ') || 'Nothing to import' }).where(eq(downloads.id, dl.id)).run();
   }

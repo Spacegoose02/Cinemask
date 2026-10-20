@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, notInArray } from 'drizzle-orm';
+import { notify } from '../notify/service.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext } from '../context.js';
@@ -78,7 +79,13 @@ export function getBook(ctx: AppContext, id: number): BookRow | undefined {
   return ctx.db.select().from(books).where(eq(books.id, id)).get();
 }
 
-const setBook = (ctx: AppContext, id: number, values: Partial<BookRow>) => ctx.db.update(books).set(values).where(eq(books.id, id)).run();
+function setBook(ctx: AppContext, id: number, values: Partial<BookRow>) {
+  const before = values.status === 'available' ? getBook(ctx, id) : null;
+  ctx.db.update(books).set(values).where(eq(books.id, id)).run();
+  if (before && before.status !== 'available') {
+    notify(ctx, { event: 'request.available', title: 'Book ready', message: `The ${before.format} of ${before.title} is ready`, data: { kind: before.format, workKey: before.workKey, bookId: id, requestedBy: before.requestedByName } });
+  }
+}
 
 /**
  * Starts downloading an approved book: through Shelfmark when it handles this format, otherwise
