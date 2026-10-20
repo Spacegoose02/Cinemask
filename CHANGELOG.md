@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-20
+
+### Added
+- Settings → Media management: "Upgrade files automatically". Turn it off and nothing already downloaded is replaced by a better release, whatever the quality profiles allow. Missing movies and episodes are still searched for.
+
 ## [0.12.0] - 2026-10-20
 
 ### Added

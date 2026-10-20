@@ -6,7 +6,7 @@ import { bestDecision, byPreference, decide, type DecideOptions, type Decision, 
 import { createClient } from './clients.js';
 import { CATEGORIES, searchIndexer, type IndexerConfig, type Release, type SearchQuery } from './indexers.js';
 import { wantedTarget, type MonitoredRow } from './monitor.js';
-import { getProfile } from './profiles.js';
+import { searchProfile } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { rootOf } from './roots.js';
@@ -152,7 +152,7 @@ function seasonEpisodes(ctx: AppContext, monitoredId: number, season: number, ep
 }
 
 export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter?: { season?: number; episode?: number }): Promise<SearchResult> {
-  const profile = getProfile(ctx, row.profileId);
+  const profile = searchProfile(ctx, row.profileId);
   const target = wantedTarget(ctx, { ...row, monitored: true }, filter) ?? {
     kind: row.kind,
     title: row.title,
