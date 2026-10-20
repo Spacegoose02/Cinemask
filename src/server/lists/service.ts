@@ -77,7 +77,8 @@ export async function fetchItems(ctx: AppContext, list: Pick<ListRow, 'source' |
       const f = discoverFilter.parse(cfg.filter ?? {});
       const pages = Math.min(Math.max(Number(cfg.pages) || 1, 1), 5);
       const kind = f.kind === 'movie' ? 'movie' : 'show';
-      const results = await Promise.all(Array.from({ length: pages }, (_, i) => tmdb.discover(f.kind, { ...discoverParams(ctx, f), page: i + 1 })));
+      const params = await discoverParams(ctx, f);
+      const results = await Promise.all(Array.from({ length: pages }, (_, i) => tmdb.discover(f.kind, { ...params, page: i + 1 })));
       items = results.flatMap((r) => r.results.map((x) => fromTmdb(x, kind)).filter((i): i is ListItem => i !== null));
       break;
     }

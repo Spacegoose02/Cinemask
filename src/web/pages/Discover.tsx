@@ -11,6 +11,7 @@ interface Options {
   genres: { id: number; name: string }[];
   providers: { id: number; name: string; logoPath: string }[];
   networks: { id: number; name: string }[];
+  originals: number[];
   sorts: string[];
   region: string;
 }
@@ -20,6 +21,7 @@ interface Filter {
   genres: number[];
   networks: number[];
   providers: number[];
+  originals?: boolean;
   yearFrom?: number;
   yearTo?: number;
   ratingMin?: number;
@@ -49,8 +51,9 @@ const EMPTY: Filter = { kind: 'movie', genres: [], networks: [], providers: [], 
 function toQuery(f: Filter) {
   const q = new URLSearchParams({ kind: f.kind, sort: f.sort });
   if (f.genres.length) q.set('genres', f.genres.join(','));
-  if (f.networks.length && f.kind === 'tv') q.set('networks', f.networks.join(','));
+  if (f.networks.length) q.set('networks', f.networks.join(','));
   if (f.providers.length) q.set('providers', f.providers.join(','));
+  if (f.originals && f.providers.length) q.set('originals', 'true');
   if (f.yearFrom) q.set('yearFrom', String(f.yearFrom));
   if (f.yearTo) q.set('yearTo', String(f.yearTo));
   if (f.ratingMin) q.set('ratingMin', String(f.ratingMin));
@@ -60,11 +63,17 @@ function toQuery(f: Filter) {
 
 function Chips({ label, items, value, onChange }: { label: string; items: { id: number; name: string }[]; value: number[]; onChange: (v: number[]) => void }) {
   const [all, setAll] = useState(false);
+  const [find, setFind] = useState('');
   if (!items.length) return null;
-  const shown = all ? items : items.slice(0, 14);
+  const matching = find ? items.filter((i) => i.name.toLowerCase().includes(find.toLowerCase())) : items;
+  // Picked chips stay visible when the list is folded.
+  const shown = all || find ? matching : [...items.slice(0, 14), ...items.slice(14).filter((i) => value.includes(i.id))];
   return (
     <div>
-      <div className="label">{label}</div>
+      <div className="flex items-center gap-2">
+        <div className="label">{label}</div>
+        {items.length > 14 && <input className="input mb-1 h-7 w-40 py-0 text-xs" placeholder="Find…" value={find} onChange={(e) => setFind(e.target.value)} aria-label={`Find in ${label}`} />}
+      </div>
       <div className="flex flex-wrap gap-1.5">
         {shown.map((i) => {
           const on = value.includes(i.id);
@@ -80,7 +89,7 @@ function Chips({ label, items, value, onChange }: { label: string; items: { id: 
             </button>
           );
         })}
-        {items.length > 14 && (
+        {items.length > 14 && !find && (
           <button type="button" className="px-2 text-xs text-accent" onClick={() => setAll(!all)}>
             {all ? 'Fewer' : `+${items.length - 14} more`}
           </button>
@@ -97,9 +106,9 @@ function SaveAsList({ filter, onClose }: { filter: Filter; onClose: () => void }
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const save = async () => {
     try {
-      const { kind, genres, networks, providers, yearFrom, yearTo, ratingMin, language, sort } = filter;
+      const { kind, genres, networks, providers, originals, yearFrom, yearTo, ratingMin, language, sort } = filter;
       await api('/api/lists', {
-        body: { name, autoAdd, discover: { pages, filter: { kind, genres, networks: kind === 'tv' ? networks : [], providers, yearFrom, yearTo, ratingMin, language, sort } } },
+        body: { name, autoAdd, discover: { pages, filter: { kind, genres, networks, providers, originals: Boolean(originals && providers.length), yearFrom, yearTo, ratingMin, language, sort } } },
       });
       setMsg({ kind: 'success', text: 'Saved. It shows up under Lists and can be added to anyone’s homepage.' });
     } catch (e) {
@@ -210,8 +219,21 @@ export function DiscoverPage() {
             </Field>
           </div>
           <Chips label="Genres" items={opts.data?.genres ?? []} value={f.genres} onChange={(v) => set('genres', v)} />
-          {f.kind === 'tv' && <Chips label="Channels and networks" items={opts.data?.networks ?? []} value={f.networks} onChange={(v) => set('networks', v)} />}
+          <Chips
+            label={f.kind === 'tv' ? 'Channels and networks' : 'Made by a channel or service'}
+            items={opts.data?.networks ?? []}
+            value={f.networks}
+            onChange={(v) => set('networks', v)}
+          />
           <Chips label={`Streaming on${opts.data ? ` (${opts.data.region})` : ''}`} items={opts.data?.providers ?? []} value={f.providers} onChange={(v) => set('providers', v)} />
+          {f.providers.some((p) => opts.data?.originals.includes(p)) && (
+            <Toggle
+              label="Originals only"
+              checked={Boolean(f.originals)}
+              onChange={(v) => set('originals', v)}
+              hint={`Only ${f.kind === 'tv' ? 'shows' : 'movies'} the picked services made themselves, such as Netflix or Tubi originals.`}
+            />
+          )}
           <button className="text-sm text-muted hover:text-accent" onClick={() => setF({ ...EMPTY, kind: f.kind })}>
             Clear filters
           </button>
