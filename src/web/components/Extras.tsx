@@ -5,6 +5,7 @@ import { api, formatBytes } from '../lib/api';
 import type { MediaKind } from '../lib/media';
 import { Modal } from './Modal';
 import { Alert } from './ui';
+import { embedUrl } from './media';
 
 interface PosterOption {
   source: 'tmdb' | 'theposterdb';
@@ -84,18 +85,20 @@ interface TrailerInfo {
   enabled: boolean;
   files: { path: string; size: number }[];
   job: { status: 'downloading' | 'done' | 'failed'; key: string; error?: string } | null;
-  candidates: { key: string; name: string; type: string; official: boolean; size: number | null }[];
+  candidates: { site: string; key: string; name: string; type: string; official: boolean; size: number | null }[];
 }
 
 /** Trailers saved next to the movie (or in the show's trailers folder) so Plex and Jellyfin show them. */
-export function TrailerManager({ monitoredId, onClose }: { monitoredId: number; onClose: () => void }) {
+export function TrailerManager({ monitoredId, kind, tmdbId, onClose }: { monitoredId: number; kind: string; tmdbId: number; onClose: () => void }) {
   const info = useQuery({
     queryKey: ['trailers', monitoredId],
     queryFn: () => api<TrailerInfo>(`/api/monitored/${monitoredId}/trailers`),
     refetchInterval: (q) => (q.state.data?.job?.status === 'downloading' ? 3000 : false),
   });
   const [msg, setMsg] = useState<Msg>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ site: string; key: string } | null>(null);
+  const [playing, setPlaying] = useState<number | null>(null);
+  const [link, setLink] = useState('');
   const run = async (fn: () => Promise<unknown>, text: string) => {
     setMsg(null);
     try {
@@ -116,9 +119,14 @@ export function TrailerManager({ monitoredId, onClose }: { monitoredId: number; 
       <h3 className="mb-1 mt-3 font-medium">On disk</h3>
       {d?.files.length ? (
         <ul className="mb-2 space-y-1 text-sm">
-          {d.files.map((f) => (
-            <li key={f.path} className="break-all">
-              {f.path} <span className="text-muted">· {formatBytes(f.size)}</span>
+          {d.files.map((f, i) => (
+            <li key={f.path} className="flex flex-wrap items-center justify-between gap-2">
+              <span className="min-w-0 break-all">
+                {f.path} <span className="text-muted">· {formatBytes(f.size)}</span>
+              </span>
+              <button className="btn-secondary px-2 py-1 text-xs" onClick={() => (setPreview(null), setPlaying(i))}>
+                Play
+              </button>
             </li>
           ))}
         </ul>
@@ -131,17 +139,31 @@ export function TrailerManager({ monitoredId, onClose }: { monitoredId: number; 
         </button>
       )}
       <h3 className="mb-1 font-medium">Available</h3>
+      {d?.enabled && !!d.candidates.length && (
+        <button
+          className="btn-primary mb-2"
+          disabled={d.job?.status === 'downloading'}
+          onClick={() => run(() => api(`/api/monitored/${monitoredId}/trailers`, { body: { key: d.candidates[0]!.key, site: d.candidates[0]!.site } }), 'Downloading the best trailer. The old one is replaced when it arrives.')}
+        >
+          {d.files.length ? 'Replace with the best available' : 'Download the best available'}
+        </button>
+      )}
       <ul className="max-h-[50vh] space-y-1 overflow-auto text-sm">
         {d?.candidates.map((c) => (
           <li key={c.key} className="flex flex-wrap items-center justify-between gap-2 rounded px-2 py-1.5 hover:bg-surface-2">
             <span>
-              {c.name} <span className="text-muted">· {c.type}{c.official ? ' · official' : ''}{c.size ? ` · ${c.size}p` : ''}</span>
+              {c.name}{' '}
+              <span className="text-muted">
+                · {c.type}
+                {c.official ? ' · official' : ''}
+                {c.size ? ` · ${c.size}p` : ''} · {c.site}
+              </span>
             </span>
             <span className="flex gap-1">
-              <button className="btn-secondary px-2 py-1 text-xs" onClick={() => setPreview(c.key)}>
+              <button className="btn-secondary px-2 py-1 text-xs" onClick={() => (setPlaying(null), setPreview({ site: c.site, key: c.key }))}>
                 Watch
               </button>
-              <button className="btn-primary px-2 py-1 text-xs" disabled={!d.enabled || d.job?.status === 'downloading'} onClick={() => run(() => api(`/api/monitored/${monitoredId}/trailers`, { body: { key: c.key } }), 'Download started.')}>
+              <button className="btn-primary px-2 py-1 text-xs" disabled={!d.enabled || d.job?.status === 'downloading'} onClick={() => run(() => api(`/api/monitored/${monitoredId}/trailers`, { body: { key: c.key, site: c.site } }), 'Download started.')}>
                 Download
               </button>
             </span>
@@ -149,9 +171,26 @@ export function TrailerManager({ monitoredId, onClose }: { monitoredId: number; 
         ))}
         {d && !d.candidates.length && <li className="text-muted">TMDB lists no trailers for this title.</li>}
       </ul>
+      {d?.enabled && (
+        <form
+          className="mt-3 flex flex-wrap gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(() => api(`/api/monitored/${monitoredId}/trailers`, { body: { url: link } }), 'Download started.').then(() => setLink(''));
+          }}
+        >
+          <input className="input min-w-0 flex-1" placeholder="Or paste a YouTube or Vimeo link" value={link} onChange={(e) => setLink(e.target.value)} aria-label="Trailer link" required />
+          <button className="btn-secondary" disabled={d.job?.status === 'downloading'}>
+            Download
+          </button>
+        </form>
+      )}
+      {playing !== null && (
+        <video className="mt-3 aspect-video w-full rounded bg-black" src={`/api/trailers/${kind}/${tmdbId}/${playing}`} controls autoPlay title="Trailer" />
+      )}
       {preview && (
         <div className="mt-3 aspect-video w-full">
-          <iframe className="h-full w-full rounded" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(preview)}`} title="Trailer preview" referrerPolicy="strict-origin-when-cross-origin" allow="encrypted-media; picture-in-picture" allowFullScreen />
+          <iframe className="h-full w-full rounded" src={embedUrl(preview.site, preview.key)} title="Trailer preview" referrerPolicy="strict-origin-when-cross-origin" allow="encrypted-media; picture-in-picture" allowFullScreen />
         </div>
       )}
     </Modal>

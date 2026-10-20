@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { requestAvailable } from '../notify/events.js';
 import type { AppContext } from '../context.js';
-import { libraryEpisodes, libraryItems, media, requests, type MediaKind, type ServerType } from '../db/schema.js';
+import { libraryEpisodes, libraryItems, matchOverrides, media, requests, type MediaKind, type ServerType } from '../db/schema.js';
 import { bestResolution } from '../integrations/http.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import type { MediaServerClient, ServerItem } from '../integrations/mediaserver.js';
@@ -148,9 +148,9 @@ export function availabilityFor(ctx: AppContext, kind: MediaKind, items: { tmdbI
 }
 
 /** Episodes on any server for a show, keyed "season:episode". */
-export function episodesOnServer(ctx: AppContext, tmdbId: number): Map<string, { resolution: string | null; servers: ServerType[] }> {
+export function episodesOnServer(ctx: AppContext, tmdbId: number): Map<string, { resolution: string | null; servers: ServerType[]; viewCount: number | null; lastViewedAt: number | null }> {
   const items = ctx.db.select().from(libraryItems).where(and(eq(libraryItems.kind, 'show'), eq(libraryItems.tmdbId, tmdbId))).all();
-  const map = new Map<string, { resolution: string | null; servers: ServerType[] }>();
+  const map = new Map<string, { resolution: string | null; servers: ServerType[]; viewCount: number | null; lastViewedAt: number | null }>();
   for (const item of items) {
     const eps = ctx.db.select().from(libraryEpisodes).where(eq(libraryEpisodes.libraryItemId, item.id)).all();
     for (const e of eps) {
@@ -159,6 +159,9 @@ export function episodesOnServer(ctx: AppContext, tmdbId: number): Map<string, {
       map.set(k, {
         resolution: bestResolution([prev?.resolution ?? null, e.resolution]),
         servers: [...new Set([...(prev?.servers ?? []), item.server])],
+        // Watched on either server counts; plays are added up across them.
+        viewCount: e.viewCount === null && !prev ? null : (prev?.viewCount ?? 0) + (e.viewCount ?? 0),
+        lastViewedAt: Math.max(prev?.lastViewedAt ?? 0, e.lastViewedAt ?? 0) || null,
       });
     }
   }
@@ -271,6 +274,9 @@ export class LibrarySync {
   /** Replaces everything known about one server in a single transaction. */
   store(server: ServerType, items: ServerItem[]) {
     const { sqlite } = this.ctx.dbHandle;
+    // Titles fixed by hand (wrong match on the server) keep the TMDB id they were given.
+    const overrides = new Map(this.ctx.db.select().from(matchOverrides).where(eq(matchOverrides.server, server)).all().map((o) => [o.externalKey, o.tmdbId]));
+    for (const item of items) if (overrides.has(item.externalKey)) item.tmdbId = overrides.get(item.externalKey)!;
     sqlite.transaction(() => {
       this.ctx.db.delete(libraryItems).where(eq(libraryItems.server, server)).run();
       for (const item of items) {
@@ -290,13 +296,19 @@ export class LibrarySync {
             resolution: item.kind === 'show' ? bestResolution((item.episodes ?? []).map((e) => e.resolution)) : item.resolution,
             addedAt: item.addedAt,
             mediaId,
+            viewCount: item.viewCount ?? null,
+            lastViewedAt: item.lastViewedAt ?? null,
+            labels: item.labels?.length ? JSON.stringify(item.labels) : null,
           })
           .onConflictDoNothing()
           .returning({ id: libraryItems.id })
           .get();
         if (row && item.episodes?.length) {
           for (const e of item.episodes) {
-            this.ctx.db.insert(libraryEpisodes).values({ libraryItemId: row.id, ...e }).run();
+            this.ctx.db
+              .insert(libraryEpisodes)
+              .values({ libraryItemId: row.id, season: e.season, episode: e.episode, title: e.title, resolution: e.resolution, viewCount: e.viewCount ?? null, lastViewedAt: e.lastViewedAt ?? null })
+              .run();
           }
         }
       }
@@ -316,4 +328,12 @@ export class LibrarySync {
     }
     return missing.length;
   }
+}
+
+/** How often a title was played on the servers (by their own accounts), and when last. Null when no server says. */
+export function watchInfo(ctx: AppContext, kind: MediaKind, tmdbId: number): { viewCount: number; lastViewedAt: number | null } | null {
+  const rows = ctx.db.select({ v: libraryItems.viewCount, l: libraryItems.lastViewedAt }).from(libraryItems).where(and(eq(libraryItems.kind, kind), eq(libraryItems.tmdbId, tmdbId))).all();
+  const known = rows.filter((r) => r.v !== null);
+  if (!known.length) return null;
+  return { viewCount: known.reduce((n, r) => n + (r.v ?? 0), 0), lastViewedAt: Math.max(...known.map((r) => r.l ?? 0)) || null };
 }

@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { Modal } from '../components/Modal';
 import { Alert } from '../components/ui';
 import { api, formatDate, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -261,6 +262,7 @@ function BookRequests() {
   const isManager = hasRole(me, 'manager');
   const [status, setStatus] = useState(isManager ? 'pending' : 'all');
   const [error, setError] = useState('');
+  const [matching, setMatching] = useState<BookRequest | null>(null);
   const list = useQuery({ queryKey: ['book-requests', status], queryFn: () => api<BookRequest[]>(`/api/books?status=${status}`), refetchInterval: 15_000 });
   const act = async (fn: () => Promise<unknown>) => {
     setError('');
@@ -326,6 +328,11 @@ function BookRequests() {
                   {r.status === 'downloading' ? 'Search again' : 'Retry'}
                 </button>
               )}
+              {isManager && r.status !== 'available' && (
+                <button className="btn-secondary" onClick={() => setMatching(r)} title="Point this request at a different book">
+                  Fix match
+                </button>
+              )}
               {(isManager || (r.requestedBy === me?.id && r.status === 'pending')) && (
                 <button className="btn-secondary" onClick={() => confirm('Remove this request?') && act(() => api(`/api/books/${r.id}`, { method: 'DELETE' }))}>
                   {r.status === 'pending' && !isManager ? 'Cancel' : 'Remove'}
@@ -335,7 +342,58 @@ function BookRequests() {
           </li>
         ))}
       </ul>
+      {matching && <BookMatch request={matching} onClose={() => setMatching(null)} onDone={() => qc.invalidateQueries({ queryKey: ['book-requests'] })} />}
     </div>
+  );
+}
+
+function BookMatch({ request, onClose, onDone }: { request: BookRequest; onClose: () => void; onDone: () => unknown }) {
+  const [q, setQ] = useState(`${request.title} ${request.author ?? ''}`.trim());
+  const [term, setTerm] = useState(q);
+  const [error, setError] = useState('');
+  const search = useQuery({ queryKey: ['books-search', term], queryFn: () => api<{ results: BookResult[] }>(`/api/books/search?q=${encodeURIComponent(term)}`), enabled: Boolean(term) });
+  const pick = async (workKey: string) => {
+    setError('');
+    try {
+      await api(`/api/books/${request.id}/match`, { body: { workKey } });
+      await onDone();
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  return (
+    <Modal title={`Fix the match for ${request.title}`} onClose={onClose}>
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setTerm(q);
+        }}
+      >
+        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Title or author" />
+        <button className="btn-primary">Search</button>
+      </form>
+      {error && <Alert>{error}</Alert>}
+      <ul className="mt-3 max-h-96 space-y-1 overflow-y-auto">
+        {search.data?.results
+          .filter((b) => b.workKey !== request.workKey)
+          .map((b) => (
+            <li key={b.workKey}>
+              <button className="flex w-full items-center gap-3 rounded p-1.5 text-left hover:bg-surface-2" onClick={() => void pick(b.workKey)}>
+                <div className="w-10 shrink-0">
+                  <Cover src={cover(b.coverId)} alt="" />
+                </div>
+                <span className="text-sm">
+                  {b.title} {b.year && <span className="text-muted">({b.year})</span>}
+                  {b.author && <span className="block text-xs text-muted">{b.author}</span>}
+                </span>
+              </button>
+            </li>
+          ))}
+        {search.data && !search.data.results.length && <li className="text-sm text-muted">No books found.</li>}
+      </ul>
+    </Modal>
   );
 }
 

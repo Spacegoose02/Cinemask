@@ -8,10 +8,11 @@ import { DOWNLOAD_CLIENT_TYPES, downloadClients, downloads, indexers, MEDIA_KIND
 import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { availabilityFor, refreshMetadata } from '../library/service.js';
+import { upstream } from '../library/routes.js';
 import { CLIENT_PROTOCOL, createClient } from './clients.js';
 import { startLinkDownload } from './direct.js';
 import { listProwlarrIndexers, testIndexer } from './indexers.js';
-import { excludeFromAutoMonitor, monitorTitle, upgradeCandidates, wantedTarget } from './monitor.js';
+import { excludeFromAutoMonitor, monitorTitle, refreshEpisodes, upgradeCandidates, wantedTarget } from './monitor.js';
 import { defaultProfileId, getProfile, listProfiles } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
@@ -19,7 +20,7 @@ import { autoSearch, grab, rememberedRelease, searchMonitored } from './search.j
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats } from './tracker.js';
 import { assertRoot, linkDestinations, listRoots } from './roots.js';
-import { moveToRoot } from '../files/service.js';
+import { moveToRoot, scanFolder } from '../files/service.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const kind = z.enum(MEDIA_KINDS);
@@ -247,6 +248,27 @@ export async function arrRoutes(app: FastifyInstance) {
     excludeFromAutoMonitor(ctx, row.kind, row.tmdbId);
     audit(db(), req, 'monitored.removed', { target: row.title });
     return { ok: true };
+  });
+
+  /** Points a monitored title at a different TMDB entry (it was matched to the wrong one), keeping its files. */
+  app.post('/api/monitored/:id/match', { config: { access: 'manager' } }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const { tmdbId } = parse(z.object({ tmdbId: z.number().int().positive() }), req.body);
+    const row = getMonitored(id);
+    if (tmdbId === row.tmdbId) return monitoredView(row);
+    if (db().select().from(monitored).where(and(eq(monitored.kind, row.kind), eq(monitored.tmdbId, tmdbId))).get()) throw conflict('That title is already monitored');
+    const meta = await upstream(() => refreshMetadata(ctx, row.kind, tmdbId));
+    if (!meta) throw notFound(`No ${row.kind === 'movie' ? 'movie' : 'show'} with that TMDB id`);
+    const next = db().update(monitored).set({ tmdbId, title: meta.title, year: meta.year }).where(eq(monitored.id, id)).returning().get();
+    if (next.kind === 'show') {
+      // The episode list belongs to the old show; rebuild it and link the files on disk again.
+      db().delete(monitoredEpisodes).where(eq(monitoredEpisodes.monitoredId, id)).run();
+      await refreshEpisodes(ctx, next, true);
+      if (next.path) scanFolder(ctx, next);
+    }
+    db().update(requests).set({ tmdbId, title: meta.title, year: meta.year, posterPath: meta.posterPath }).where(eq(requests.monitoredId, id)).run();
+    audit(db(), req, 'monitored.matched', { target: `${row.title} → ${meta.title}`, details: { from: row.tmdbId, to: tmdbId } });
+    return monitoredView(getMonitored(id));
   });
 
   app.post('/api/monitored/:id/search', { config: { access: 'manager' } }, async (req) => {

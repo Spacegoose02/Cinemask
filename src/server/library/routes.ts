@@ -1,12 +1,12 @@
-import { and, asc, desc, eq, sql, type AnyColumn } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql, type AnyColumn } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
-import { libraryItems, media, MEDIA_KINDS, type MediaKind } from '../db/schema.js';
+import { libraryItems, matchOverrides, media, MEDIA_KINDS, type MediaKind } from '../db/schema.js';
 import { bestResolution, IntegrationError } from '../integrations/http.js';
 import { HttpError } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
-import { availabilityFor, cards, episodesOnServer, isReleased, mdblistClient, refreshMetadata, tmdbClient, type LibrarySync } from './service.js';
+import { availabilityFor, cards, episodesOnServer, isReleased, mdblistClient, refreshMetadata, tmdbClient, watchInfo, type LibrarySync } from './service.js';
 
 const kindParam = z.enum(MEDIA_KINDS);
 
@@ -34,6 +34,8 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
         kind: kindParam.optional(),
         q: z.string().trim().max(200).optional(),
         resolution: z.enum(['SD', '720p', '1080p', '2160p']).optional(),
+        watched: z.enum(['watched', 'unwatched']).optional(),
+        unmatched: z.enum(['true', '1']).optional(),
         sort: z.enum(['title', 'year', 'added', 'release', 'rating']).default('added'),
         order: z.enum(['asc', 'desc']).optional(),
         page: z.coerce.number().int().min(1).default(1),
@@ -45,7 +47,10 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
       q.kind ? eq(libraryItems.kind, q.kind) : undefined,
       q.q ? contains(libraryItems.title, q.q) : undefined,
       q.resolution ? eq(libraryItems.resolution, q.resolution) : undefined,
+      q.unmatched ? isNull(libraryItems.tmdbId) : undefined,
     );
+    // Watched on any server counts as watched.
+    const having = q.watched === 'watched' ? sql`max(coalesce(${libraryItems.viewCount}, 0)) > 0` : q.watched === 'unwatched' ? sql`max(coalesce(${libraryItems.viewCount}, 0)) = 0` : undefined;
     const dir = q.order ?? (q.sort === 'title' ? 'asc' : 'desc');
     const o = dir === 'asc' ? asc : desc;
     const sortCol = {
@@ -69,16 +74,22 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
         addedAt: sql<number>`max(${libraryItems.addedAt})`,
         resolutions: sql<string>`group_concat(${libraryItems.resolution})`,
         servers: sql<string>`group_concat(distinct ${libraryItems.server})`,
+        viewCount: sql<number | null>`sum(${libraryItems.viewCount})`,
+        lastViewedAt: sql<number | null>`max(${libraryItems.lastViewedAt})`,
+        itemIds: sql<string>`group_concat(${libraryItems.id})`,
       })
       .from(libraryItems)
       .leftJoin(media, eq(media.id, libraryItems.mediaId))
       .where(where)
       .groupBy(groupKey)
+      .having(having)
       .orderBy(o(sortCol), asc(libraryItems.title))
       .limit(q.pageSize)
       .offset((q.page - 1) * q.pageSize)
       .all();
-    const total = ctx.db.select({ n: sql<number>`count(distinct ${groupKey})` }).from(libraryItems).where(where).get()!.n;
+    const total = having
+      ? ctx.db.select({ n: sql<number>`count(*)` }).from(ctx.db.select({ k: sql`1` }).from(libraryItems).where(where).groupBy(groupKey).having(having).as('t')).get()!.n
+      : ctx.db.select({ n: sql<number>`count(distinct ${groupKey})` }).from(libraryItems).where(where).get()!.n;
     return {
       total,
       page: q.page,
@@ -86,6 +97,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
         ...r,
         resolution: bestResolution((r.resolutions ?? '').split(',').filter(Boolean)),
         servers: (r.servers ?? '').split(',').filter(Boolean),
+        itemIds: (r.itemIds ?? '').split(',').filter(Boolean).map(Number),
         resolutions: undefined,
       })),
     };
@@ -161,6 +173,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
       seasons,
       collection,
       ratings,
+      watch: watchInfo(ctx, kind, tmdbId),
     };
   });
 
@@ -181,6 +194,8 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
           runtime: e.runtime,
           onServer: Boolean(have),
           resolution: have?.resolution ?? null,
+          viewCount: have?.viewCount ?? null,
+          lastViewedAt: have?.lastViewedAt ?? null,
         };
       }),
     };
@@ -215,6 +230,30 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
   });
 
   app.get('/api/library/sync', { config: { access: 'manager' } }, async () => opts.sync.status);
+
+  /**
+   * Fixes a wrong (or missing) match: points library items at the right TMDB title. Remembered,
+   * so the next sync keeps it. Plex and Jellyfin keep their own match; this is Cinemask's view.
+   */
+  app.post('/api/library/match', { config: { access: 'manager' } }, async (req) => {
+    const body = parse(z.object({ itemIds: z.array(z.number().int().positive()).min(1).max(10), tmdbId: z.number().int().positive() }), req.body);
+    const items = ctx.db.select().from(libraryItems).where(inArray(libraryItems.id, body.itemIds)).all();
+    if (items.length !== body.itemIds.length) throw new HttpError(404, 'Library item not found', 'not_found');
+    const kind = items[0]!.kind;
+    if (items.some((i) => i.kind !== kind)) throw new HttpError(400, 'Those items are not all the same kind', 'bad_request');
+    const meta = await upstream(() => refreshMetadata(ctx, kind, body.tmdbId));
+    if (!meta) throw new HttpError(404, `No ${kind === 'movie' ? 'movie' : 'show'} with that TMDB id`, 'not_found');
+    for (const i of items) {
+      ctx.db
+        .insert(matchOverrides)
+        .values({ server: i.server, externalKey: i.externalKey, tmdbId: body.tmdbId, createdAt: Date.now() })
+        .onConflictDoUpdate({ target: [matchOverrides.server, matchOverrides.externalKey], set: { tmdbId: body.tmdbId, createdAt: Date.now() } })
+        .run();
+      ctx.db.update(libraryItems).set({ tmdbId: body.tmdbId, mediaId: meta.id }).where(eq(libraryItems.id, i.id)).run();
+    }
+    audit(ctx.db, req, 'library.matched', { target: `${items[0]!.title} → ${meta.title}`, details: { tmdbId: body.tmdbId, items: body.itemIds } });
+    return { kind, tmdbId: body.tmdbId, title: meta.title };
+  });
 
   app.post('/api/library/sync', { config: { access: 'manager' } }, async (req) => {
     audit(ctx.db, req, 'library.sync_started');

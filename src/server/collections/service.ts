@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
-import { collectionItems, collections, libraryItems, listItems, monitored, type MediaKind, type ServerType } from '../db/schema.js';
+import { collectionItems, collections, libraryItems, listItems, media, monitored, SERVERS, type MediaKind, type ServerType } from '../db/schema.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import { PlexClient } from '../integrations/plex.js';
 import { TMDB_IMAGE } from '../integrations/tmdb.js';
@@ -98,6 +98,7 @@ export async function pushCollection(ctx: AppContext, id: number): Promise<{ ple
         await plex.setCollectionTag(await plex.sectionOf(key), kind, key, tagName, true);
         r.removed++;
       }
+      if (col.plexLabel) await syncPlexLabel(ctx, plex, col.plexLabel, wanted);
       const after = (await plex.collections()).find((c) => (existing ? c.ratingKey === existing.ratingKey : c.title === col.name));
       if (after) {
         if (after.title !== col.name) await plex.renameCollection(after.section, after.ratingKey, col.name);
@@ -146,6 +147,39 @@ export async function pushCollection(ctx: AppContext, id: number): Promise<{ ple
   return result;
 }
 
+/** Libraries' labels as last synced, by server item key. */
+function labelled(ctx: AppContext, server: ServerType, label: string) {
+  const want = label.toLowerCase();
+  return ctx.db
+    .select({ key: libraryItems.externalKey, kind: libraryItems.kind, tmdbId: libraryItems.tmdbId, title: libraryItems.title, year: libraryItems.year, labels: libraryItems.labels })
+    .from(libraryItems)
+    .where(and(eq(libraryItems.server, server), isNotNull(libraryItems.labels)))
+    .all()
+    .filter((r) => (JSON.parse(r.labels!) as string[]).some((l) => l.toLowerCase() === want));
+}
+
+/** Puts a Plex label on every item of the collection and takes it off items that left it. */
+async function syncPlexLabel(ctx: AppContext, plex: NonNullable<ReturnType<typeof plexClient>>, label: string, wanted: Map<string, MediaKind>) {
+  const has = new Map(labelled(ctx, 'plex', label).map((r) => [r.key, r.kind]));
+  for (const [key, kind] of wanted) if (!has.has(key)) await plex.setLabel(await plex.sectionOf(key), kind, key, label);
+  for (const [key, kind] of has) if (!wanted.has(key)) await plex.setLabel(await plex.sectionOf(key), kind, key, label, true);
+}
+
+/** Takes a label off every Plex item that carries it, when a collection stops using it. */
+export async function clearPlexLabel(ctx: AppContext, label: string) {
+  const plex = plexClient(ctx);
+  if (plex) await syncPlexLabel(ctx, plex, label, new Map());
+}
+
+/** Every distinct label (Plex) or tag (Jellyfin) seen in the last library sync, for pickers. */
+export function libraryLabels(ctx: AppContext): string[] {
+  const all = new Map<string, string>();
+  for (const r of ctx.db.select({ labels: libraryItems.labels }).from(libraryItems).where(isNotNull(libraryItems.labels)).all()) {
+    for (const l of JSON.parse(r.labels!) as string[]) if (!all.has(l.toLowerCase())) all.set(l.toLowerCase(), l);
+  }
+  return [...all.values()].sort((a, b) => a.localeCompare(b));
+}
+
 /** Copies the collections that already exist on Plex or Jellyfin into the app (matching items by TMDB id). */
 export async function importServerCollections(ctx: AppContext, server: ServerType, userId: number): Promise<{ imported: number; updated: number }> {
   const byKey = (key: string) => ctx.db.select().from(libraryItems).where(and(eq(libraryItems.server, server), eq(libraryItems.externalKey, key))).get();
@@ -178,7 +212,7 @@ export async function importServerCollections(ctx: AppContext, server: ServerTyp
   return { imported, updated };
 }
 
-/** Rebuilds the items of collections that follow a TMDB collection or one of the app's lists. */
+/** Rebuilds the items of collections that follow a TMDB collection, one of the app's lists, or a server label. */
 export async function refreshCollectionItems(ctx: AppContext, id: number): Promise<number> {
   const col = ctx.db.select().from(collections).where(eq(collections.id, id)).get();
   if (!col) throw new Error('Collection not found');
@@ -190,6 +224,17 @@ export async function refreshCollectionItems(ctx: AppContext, id: number): Promi
   } else if (col.source === 'list') {
     const rows = ctx.db.select().from(listItems).where(eq(listItems.listId, Number(col.sourceId))).orderBy(asc(listItems.position)).all();
     setItems(ctx, id, rows);
+  } else if (col.fromLabel) {
+    // Everything carrying the label on either server, once per title.
+    const found = new Map<string, ListItem>();
+    for (const server of SERVERS) {
+      for (const r of labelled(ctx, server, col.fromLabel)) {
+        if (r.tmdbId) found.set(`${r.kind}:${r.tmdbId}`, { kind: r.kind, tmdbId: r.tmdbId, title: r.title, year: r.year, posterPath: null });
+      }
+    }
+    const items = [...found.values()].sort((a, b) => a.title.localeCompare(b.title));
+    for (const i of items) i.posterPath = ctx.db.select({ p: media.posterPath }).from(media).where(and(eq(media.kind, i.kind), eq(media.tmdbId, i.tmdbId))).get()?.p ?? null;
+    setItems(ctx, id, items);
   }
   return itemsOf(ctx, id).length;
 }
@@ -198,7 +243,7 @@ export async function refreshCollectionItems(ctx: AppContext, id: number): Promi
 export async function syncCollections(ctx: AppContext): Promise<void> {
   for (const c of ctx.db.select().from(collections).all()) {
     try {
-      if (c.source === 'tmdb' || c.source === 'list') await refreshCollectionItems(ctx, c.id);
+      if (c.source === 'tmdb' || c.source === 'list' || c.fromLabel) await refreshCollectionItems(ctx, c.id);
       if (c.syncPlex || c.syncJellyfin) await pushCollection(ctx, c.id);
     } catch {
       // recorded in last_error by pushCollection; try again tomorrow

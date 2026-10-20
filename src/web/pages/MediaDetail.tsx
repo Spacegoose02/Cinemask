@@ -30,10 +30,12 @@ export interface MediaDetail {
   seasons: { seasonNumber: number; name: string; episodeCount: number; airDate: string | null; onServer: number }[];
   collection: { id: number; name: string } | null;
   ratings: { source: string; value: number | null }[];
+  /** Plays on Plex/Jellyfin, null when the title isn't on a server. */
+  watch: { viewCount: number; lastViewedAt: number | null } | null;
 }
 
 interface Season {
-  episodes: { episodeNumber: number; name: string; airDate: string | null; overview: string; onServer: boolean; resolution: string | null; runtime: number | null }[];
+  episodes: { episodeNumber: number; name: string; airDate: string | null; overview: string; onServer: boolean; resolution: string | null; runtime: number | null; viewCount: number | null }[];
 }
 
 const fmt = (d: string | null) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : null);
@@ -58,13 +60,27 @@ function SeasonRow({ tmdbId, season }: { tmdbId: number; season: MediaDetail['se
                 <span className="text-muted">E{String(e.episodeNumber).padStart(2, '0')}</span> {e.name}
                 {e.airDate && <span className="ml-2 text-xs text-muted">{fmt(e.airDate)}</span>}
               </span>
-              <StatusBadge status={e.onServer ? 'on_server' : e.airDate && e.airDate <= new Date().toISOString().slice(0, 10) ? 'not_on_server' : 'not_available'} resolution={e.resolution} />
+              <span className="flex shrink-0 items-center gap-2">
+                {e.viewCount ? (
+                  <span className="text-xs text-success" title={`Played ${e.viewCount} ${e.viewCount === 1 ? 'time' : 'times'}`}>
+                    ✓ Watched
+                  </span>
+                ) : null}
+                <StatusBadge status={e.onServer ? 'on_server' : e.airDate && e.airDate <= new Date().toISOString().slice(0, 10) ? 'not_on_server' : 'not_available'} resolution={e.resolution} />
+              </span>
             </li>
           ))}
         </ul>
       )}
     </li>
   );
+}
+
+function watchText(kind: MediaKind, w: NonNullable<MediaDetail['watch']>): string {
+  const last = w.lastViewedAt ? new Date(w.lastViewedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : null;
+  if (w.viewCount) return `${w.viewCount === 1 ? 'Once' : `${w.viewCount} times`}${last ? `, last on ${last}` : ''}`;
+  if (last) return kind === 'show' ? `Partly, last on ${last}` : `Last on ${last}`;
+  return 'Not yet';
 }
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -79,8 +95,10 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; actions?: (m: MediaDetail) => ReactNode; panels?: (m: MediaDetail) => ReactNode }) {
   const { tmdbId } = useParams();
-  const [trailer, setTrailer] = useState(false);
+  const [trailer, setTrailer] = useState<'online' | number | null>(null);
   const q = useQuery({ queryKey: ['media', kind, tmdbId], queryFn: () => api<MediaDetail>(`/api/media/${kind}/${tmdbId}`) });
+  // Trailer files already next to the title on the server play right here, no YouTube needed.
+  const local = useQuery({ queryKey: ['local-trailers', kind, tmdbId], queryFn: () => api<{ index: number; name: string }[]>(`/api/trailers/${kind}/${tmdbId}`) });
   if (q.error) return <Alert>{(q.error as Error).message}</Alert>;
   const m = q.data;
   if (!m) return <div className="text-muted">Loading…</div>;
@@ -104,9 +122,14 @@ export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; ac
             <StatusBadge status={m.availability.status} resolution={m.availability.resolution} />
             {m.overview && <p className="max-w-3xl text-sm leading-relaxed">{m.overview}</p>}
             <div className="flex flex-wrap gap-2">
+              {local.data?.map((t) => (
+                <button key={t.index} className="btn-secondary" onClick={() => setTrailer(t.index)} title={t.name}>
+                  ▶ {local.data.length > 1 ? `Trailer ${t.index + 1}` : 'Watch trailer'}
+                </button>
+              ))}
               {m.trailerKey && (
-                <button className="btn-secondary" onClick={() => setTrailer(true)}>
-                  ▶ Watch trailer
+                <button className="btn-secondary" onClick={() => setTrailer('online')}>
+                  ▶ {local.data?.length ? 'Trailer on YouTube' : 'Watch trailer'}
                 </button>
               )}
               {actions?.(m)}
@@ -123,6 +146,7 @@ export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; ac
                   {r.value}
                 </Fact>
               ))}
+              {m.watch && <Fact label="Watched">{watchText(m.kind, m.watch)}</Fact>}
               <Fact label="On">{m.availability.servers.map((s) => (s === 'plex' ? 'Plex' : 'Jellyfin')).join(', ')}</Fact>
             </dl>
           </div>
@@ -142,7 +166,8 @@ export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; ac
         </section>
       )}
       {panels?.(m)}
-      {trailer && m.trailerKey && <TrailerModal videoKey={m.trailerKey} onClose={() => setTrailer(false)} />}
+      {trailer === 'online' && m.trailerKey && <TrailerModal videoKey={m.trailerKey} onClose={() => setTrailer(null)} />}
+      {typeof trailer === 'number' && <TrailerModal src={`/api/trailers/${kind}/${m.tmdbId}/${trailer}`} onClose={() => setTrailer(null)} />}
     </div>
   );
 }

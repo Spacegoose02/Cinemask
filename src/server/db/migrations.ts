@@ -371,6 +371,26 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    id: 8,
+    name: 'watch history, labels and manual matches',
+    sql: `
+      ALTER TABLE library_items ADD COLUMN view_count INTEGER;
+      ALTER TABLE library_items ADD COLUMN last_viewed_at INTEGER;
+      ALTER TABLE library_items ADD COLUMN labels TEXT;
+      ALTER TABLE library_episodes ADD COLUMN view_count INTEGER;
+      ALTER TABLE library_episodes ADD COLUMN last_viewed_at INTEGER;
+      CREATE TABLE match_overrides (
+        server TEXT NOT NULL CHECK (server IN ('plex','jellyfin')),
+        external_key TEXT NOT NULL,
+        tmdb_id INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (server, external_key)
+      );
+      ALTER TABLE collections ADD COLUMN plex_label TEXT;
+      ALTER TABLE collections ADD COLUMN from_label TEXT;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

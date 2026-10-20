@@ -15,6 +15,8 @@ export interface MediaCardData {
   posterPath: string | null;
   availability?: AvailabilityInfo;
   resolution?: string | null;
+  /** Plays on Plex/Jellyfin; a show counts once every episode has been played. */
+  viewCount?: number | null;
 }
 
 /** Image URL for a poster value: a TMDB path, an https link, or an image held by Plex/Jellyfin/the app (proxied). */

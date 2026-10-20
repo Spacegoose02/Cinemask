@@ -13,6 +13,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Size limits for movies and episodes, with a per-title override. Releases within the limit win; a bigger one is only grabbed when nothing smaller exists, and the download is marked with a warning (also sent as the `download.warning` webhook event).
 - Download from a link: magnet and .torrent links go to the torrent client, and any link can be given a name and a folder to land in when it finishes.
 - Library sync can monitor what it finds (Settings → Media servers): new episodes only (default), everything, or nothing. Titles removed by hand stay removed.
+- Trailers already in a title's folder play on its page. The trailer manager plays them, replaces them with the best online trailer, takes a pasted YouTube or Vimeo link, and automatic trailers now cover shows too.
+- Fix a wrong match by hand: on a library item, a monitored title (Files → Fix match) or a book request. Library fixes are remembered through later syncs.
+- Watched status and play counts from Plex and Jellyfin: a Watched badge and filter in the Library, plays on the title page, and per-episode marks.
+- Collections can fill themselves from a Plex label or Jellyfin tag, and can put a label on their items in Plex for smart collections and sharing restrictions.
 
 ### Fixed
 - YouTube trailers showed "Video player configuration error": the app told browsers to send no referrer, which YouTube now refuses.

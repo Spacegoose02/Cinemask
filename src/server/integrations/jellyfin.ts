@@ -1,5 +1,5 @@
 import { fetchJson, IntegrationError, normalizeResolution } from './http.js';
-import type { MediaServerClient, ServerItem } from './mediaserver.js';
+import { rollUpViews, type MediaServerClient, type ServerItem } from './mediaserver.js';
 
 interface JfItem {
   Id: string;
@@ -12,7 +12,14 @@ interface JfItem {
   SeriesId?: string;
   ParentIndexNumber?: number;
   IndexNumber?: number;
+  Tags?: string[];
+  UserData?: { PlayCount?: number; Played?: boolean; LastPlayedDate?: string };
 }
+
+const plays = (i: JfItem) => ({
+  viewCount: i.UserData ? Math.max(i.UserData.PlayCount ?? 0, i.UserData.Played ? 1 : 0) : null,
+  lastViewedAt: i.UserData?.LastPlayedDate ? Date.parse(i.UserData.LastPlayedDate) : null,
+});
 
 function height(item: JfItem): number | undefined {
   return item.MediaStreams?.find((s) => s.Type === 'Video')?.Height;
@@ -39,9 +46,21 @@ export class JellyfinClient implements MediaServerClient {
     await fetch(`${base}/Library/Refresh`, { method: 'POST', headers: { Authorization: `MediaBrowser Token="${this.apiKey}"` }, signal: AbortSignal.timeout(10_000) });
   }
 
+  /** Watched state lives per user in Jellyfin; read it as the first administrator, like Plex's server account. */
+  private async adminUserId(): Promise<string | null> {
+    try {
+      const users = await this.get<{ Id: string; Policy?: { IsAdministrator?: boolean } }[]>('/Users');
+      return (users.find((u) => u.Policy?.IsAdministrator) ?? users[0])?.Id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async fetchLibrary(): Promise<ServerItem[]> {
-    const fields = 'Fields=ProviderIds,MediaStreams,DateCreated,ProductionYear';
-    const top = await this.get<{ Items: JfItem[] }>(`/Items?Recursive=true&IncludeItemTypes=Movie,Series&${fields}`);
+    const fields = 'Fields=ProviderIds,MediaStreams,DateCreated,ProductionYear,Tags';
+    const userId = await this.adminUserId();
+    const asUser = userId ? `&UserId=${encodeURIComponent(userId)}` : '';
+    const top = await this.get<{ Items: JfItem[] }>(`/Items?Recursive=true&IncludeItemTypes=Movie,Series&${fields}${asUser}`);
     const byId = new Map<string, ServerItem>();
     const items: ServerItem[] = top.Items.map((i) => {
       const num = (v?: string) => (v && /^\d+$/.test(v) ? Number(v) : null);
@@ -55,17 +74,20 @@ export class JellyfinClient implements MediaServerClient {
         imdbId: i.ProviderIds?.Imdb ?? null,
         resolution: i.Type === 'Movie' ? normalizeResolution(height(i)) : null,
         addedAt: i.DateCreated ? Date.parse(i.DateCreated) : null,
+        ...plays(i),
+        labels: i.Tags ?? [],
         episodes: i.Type === 'Series' ? [] : undefined,
       };
       byId.set(i.Id, item);
       return item;
     });
-    const eps = await this.get<{ Items: JfItem[] }>(`/Items?Recursive=true&IncludeItemTypes=Episode&Fields=MediaStreams`);
+    const eps = await this.get<{ Items: JfItem[] }>(`/Items?Recursive=true&IncludeItemTypes=Episode&Fields=MediaStreams${asUser}`);
     for (const e of eps.Items) {
       const show = e.SeriesId ? byId.get(e.SeriesId) : undefined;
       if (!show || e.ParentIndexNumber === undefined || e.IndexNumber === undefined) continue;
-      show.episodes!.push({ season: e.ParentIndexNumber, episode: e.IndexNumber, title: e.Name, resolution: normalizeResolution(height(e)) });
+      show.episodes!.push({ season: e.ParentIndexNumber, episode: e.IndexNumber, title: e.Name, resolution: normalizeResolution(height(e)), ...plays(e) });
     }
+    for (const item of items) rollUpViews(item);
     return items;
   }
 

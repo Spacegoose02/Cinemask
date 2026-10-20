@@ -116,6 +116,11 @@ export const libraryItems = sqliteTable(
     resolution: text('resolution'),
     addedAt: integer('added_at'),
     mediaId: integer('media_id').references(() => media.id, { onDelete: 'set null' }),
+    /** Times played by the server's own account, and when last. Null when the server doesn't say. */
+    viewCount: integer('view_count'),
+    lastViewedAt: integer('last_viewed_at'),
+    /** Plex labels or Jellyfin tags. JSON string[]. */
+    labels: text('labels'),
   },
   (t) => [uniqueIndex('library_server_key').on(t.server, t.externalKey), index('library_items_media_idx').on(t.mediaId)],
 );
@@ -129,7 +134,21 @@ export const libraryEpisodes = sqliteTable('library_episodes', {
   episode: integer('episode').notNull(),
   title: text('title'),
   resolution: text('resolution'),
+  viewCount: integer('view_count'),
+  lastViewedAt: integer('last_viewed_at'),
 });
+
+/** A title fixed by hand to the right TMDB entry. Library sync applies it every time. */
+export const matchOverrides = sqliteTable(
+  'match_overrides',
+  {
+    server: text('server', { enum: SERVERS }).notNull(),
+    externalKey: text('external_key').notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.server, t.externalKey] })],
+);
 
 export const httpCache = sqliteTable('http_cache', {
   key: text('key').primaryKey(),
@@ -356,6 +375,10 @@ export const collections = sqliteTable('collections', {
   lastError: text('last_error'),
   createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: integer('created_at').notNull(),
+  /** Label put on every item of this collection in Plex, for smart filters and other tools. */
+  plexLabel: text('plex_label'),
+  /** Keep the items in step with everything on the server carrying this label (Plex) or tag (Jellyfin). */
+  fromLabel: text('from_label'),
 });
 
 export const collectionItems = sqliteTable(

@@ -10,7 +10,20 @@ export interface ServerItem {
   imdbId: string | null;
   resolution: string | null;
   addedAt: number | null;
-  episodes?: { season: number; episode: number; title: string | null; resolution: string | null }[];
+  /** Times played and when last, as the server's own account sees it. Shows add up their episodes. */
+  viewCount?: number | null;
+  lastViewedAt?: number | null;
+  /** Plex labels or Jellyfin tags. */
+  labels?: string[];
+  episodes?: { season: number; episode: number; title: string | null; resolution: string | null; viewCount?: number | null; lastViewedAt?: number | null }[];
+}
+
+/** Rolls episode plays up to the show: the fewest plays of any episode is how often the whole show was watched. */
+export function rollUpViews(item: ServerItem) {
+  if (item.kind !== 'show' || !item.episodes?.length) return;
+  item.viewCount = Math.min(...item.episodes.map((e) => e.viewCount ?? 0));
+  const last = Math.max(...item.episodes.map((e) => e.lastViewedAt ?? 0));
+  item.lastViewedAt = last || null;
 }
 
 export interface MediaServerClient {

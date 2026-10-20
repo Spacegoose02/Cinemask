@@ -7,8 +7,12 @@ import { refreshMediaServers } from '../arr/tracker.js';
 import { expectedFolder, rootFor } from '../files/service.js';
 import { tmdbClient } from '../library/service.js';
 import { insideRoot } from '../lib/paths.js';
+import { sanitizeSegment } from '../arr/naming.js';
+
+export type TrailerSite = 'YouTube' | 'Vimeo';
 
 export interface TrailerCandidate {
+  site: TrailerSite;
   key: string;
   name: string;
   type: string;
@@ -26,19 +30,47 @@ export interface TrailerJob {
 
 const VIDEO_EXT = /\.(mp4|mkv|webm|mov|m4v)$/i;
 const YT_KEY = /^[\w-]{6,20}$/;
+const VIMEO_KEY = /^\d{4,12}$/;
+const validKey = (site: TrailerSite, key: string) => (site === 'YouTube' ? YT_KEY : VIMEO_KEY).test(key);
+const videoUrl = (site: TrailerSite, key: string) => (site === 'YouTube' ? `https://www.youtube.com/watch?v=${key}` : `https://vimeo.com/${key}`);
+
+/**
+ * Reads a YouTube or Vimeo link someone pasted. Only those two sites are accepted, and only the
+ * video id is kept, so yt-dlp never sees an arbitrary URL.
+ */
+export function parseVideoUrl(raw: string): { site: TrailerSite; key: string } | null {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  const host = u.hostname.replace(/^(www|m|music)\./, '');
+  let found: { site: TrailerSite; key: string } | null = null;
+  if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    const key = u.searchParams.get('v') ?? /^\/(?:embed|shorts|v|live)\/([\w-]+)/.exec(u.pathname)?.[1];
+    if (key) found = { site: 'YouTube', key };
+  } else if (host === 'youtu.be') found = { site: 'YouTube', key: u.pathname.slice(1).split('/')[0]! };
+  else if (host === 'vimeo.com' || host === 'player.vimeo.com') {
+    const key = /\/(?:video\/)?(\d+)/.exec(u.pathname)?.[1];
+    if (key) found = { site: 'Vimeo', key };
+  }
+  return found && validKey(found.site, found.key) ? found : null;
+}
 const jobs = new Map<number, TrailerJob>();
 
 export const trailerJob = (monitoredId: number) => jobs.get(monitoredId) ?? null;
 
-/** YouTube trailers and teasers from TMDB, best first (official, then highest resolution). */
+/** YouTube and Vimeo trailers and teasers from TMDB, best first (official, then highest resolution). */
 export async function trailerCandidates(ctx: AppContext, row: MonitoredRow): Promise<TrailerCandidate[]> {
   const tmdb = tmdbClient(ctx);
   if (!tmdb.configured) return [];
   const r = await tmdb.videos(row.kind === 'movie' ? 'movie' : 'tv', row.tmdbId);
   const score = (v: TrailerCandidate) => (v.type === 'Trailer' ? 1000 : v.type === 'Teaser' ? 500 : 0) + (v.official ? 200 : 0) + (v.size ?? 0) / 10;
   return r.results
-    .filter((v) => v.site === 'YouTube' && YT_KEY.test(v.key) && ['Trailer', 'Teaser', 'Clip', 'Featurette'].includes(v.type))
-    .map((v) => ({ key: v.key, name: v.name ?? v.type, type: v.type, official: Boolean(v.official), size: v.size ?? null, publishedAt: v.published_at ?? null }))
+    .filter((v) => (v.site === 'YouTube' || v.site === 'Vimeo') && validKey(v.site, v.key) && ['Trailer', 'Teaser', 'Clip', 'Featurette'].includes(v.type))
+    .map((v) => ({ site: v.site as TrailerSite, key: v.key, name: v.name ?? v.type, type: v.type, official: Boolean(v.official), size: v.size ?? null, publishedAt: v.published_at ?? null }))
     .sort((a, b) => score(b) - score(a));
 }
 
@@ -49,7 +81,7 @@ function trailerTarget(ctx: AppContext, row: MonitoredRow): { dir: string; stem:
     const stem = row.filePath ? path.parse(row.filePath).name : path.basename(folder);
     return { dir: row.filePath ? path.dirname(row.filePath) : folder, stem: `${stem}-trailer` };
   }
-  return { dir: path.join(folder, 'trailers'), stem: `${row.title}${row.year ? ` (${row.year})` : ''} - Trailer` };
+  return { dir: path.join(folder, 'trailers'), stem: sanitizeSegment(`${row.title}${row.year ? ` (${row.year})` : ''} - Trailer`) };
 }
 
 /** Trailer files already on disk for a title. */
@@ -74,12 +106,12 @@ export function ytDlpBinary(ctx: AppContext): string {
 }
 
 /**
- * Downloads a YouTube trailer with yt-dlp into the title's folder. Runs in the background;
- * progress is read with trailerJob(). The video key is validated and passed as an argument,
+ * Downloads a YouTube or Vimeo trailer with yt-dlp into the title's folder. Runs in the background;
+ * progress is read with trailerJob(). The video id is validated and passed as an argument,
  * never through a shell.
  */
-export function downloadTrailer(ctx: AppContext, row: MonitoredRow, key: string): TrailerJob {
-  if (!YT_KEY.test(key)) throw new Error('Not a valid YouTube video id');
+export function downloadTrailer(ctx: AppContext, row: MonitoredRow, key: string, site: TrailerSite = 'YouTube'): TrailerJob {
+  if (!validKey(site, key)) throw new Error(`Not a valid ${site} video id`);
   const s = ctx.settings.get('extras');
   if (!s.trailersEnabled) throw new Error('Trailer downloads are turned off (Settings → Media management)');
   const bin = ytDlpBinary(ctx);
@@ -100,7 +132,7 @@ export function downloadTrailer(ctx: AppContext, row: MonitoredRow, key: string)
     '-o',
     path.join(dir, `${stem}.%(ext)s`),
     '--',
-    `https://www.youtube.com/watch?v=${key}`,
+    videoUrl(site, key),
   ];
   const job: TrailerJob = { status: 'downloading', key, startedAt: Date.now() };
   jobs.set(row.id, job);
@@ -133,10 +165,13 @@ export function removeTrailers(ctx: AppContext, row: MonitoredRow): number {
   return n;
 }
 
-/** After an import: fetch the best trailer when the setting is on and there isn't one yet. */
+/** After an import: fetch the best trailer for a movie or show when the setting is on and there isn't one yet. */
 export async function autoTrailer(ctx: AppContext, row: MonitoredRow): Promise<void> {
   const s = ctx.settings.get('extras');
-  if (!s.trailersEnabled || !s.autoDownloadTrailers || row.kind !== 'movie' || existingTrailers(ctx, row).length) return;
+  if (!s.trailersEnabled || !s.autoDownloadTrailers || existingTrailers(ctx, row).length || jobs.get(row.id)?.status === 'downloading') return;
   const best = (await trailerCandidates(ctx, row))[0];
-  if (best) downloadTrailer(ctx, row, best.key);
+  if (best) downloadTrailer(ctx, row, best.key, best.site);
 }
+
+const MIME: Record<string, string> = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm', '.mkv': 'video/x-matroska', '.mov': 'video/quicktime' };
+export const trailerMime = (file: string) => MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
