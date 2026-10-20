@@ -4,6 +4,20 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-20
+
+### Added
+- Import from Radarr, Sonarr and Overseerr (Settings → Import). Radarr movies and Sonarr shows are added with the quality profile of the same name and the seasons Sonarr monitors, and their files are found where they already are; nothing is downloaded or moved. Overseerr (or Jellyseerr) requests come over with their status and who asked, matched to Cinemask users by email or username.
+- Downloads: "Search indexers" searches Prowlarr and your other indexers for anything, and sends a result to the download client with the folder it should go to when it finishes (the downloads folder, any movie or TV folder, audiobooks or books).
+- Collections: a Library picker, starting at Movies, so a collection that's in both Movies and Kids Movies on Plex no longer shows twice. Import from Plex again to sort collections imported before this version.
+- YouTube: an optional download folder (Settings → Media management), so videos download there and only move into the YouTube folder when finished. Videos already in the YouTube folder, named the yt-dlp way with `[video id]`, count as downloaded when you subscribe, and "Import from folder" on a channel finds them again.
+
+### Fixed
+- SABnzbd downloads stuck in the queue after they finished. Cinemask only looked for jobs under its own category, so a job SABnzbd filed elsewhere (an unknown category becomes the default one) or that fell past the first 100 history entries was never seen finishing. Jobs are now also looked up by their id, and a job being verified or unpacked shows as downloaded instead of 0%.
+- SABnzbd: the job name no longer carries `{{…}}`, which SABnzbd reads as an archive password.
+
+## [0.10.4] - 2026-10-20
+
 ### Added
 - Episode size by length (Settings → Media management → Searching): set a largest size for each episode length, such as 800 MB up to 30 minutes, 1.5 GB up to an hour, 2 GB up to 1½ hours and 2.5 GB up to 2 hours. A show uses the first row that fits its usual episode length, and the flat limit still applies when no rows are set or a title has its own limit.
 - YouTube: subscribe with "Let me pick from the channel's videos". Every video is listed and nothing downloads on its own; tick videos (or select all), search titles, page through older videos, and download the ones you picked. New uploads join the list for you to pick from.
