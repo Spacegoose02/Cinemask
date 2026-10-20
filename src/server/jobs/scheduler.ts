@@ -8,6 +8,7 @@ import { authStates } from '../db/schema.js';
 import type { BackupService } from '../backup/service.js';
 import { rssSync, searchMissing } from '../arr/rss.js';
 import { trackDownloads } from '../arr/tracker.js';
+import { scanWatchFolder } from '../arr/watch.js';
 import { refreshMonitored } from '../calendar/service.js';
 import { pollReadMeABook, pollShelfmark, syncAudiobookshelf } from '../books/service.js';
 import { syncCollections } from '../collections/service.js';
@@ -96,6 +97,7 @@ export class Scheduler {
     const rss = s.rssSyncMinutes >= 60 ? `0 */${Math.min(23, Math.round(s.rssSyncMinutes / 60))} * * *` : `*/${s.rssSyncMinutes} * * * *`;
     this.downloadTasks = [
       cron.schedule('* * * * *', this.once('track', () => trackDownloads(this.app.ctx))),
+      cron.schedule('*/5 * * * *', this.once('watch-folder', () => scanWatchFolder(this.app.ctx))),
       cron.schedule(rss, this.once('rss', () => rssSync(this.app.ctx))),
       cron.schedule('30 * * * *', this.once('missing', () => searchMissing(this.app.ctx, s.searchMissingHours))),
     ];
