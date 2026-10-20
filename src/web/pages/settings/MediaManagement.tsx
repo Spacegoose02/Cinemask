@@ -92,6 +92,9 @@ export function MediaManagementSettings() {
             <option value="move">Move into the library</option>
           </select>
         </Field>
+        <Field label="Watch folder" hint="Movies and shows you drop here are matched on TMDB and moved into your Movies or TV folder with the naming format, every few minutes. Name them like “Title (Year)” or “Show S01E02”. Leave empty to turn it off.">
+          <input className="input" value={m.values.watchFolder ?? ''} onChange={(e) => m.set('watchFolder', e.target.value)} placeholder="/media/import" />
+        </Field>
         <Toggle label="Remove finished downloads from the client" checked={m.values.removeCompletedDownloads} onChange={(v) => m.set('removeCompletedDownloads', v)} />
         <div>
           <div className="label">Remote path mappings</div>

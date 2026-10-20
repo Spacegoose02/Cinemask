@@ -143,6 +143,8 @@ export const SETTINGS = {
         .max(20)
         .default([]),
       removeCompletedDownloads: z.boolean().default(false),
+      /** Movies and shows dropped here are matched on TMDB and moved into the library. Empty turns it off. */
+      watchFolder: z.string().trim().max(1000).default(''),
       /** Download-client category for movies and TV in the main folders. Empty uses each client's own category. */
       moviesCategory: category.default(''),
       tvCategory: category.default(''),

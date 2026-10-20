@@ -76,7 +76,7 @@ export interface ImportResult {
   skipped: string[];
 }
 
-export function importDownload(ctx: AppContext, downloadId: number, sourcePath: string): ImportResult {
+export function importDownload(ctx: AppContext, downloadId: number, sourcePath: string, mode?: 'hardlink' | 'copy' | 'move'): ImportResult {
   const dl = ctx.db.select().from(downloads).where(eq(downloads.id, downloadId)).get();
   if (!dl?.monitoredId) throw new Error('This download is not linked to a movie or show');
   const row = ctx.db.select().from(monitored).where(eq(monitored.id, dl.monitoredId)).get();
@@ -98,7 +98,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     if (row.filePath && row.fileQuality && qualityRank(row.fileQuality) >= qualityRank(quality)) {
       result.skipped.push(`${path.basename(file)}: existing file is as good or better`);
     } else {
-      placeFile(file, dest, mediaSettings.importMode);
+      placeFile(file, dest, mode ?? mediaSettings.importMode);
       if (row.filePath && row.filePath !== dest && inside(root, row.filePath) && fs.existsSync(row.filePath)) fs.rmSync(row.filePath);
       ctx.db.update(monitored).set({ path: folder, filePath: dest, fileQuality: quality }).where(eq(monitored.id, row.id)).run();
       result.imported.push(dest);
@@ -132,7 +132,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
       const name = naming.renameFiles ? renderName(naming.episodeFile, values) : path.parse(file).name;
       const dest = path.join(dir, `${name}${path.extname(file).toLowerCase()}`);
       if (!inside(root, dest)) throw new Error('Refusing to write outside the TV folder');
-      placeFile(file, dest, mediaSettings.importMode);
+      placeFile(file, dest, mode ?? mediaSettings.importMode);
       for (const e of epRows) {
         if (e.filePath && e.filePath !== dest && inside(root, e.filePath) && fs.existsSync(e.filePath)) fs.rmSync(e.filePath);
         ctx.db.update(monitoredEpisodes).set({ filePath: dest, fileQuality: quality }).where(eq(monitoredEpisodes.id, e.id)).run();

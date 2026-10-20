@@ -6,6 +6,7 @@ import { decide } from '../src/server/arr/decision.js';
 import { assertSafeUrl, isPrivateAddress } from '../src/server/arr/direct.js';
 import { parseFeed, type Release } from '../src/server/arr/indexers.js';
 import { trackDownloads } from '../src/server/arr/tracker.js';
+import { scanWatchFolder } from '../src/server/arr/watch.js';
 import { rssSync } from '../src/server/arr/rss.js';
 import { maxSizeFor } from '../src/server/arr/search.js';
 import { ensureMedia } from '../src/server/library/service.js';
@@ -282,6 +283,45 @@ describe('request → download → import', () => {
     const res = (await owner.req('PATCH', `/api/monitored/${m.id}`, { profileId: await profileId('1080p or above') })).json();
     expect(res.upgradeCandidates).toBe(1);
     expect(added).toHaveLength(0);
+  });
+
+  it('imports movies and shows dropped in the watch folder, and leaves what it cannot match', async () => {
+    fakeFetch({
+      ...tmdbRoutes,
+      'https://api.themoviedb.org/3/search/movie': (u: URL) => ({ results: u.searchParams.get('query') === 'Paddington' ? [{ id: 116149, title: 'Paddington' }] : [] }),
+      'https://api.themoviedb.org/3/search/tv': (u: URL) => ({ results: u.searchParams.get('query') === 'Bluey' ? [{ id: 82728, name: 'Bluey' }] : [] }),
+    });
+    const watch = path.join(t.dir, 'watch');
+    const old = (Date.now() - 10 * 60 * 1000) / 1000;
+    const drop = (rel: string) => {
+      const f = path.join(watch, rel);
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      fs.writeFileSync(f, 'video');
+      fs.utimesSync(f, old, old);
+    };
+    drop('Paddington (2014)/Paddington.2014.1080p.BluRay.mkv');
+    drop('Paddington (2014)/movie.nfo');
+    drop('Bluey/Season 1/Bluey.S01E02.720p.WEB-DL.mkv');
+    drop('Nothing.Like.This.2099.mkv');
+    const fresh = path.join(watch, 'Still.Copying.2014.mkv');
+    fs.writeFileSync(fresh, 'part');
+
+    // Off until a folder is set, and never a library folder itself.
+    expect(await scanWatchFolder(t.app.ctx)).toBe(0);
+    await owner.req('PUT', '/api/settings/media', { watchFolder: path.join(media, 'movies') });
+    expect(await scanWatchFolder(t.app.ctx)).toBe(0);
+    await owner.req('PUT', '/api/settings/media', { watchFolder: watch });
+    expect(await scanWatchFolder(t.app.ctx)).toBe(2);
+
+    expect(fs.existsSync(path.join(media, 'movies', 'Paddington (2014)', 'Paddington (2014) - Bluray-1080p.mkv'))).toBe(true);
+    expect(fs.readdirSync(path.join(media, 'tv', 'Bluey (2018)', 'Season 01'))).toHaveLength(1);
+    // Moved, not copied; the leftover .nfo went with its folder. The unmatched and half-copied files stay.
+    expect(fs.readdirSync(watch).sort()).toEqual(['Nothing.Like.This.2099.mkv', 'Still.Copying.2014.mkv']);
+    const history = (await owner.req('GET', '/api/downloads?history=true')).json();
+    expect(history.find((d: { title: string }) => d.title === 'Nothing.Like.This.2099.mkv')).toMatchObject({ status: 'failed', indexer: 'Watch folder' });
+    // An unmatched drop isn't retried until it changes.
+    expect(await scanWatchFolder(t.app.ctx)).toBe(0);
+    expect((await owner.req('GET', '/api/downloads?history=true')).json()).toHaveLength(history.length);
   });
 
   it('the upgrades switch stops replacing downloaded files, whatever the profile allows', async () => {

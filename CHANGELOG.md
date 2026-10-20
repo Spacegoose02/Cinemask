@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-20
+
+### Added
+- A watch folder (Settings → Media management). Movies and shows dropped there are matched on TMDB, monitored, and moved into your Movies or TV folder with the naming format, checked every 5 minutes. A drop is left alone until its files have stopped changing for 2 minutes, so nothing half-copied is moved. Anything that can't be matched stays where it is and shows as a failed import on Downloads.
+
 ## [0.12.1] - 2026-10-20
 
 ### Added
