@@ -45,6 +45,8 @@ export class Scheduler {
       cron.schedule('20 */12 * * *', this.once('refresh-monitored', () => refreshMonitored(this.app.ctx))),
       // Lists sync on their own interval (checked hourly); collections follow their sources nightly.
       cron.schedule('10 * * * *', this.once('lists', () => syncDueLists(this.app.ctx))),
+      // Posters and details for library titles that a sync couldn't fill (TMDB down, or added since).
+      cron.schedule('35 * * * *', this.once('metadata', () => this.librarySync.backfillMetadata())),
       cron.schedule('40 4 * * *', this.once('collections', () => syncCollections(this.app.ctx))),
       // Audiobookshelf's library every few hours; Shelfmark's queue every couple of minutes while books download.
       cron.schedule('25 */4 * * *', this.once('audiobookshelf', async () => (this.app.ctx.settings.get('audiobookshelf').enabled ? syncAudiobookshelf(this.app.ctx) : null))),
@@ -96,7 +98,7 @@ export class Scheduler {
     const hours = s.syncIntervalHours >= 24 ? '3' : `*/${s.syncIntervalHours}`;
     this.libraryTask = cron.schedule(`5 ${hours} * * *`, async () => {
       await this.librarySync.run();
-      await this.librarySync.backfillMetadata(200);
+      await this.librarySync.backfillMetadata();
     });
   }
 

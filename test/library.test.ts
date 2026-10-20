@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ensureMedia } from '../src/server/library/service.js';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
 import { fakeFetch, JELLYFIN, jellyfinRoutes, PLEX, plexRoutes, tmdbRoutes } from './fakes.js';
 
@@ -178,5 +179,21 @@ describe('Plex and Jellyfin together', () => {
     expect(show.availability.status).toBe('on_server');
     const jfCall = fn.mock.calls.find(([u]) => String(u).startsWith(JELLYFIN));
     expect(String(jfCall![0])).not.toContain('jf-key');
+  });
+});
+
+describe('library posters', () => {
+  it('fills details for every title in one run, and one failing title holds up nothing', async () => {
+    for (let id = 1000; id < 1260; id++) ensureMedia(t.app.ctx, 'movie', id, { title: `Movie ${id}` });
+    fakeFetch({
+      'https://api.themoviedb.org/3/movie/': (url) => {
+        const id = Number(url.pathname.split('/').pop());
+        if (id === 1000) return new Response('busy', { status: 500 });
+        return { id, title: `Movie ${id}`, overview: '', release_date: '2020-01-01', runtime: 90, status: 'Released', poster_path: `/${id}.jpg`, backdrop_path: null, vote_average: 6, genres: [], imdb_id: null };
+      },
+    });
+    expect(await t.librarySync.backfillMetadata()).toBe(259);
+    const lib = t.app.ctx.dbHandle.sqlite.prepare('select tmdb_id, poster_path from media where poster_path is null').all();
+    expect(lib).toEqual([{ tmdb_id: 1000, poster_path: null }]);
   });
 });

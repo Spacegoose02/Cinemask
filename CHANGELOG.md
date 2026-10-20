@@ -4,6 +4,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- Managers can add a title to monitoring without searching ("Monitor only"), and can monitor a movie that's already on the server so it gets upgraded ("Monitor for upgrades").
+
+### Fixed
+- Library posters missing for most titles on large libraries: a sync filled TMDB details for only 200 titles, and titles that kept failing were retried first and held up the rest. Every title is now filled after each sync, and anything left over is retried hourly.
+
 ## [0.10.0] - 2026-10-20
 
 ### Added

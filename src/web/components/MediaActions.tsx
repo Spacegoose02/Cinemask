@@ -257,6 +257,15 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           </button>
         </>
       )}
+      {!mon && isManager && (
+        <button
+          className="btn-secondary"
+          title="Adds it to monitoring without searching now. Search, upgrades and the missing-file search take it from there."
+          onClick={() => run(() => api('/api/monitored', { body: { kind: m.kind, tmdbId: m.tmdbId, search: false, rootId } }), fullyAvailable ? 'Monitoring. Better releases will replace the file when the profile allows an upgrade.' : 'Monitoring. Nothing was searched now; new releases and the regular missing search will download it.')}
+        >
+          {fullyAvailable ? 'Monitor for upgrades' : 'Monitor only'}
+        </button>
+      )}
       {req && !mon && <span className="self-center text-sm text-muted">Requested by {req.requestedByName} · {req.status}</span>}
       {req?.status === 'declined' && req.reason && <span className="self-center text-sm text-danger">Declined: {req.reason}</span>}
       {mon && isManager && 'profileId' in mon && (
