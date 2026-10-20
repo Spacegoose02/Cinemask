@@ -255,6 +255,13 @@ function ChannelCard({ c, startOpen }: { c: Channel; startOpen?: boolean }) {
           <button className="btn-secondary" onClick={() => run(async () => `Found ${(await api<{ added: number }>(`/api/youtube/channels/${c.id}/check`, { body: {} })).added} new video(s).`)}>
             Check now
           </button>
+          <button
+            className="btn-secondary"
+            title="Videos already in the YouTube folder, named the yt-dlp way with [video id], are marked as downloaded."
+            onClick={() => run(async () => `Found ${(await api<{ found: number }>(`/api/youtube/channels/${c.id}/import`, { body: {} })).found} video(s) already in the folder.`)}
+          >
+            Import from folder
+          </button>
           {c.mode === 'new' && !c.pick && (
             <button className="btn-secondary" onClick={() => confirm(`Download every video from ${c.name}?`) && run(async () => void (await api(`/api/youtube/channels/${c.id}`, { method: 'PATCH', body: { mode: 'all' } })))}>
               Get every video

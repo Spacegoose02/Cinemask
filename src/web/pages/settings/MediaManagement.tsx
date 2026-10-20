@@ -233,6 +233,9 @@ export function MediaManagementSettings() {
         <Field label="YouTube folder" hint="Where subscribed YouTube channels are saved, one folder per channel. Add it to Plex or Jellyfin as a TV library.">
           <input className="input" value={x.values.youtubePath} onChange={(e) => x.set('youtubePath', e.target.value)} />
         </Field>
+        <Field label="YouTube download folder" hint="Optional. Videos download here first and move into the YouTube folder when they're finished, so Plex and Jellyfin never see half-done files. Leave empty to download straight into the YouTube folder.">
+          <input className="input" placeholder="/downloads/youtube" value={x.values.youtubeDownloadPath} onChange={(e) => x.set('youtubeDownloadPath', e.target.value)} />
+        </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Best YouTube quality">
             <select className="input" value={x.values.youtubeMaxHeight} onChange={(e) => x.set('youtubeMaxHeight', Number(e.target.value))}>
