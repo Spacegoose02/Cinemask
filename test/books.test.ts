@@ -3,13 +3,14 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Release } from '../src/server/arr/indexers.js';
 import { trackDownloads } from '../src/server/arr/tracker.js';
-import { namesBook, pollShelfmark, rankReleases, type BookRow } from '../src/server/books/service.js';
+import { namesBook, pollReadMeABook, pollShelfmark, rankReleases, type BookRow } from '../src/server/books/service.js';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
 import { fakeFetch } from './fakes.js';
 
 const OL = 'https://openlibrary.org';
 const ABS = 'http://abs.local:13378';
 const SM = 'http://shelfmark.local:8084';
+const RMAB = 'http://rmab.local:3030';
 const INDEXER = 'http://indexer.local';
 const QBIT = 'http://qbit.local:8080';
 const MB = 1024 * 1024;
@@ -81,6 +82,8 @@ describe('books, audiobooks and podcasts', () => {
   let absBooks: Record<string, unknown>[] = [];
   let smStatus: Record<string, Record<string, unknown>> = {};
   const smDownloads: string[] = [];
+  const rmabRequests: { auth: string; body: unknown }[] = [];
+  let rmabStatus = 'searching';
 
   beforeEach(async () => {
     t = await makeApp();
@@ -92,6 +95,8 @@ describe('books, audiobooks and podcasts', () => {
     added.length = 0;
     absWrites.length = 0;
     smDownloads.length = 0;
+    rmabRequests.length = 0;
+    rmabStatus = 'searching';
     qbitTorrents = [];
     absBooks = [];
     smStatus = {};
@@ -131,6 +136,13 @@ describe('books, audiobooks and podcasts', () => {
         return { status: 'queued' };
       },
       [`${SM}/api/status`]: () => smStatus,
+      [`${RMAB}/api/auth/me`]: () => ({ user: { username: 'cinemask' } }),
+      [`${RMAB}/api/audiobooks/search`]: () => ({ results: [{ asin: 'B007978NPG', title: 'The Hobbit', author: 'J.R.R. Tolkien', narrator: 'Andy Serkis' }] }),
+      [`${RMAB}/api/requests/req-1`]: () => ({ success: true, request: { id: 'req-1', status: rmabStatus, errorMessage: rmabStatus === 'failed' ? 'No torrents found' : null } }),
+      [`${RMAB}/api/requests`]: (_u: URL, init?: RequestInit) => {
+        rmabRequests.push({ auth: String((init?.headers as Record<string, string>).Authorization), body: JSON.parse(String(init?.body)) });
+        return new Response(JSON.stringify({ success: true, request: { id: 'req-1', status: 'pending' } }), { status: 201 });
+      },
       [`${INDEXER}/api`]: () =>
         new Response(
           torznab([
@@ -156,6 +168,22 @@ describe('books, audiobooks and podcasts', () => {
   afterEach(async () => {
     vi.unstubAllGlobals();
     await t.close();
+  });
+
+  it('hands approved audiobooks to ReadMeABook and follows them', async () => {
+    await owner.req('PUT', '/api/settings/readmeabook', { enabled: true, url: RMAB, apiToken: 'rmab_secret' });
+    expect((await owner.req('POST', '/api/integrations/readmeabook/test')).json()).toEqual({ ok: true, message: 'Connected as cinemask' });
+    const r = (await kid.req('POST', '/api/books', { workKey: HOBBIT.key, format: 'audiobook' })).json();
+    await owner.req('POST', `/api/books/${r.id}/approve`);
+    await vi.waitFor(async () => expect((await kid.req('GET', '/api/books?status=all')).json()[0].status).toBe('downloading'));
+    expect(rmabRequests).toEqual([{ auth: 'Bearer rmab_secret', body: { audiobook: { asin: 'B007978NPG', title: 'The Hobbit', author: 'J.R.R. Tolkien', narrator: 'Andy Serkis' } } }]);
+    expect(added).toEqual([]); // not sent to the download client as well
+
+    await pollReadMeABook(t.app.ctx);
+    expect((await kid.req('GET', '/api/books?status=all')).json()[0].status).toBe('downloading');
+    rmabStatus = 'downloaded';
+    await pollReadMeABook(t.app.ctx);
+    expect((await kid.req('GET', '/api/books?status=all')).json()[0].status).toBe('available');
   });
 
   it('lets a manager fix a request that matched the wrong book', async () => {

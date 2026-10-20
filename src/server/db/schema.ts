@@ -457,3 +457,40 @@ export const apiKeys = sqliteTable(
   },
   (t) => [index('api_keys_user_idx').on(t.userId)],
 );
+
+export const YOUTUBE_MODES = ['new', 'all', 'playlists'] as const;
+export const YOUTUBE_VIDEO_STATUSES = ['wanted', 'skipped', 'downloading', 'done', 'failed'] as const;
+
+export const youtubeChannels = sqliteTable('youtube_channels', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  url: text('url').notNull().unique(), // canonical channel or playlist URL
+  channelId: text('channel_id'),
+  name: text('name').notNull(),
+  description: text('description'),
+  mode: text('mode', { enum: YOUTUBE_MODES }).notNull(),
+  playlists: text('playlists'), // JSON [{ id, title }] followed in "playlists" mode
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  lastCheckedAt: integer('last_checked_at'),
+  lastError: text('last_error'),
+  createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const youtubeVideos = sqliteTable(
+  'youtube_videos',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    channelId: integer('channel_id')
+      .notNull()
+      .references(() => youtubeChannels.id, { onDelete: 'cascade' }),
+    videoId: text('video_id').notNull(),
+    title: text('title').notNull(),
+    playlistId: text('playlist_id'),
+    publishedAt: text('published_at'), // YYYY-MM-DD, known once the video's details are read
+    status: text('status', { enum: YOUTUBE_VIDEO_STATUSES }).notNull(),
+    path: text('path'),
+    error: text('error'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('youtube_videos_channel_video_unique').on(t.channelId, t.videoId), index('youtube_videos_status_idx').on(t.status)],
+);

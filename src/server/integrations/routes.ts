@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AudiobookshelfClient } from './audiobookshelf.js';
+import { ReadMeABookClient } from './readmeabook.js';
 import { ShelfmarkClient } from './shelfmark.js';
 import { audit } from '../audit/log.js';
 import { plexHeaders } from '../auth/plex.js';
@@ -23,7 +24,7 @@ export async function integrationRoutes(app: FastifyInstance) {
   };
 
   app.post('/api/integrations/:service/test', { config: { access: 'admin' } }, async (req) => {
-    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'tmdb', 'mdblist', 'audiobookshelf', 'shelfmark']) }), req.params);
+    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'tmdb', 'mdblist', 'audiobookshelf', 'shelfmark', 'readmeabook']) }), req.params);
     const result = await run(async () => {
       switch (service) {
         case 'plex': {
@@ -57,6 +58,11 @@ export async function integrationRoutes(app: FastifyInstance) {
           const s = ctx.settings.get('shelfmark');
           if (!s.url) throw new Error('Enter the Shelfmark URL first');
           return new ShelfmarkClient(s.url, s.username, s.password).test();
+        }
+        case 'readmeabook': {
+          const s = ctx.settings.get('readmeabook');
+          if (!s.url || !s.apiToken) throw new Error('Enter the ReadMeABook URL and API token first');
+          return new ReadMeABookClient(s.url, s.apiToken).test();
         }
       }
     });

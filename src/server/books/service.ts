@@ -9,6 +9,7 @@ import { CATEGORIES, type Release } from '../arr/indexers.js';
 import { grab, searchAll } from '../arr/search.js';
 import { AudiobookshelfClient } from '../integrations/audiobookshelf.js';
 import { OpenLibraryClient, type BookCard } from '../integrations/openlibrary.js';
+import { ReadMeABookClient } from '../integrations/readmeabook.js';
 import { ShelfmarkClient } from '../integrations/shelfmark.js';
 import { insideRoot } from '../lib/paths.js';
 
@@ -29,6 +30,11 @@ export function absClient(ctx: AppContext): AudiobookshelfClient | null {
 export function shelfmarkClient(ctx: AppContext): ShelfmarkClient | null {
   const s = ctx.settings.get('shelfmark');
   return s.enabled && s.url ? new ShelfmarkClient(s.url, s.username, s.password) : null;
+}
+
+export function readMeABookClient(ctx: AppContext): ReadMeABookClient | null {
+  const s = ctx.settings.get('readmeabook');
+  return s.enabled && s.url && s.apiToken ? new ReadMeABookClient(s.url, s.apiToken) : null;
 }
 
 /** Lowercase words without punctuation, articles or subtitles, for matching titles across sources. */
@@ -95,6 +101,22 @@ export async function startBookDownload(ctx: AppContext, id: number, userId: num
   const book = getBook(ctx, id);
   if (!book) throw new Error('Book not found');
   const errors: string[] = [];
+  // Audiobooks go to ReadMeABook first when it's connected: it downloads and imports them itself.
+  const rmab = readMeABookClient(ctx);
+  if (rmab && book.format === 'audiobook') {
+    try {
+      const results = await rmab.search(`${book.title} ${book.author ?? ''}`.trim());
+      const pick = results.find((r) => namesBook(`${r.title} ${r.author}`, book));
+      if (pick) {
+        const r = await rmab.request(pick);
+        setBook(ctx, id, { status: 'downloading', externalId: `readmeabook:${r.id ?? ''}`, error: null });
+        return getBook(ctx, id)!;
+      }
+      errors.push('ReadMeABook found no match');
+    } catch (err) {
+      errors.push((err as Error).message);
+    }
+  }
   const sm = shelfmarkClient(ctx);
   const smFor = ctx.settings.get('shelfmark').useFor;
   if (sm && (book.format === 'ebook' || smFor === 'both')) {
@@ -226,6 +248,27 @@ export async function pollShelfmark(ctx: AppContext): Promise<void> {
       importBook(ctx, b.id, file);
     } catch (err) {
       failBook(ctx, b.id, (err as Error).message);
+    }
+  }
+}
+
+/**
+ * Follows audiobooks handed to ReadMeABook. Finished ones are marked available (ReadMeABook has
+ * already imported them); a request it already had (no id) is left for the Audiobookshelf sync to spot.
+ */
+export async function pollReadMeABook(ctx: AppContext): Promise<void> {
+  const active = ctx.db.select().from(books).where(eq(books.status, 'downloading')).all().filter((b) => b.externalId?.startsWith('readmeabook:') && b.externalId.length > 12);
+  const rmab = readMeABookClient(ctx);
+  if (!active.length || !rmab) return;
+  for (const b of active) {
+    try {
+      const r = await rmab.status(b.externalId!.slice(12));
+      const state = ReadMeABookClient.stateOf(r.status);
+      if (state === 'done') setBook(ctx, b.id, { status: 'available', error: null });
+      else if (state === 'failed') failBook(ctx, b.id, r.errorMessage || `ReadMeABook: ${r.status}`);
+    } catch (err) {
+      // A request deleted in ReadMeABook can't be followed any more.
+      if (/HTTP 404/.test((err as Error).message)) failBook(ctx, b.id, 'ReadMeABook no longer has this request');
     }
   }
 }

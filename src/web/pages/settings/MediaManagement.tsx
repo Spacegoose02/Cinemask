@@ -175,7 +175,7 @@ export function MediaManagementSettings() {
       </section>
 
       <section className="card space-y-4">
-        <h2 className="font-semibold">Trailers and posters</h2>
+        <h2 className="font-semibold">Trailers, YouTube and posters</h2>
         <Toggle label="Allow trailer downloads" checked={x.values.trailersEnabled} onChange={(v) => x.set('trailersEnabled', v)} hint="Trailers are saved next to each movie so Plex and Jellyfin play them as extras." />
         <Toggle label="Download a trailer for every new movie" checked={x.values.autoDownloadTrailers} onChange={(v) => x.set('autoDownloadTrailers', v)} />
         <Field label="Best trailer quality">
@@ -188,6 +188,21 @@ export function MediaManagementSettings() {
         <Field label="yt-dlp location" hint="Included in the Docker image. Only change this if you run Cinemask outside Docker.">
           <input className="input" value={x.values.ytDlpPath} onChange={(e) => x.set('ytDlpPath', e.target.value)} />
         </Field>
+        <Field label="YouTube folder" hint="Where subscribed YouTube channels are saved, one folder per channel. Add it to Plex or Jellyfin as a TV library.">
+          <input className="input" value={x.values.youtubePath} onChange={(e) => x.set('youtubePath', e.target.value)} />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Best YouTube quality">
+            <select className="input" value={x.values.youtubeMaxHeight} onChange={(e) => x.set('youtubeMaxHeight', Number(e.target.value))}>
+              <option value={720}>720p</option>
+              <option value={1080}>1080p</option>
+              <option value={2160}>4K</option>
+            </select>
+          </Field>
+          <Field label="Check channels every (hours)">
+            <input className="input" type="number" min={1} max={168} value={x.values.youtubeCheckHours} onChange={(e) => x.set('youtubeCheckHours', Number(e.target.value))} />
+          </Field>
+        </div>
         <Toggle label="Offer posters from ThePosterDB" checked={x.values.thePosterDb} onChange={(v) => x.set('thePosterDb', v)} hint="ThePosterDB has no official API, so this reads its search page and may stop working if the site changes." />
         <SaveBar onSave={x.save} saving={x.saving} message={x.message} />
       </section>

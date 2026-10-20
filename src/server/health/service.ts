@@ -2,7 +2,7 @@ import { and, desc, eq, gte } from 'drizzle-orm';
 import fs from 'node:fs';
 import type { AppContext } from '../context.js';
 import { books, downloadClients, downloads, indexers, type DownloadClientType } from '../db/schema.js';
-import { absClient, shelfmarkClient } from '../books/service.js';
+import { absClient, readMeABookClient, shelfmarkClient } from '../books/service.js';
 import type { BackupService } from '../backup/service.js';
 import { createClient } from '../arr/clients.js';
 import { testIndexer } from '../arr/indexers.js';
@@ -95,6 +95,8 @@ export async function runHealthChecks(ctx: AppContext, deps: { backups: BackupSe
   if (abs) pending.push(connection('audiobookshelf', 'Audiobookshelf', 'books', () => abs.test()));
   const sm = shelfmarkClient(ctx);
   if (sm) pending.push(connection('shelfmark', 'Shelfmark', 'books', () => sm.test()));
+  const rmab = readMeABookClient(ctx);
+  if (rmab) pending.push(connection('readmeabook', 'ReadMeABook', 'books', () => rmab.test()));
   const meta = ctx.settings.get('metadata');
   pending.push(
     meta.tmdbApiKey
