@@ -15,8 +15,8 @@ The second board (35 cards) is being worked through in five pull requests. 14 ca
 | PR | Cards | Status |
 |---|---|---|
 | 1. Fixes | YouTube trailer error, turn off CAM/TS copies, download totals on the Downloads tab, collection button for Plex and Jellyfin, Handoff.md, bug and security check | PR #10 |
-| 2. Folders and sizes | Custom root folders (Kids Movies, 4K…), download tag per media path, size limits for movies and per show, download from a link with a name and destination, auto-monitor what the library sync finds | PR #11 |
-| 3. Library | Watch trailers already on the server, trailer management (auto, sources, quality), manually map media, watched / play count, Plex labels with collections | PR #12 |
+| 2. Folders and sizes | Custom root folders (Kids Movies, 4K…), download tag per media path, size limits for movies and per show, download from a link with a name and destination, auto-monitor what the library sync finds | PR #13 (with PR 3) |
+| 3. Library | Watch trailers already on the server, trailer management (auto, sources, quality), manually map media, watched / play count, Plex labels with collections | PR #13 |
 | 4. YouTube and ReadMeABook | Subscribe to channels (new, all, playlists), metadata for Plex and Jellyfin, audiobooks through ReadMeABook | To do |
 | 5. Themes | Five themes in each style (dark, light, retro, futuristic, 16-bit, cinemas) plus Blockbuster | To do |
 
