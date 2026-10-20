@@ -514,3 +514,23 @@ describe('SABnzbd tracking', () => {
     ]);
   });
 });
+
+describe('connection errors', () => {
+  it('say why a connection failed, without the address', async () => {
+    const { connectError } = await import('../src/server/integrations/http.js');
+    const fail = (code: string) => Object.assign(new TypeError('fetch failed'), { cause: { code } });
+    expect(connectError(fail('ECONNREFUSED'))).toMatch(/refused/);
+    expect(connectError(fail('ENOTFOUND'))).toMatch(/DNS/);
+    expect(connectError(fail('DEPTH_ZERO_SELF_SIGNED_CERT'))).toMatch(/certificate/);
+    expect(connectError(Object.assign(new Error('x'), { name: 'TimeoutError' }))).toMatch(/timed out/);
+    fakeFetch({});
+    vi.stubGlobal('fetch', async () => {
+      throw fail('EHOSTUNREACH');
+    });
+    const sab = createClient({ type: 'sabnzbd', name: 'SABnzbd', url: 'http://sab.local:8080', password: 'secret-key' });
+    const err = await sab.test().catch((e: Error) => e);
+    expect(String(err)).toMatch(/SABnzbd: could not connect: that address isn't reachable/);
+    expect(String(err)).not.toContain('secret-key');
+    vi.unstubAllGlobals();
+  });
+});

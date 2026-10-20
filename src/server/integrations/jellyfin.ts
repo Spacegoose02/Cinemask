@@ -1,4 +1,4 @@
-import { fetchJson, IntegrationError, normalizeResolution } from './http.js';
+import { connectError, fetchJson, IntegrationError, normalizeResolution } from './http.js';
 import { rollUpViews, type MediaServerClient, type ServerItem } from './mediaserver.js';
 
 interface JfItem {
@@ -103,8 +103,8 @@ export class JellyfinClient implements MediaServerClient {
         headers: { Authorization: `MediaBrowser Token="${this.apiKey}"`, Accept: 'application/json', ...(contentType ? { 'Content-Type': contentType } : {}) },
         signal: AbortSignal.timeout(30_000),
       });
-    } catch {
-      throw new IntegrationError('Jellyfin', 'could not connect');
+    } catch (err) {
+      throw new IntegrationError('Jellyfin', connectError(err));
     }
     if (!res.ok) throw new IntegrationError('Jellyfin', `responded with HTTP ${res.status}`, res.status);
     return res;

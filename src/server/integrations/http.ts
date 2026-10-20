@@ -9,13 +9,28 @@ export class IntegrationError extends Error {
   }
 }
 
+/**
+ * Why a request never got an answer, in words someone can act on. Node puts the system error on
+ * err.cause (ECONNREFUSED, ENOTFOUND, certificate problems…); nothing here includes the URL.
+ */
+export function connectError(err: unknown): string {
+  const e = err as Error & { cause?: { code?: string; message?: string } };
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError') return 'timed out (no answer from that address)';
+  const code = e?.cause?.code ?? '';
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return "could not connect: that host name doesn't resolve from the Cinemask container (DNS)";
+  if (code === 'ECONNREFUSED') return 'could not connect: the connection was refused (is it running, and is the port right?)';
+  if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH') return "could not connect: that address isn't reachable from the Cinemask container";
+  if (code === 'ECONNRESET' || code === 'UND_ERR_SOCKET') return 'could not connect: the connection was closed (http vs https mix-up, or a proxy in between?)';
+  if (/CERT|SELF_SIGNED|SSL|TLS/i.test(code)) return `could not connect: its HTTPS certificate isn't trusted (${code})`;
+  return code ? `could not connect (${code})` : 'could not connect';
+}
+
 export async function fetchJson<T>(service: string, url: string, init: RequestInit = {}, timeoutMs = 15_000): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json', ...init.headers } });
   } catch (err) {
-    const reason = (err as Error).name === 'TimeoutError' ? 'timed out' : 'could not connect';
-    throw new IntegrationError(service, reason);
+    throw new IntegrationError(service, connectError(err));
   }
   if (res.status === 401 || res.status === 403) throw new IntegrationError(service, 'the API key or token was rejected', res.status);
   if (!res.ok) throw new IntegrationError(service, `responded with HTTP ${res.status}`, res.status);

@@ -1,4 +1,4 @@
-import { IntegrationError } from './http.js';
+import { connectError, IntegrationError } from './http.js';
 
 export interface ShelfmarkBook {
   id: string;
@@ -30,8 +30,8 @@ export class ShelfmarkClient {
     let res: Response;
     try {
       res = await fetch(`${this.url.replace(/\/+$/, '')}${path}`, { headers, signal: AbortSignal.timeout(60_000) });
-    } catch {
-      throw new IntegrationError('Shelfmark', 'could not connect');
+    } catch (err) {
+      throw new IntegrationError('Shelfmark', connectError(err));
     }
     if (res.status === 401 || res.status === 403) throw new IntegrationError('Shelfmark', 'the username or password was rejected', res.status);
     if (!res.ok) throw new IntegrationError('Shelfmark', `responded with HTTP ${res.status}`, res.status);

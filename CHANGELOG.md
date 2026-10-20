@@ -4,6 +4,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-20
+
+### Changed
+- The home page's Collections row shows only your Movies library's collections, so a collection in both Movies and Kids Movies appears once, and "See all" opens Collections on Movies.
+- Plex collections imported before 0.11.0 are sorted into their libraries automatically; there's no need to import them again.
+- When Cinemask can't reach an indexer, download client, Shelfmark, Plex, Jellyfin or Audiobookshelf, the message now says why: the connection was refused, the host name doesn't resolve from the Cinemask container, the address isn't reachable, the HTTPS certificate isn't trusted, or it timed out.
+
 ## [0.11.0] - 2026-10-20
 
 ### Added
