@@ -7,7 +7,7 @@ Cinemask ships as one Docker image: `ghcr.io/spacegoose02/cinemask`. It listens 
 | Tag | What it is |
 |---|---|
 | `latest` | The newest release. Use this. |
-| `0.9.0`, `0.9` | A specific release, for pinning. |
+| `0.10.0`, `0.10` | A specific release, for pinning. |
 | `edge` | Built from every commit to `main`. May break. |
 
 Images are built for `linux/amd64` and `linux/arm64`.

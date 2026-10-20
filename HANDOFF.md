@@ -4,21 +4,21 @@ Where Cinemask stands and how to pick the work up. Read [CLAUDE.md](CLAUDE.md) f
 
 ## State
 
-- **Released:** 0.9.0, the first public beta. Every phase in [docs/ROADMAP.md](docs/ROADMAP.md) is built.
+- **Released:** 0.9.0, the first public beta (its tag was `v.0.9.0`, so the release workflow failed and no image was published). 0.10.0 carries the to-do board below. Every phase in [docs/ROADMAP.md](docs/ROADMAP.md) is built.
 - **Tests:** `npm test` runs the API, security and integration tests. Integrations (Plex, Jellyfin, TMDB, indexers, download clients, Audiobookshelf, Shelfmark) are only tested against fakes in `test/fakes.ts`, so expect fixes once they meet real servers.
 - **CI:** `.github/workflows/ci.yml` (lint, typecheck, tests, build, audit, image to `ghcr.io/<owner>/cinemask:edge`), `codeql.yml`, and `release.yml` on tags `vX.Y.Z` (tests, tag must match `package.json`, multi-arch image, GitHub release from the changelog). A release created on GitHub's Releases page works too.
 
-## After 0.9: the to-do board
+## 0.10: the to-do board
 
-The second board (35 cards) is being worked through in five pull requests. 14 cards were already done in 0.9.
+The second board (35 cards) shipped in 0.10.0. 14 cards were already done in 0.9.
 
 | PR | Cards | Status |
 |---|---|---|
 | 1. Fixes | YouTube trailer error, turn off CAM/TS copies, download totals on the Downloads tab, collection button for Plex and Jellyfin, Handoff.md, bug and security check | PR #10 |
 | 2. Folders and sizes | Custom root folders (Kids Movies, 4K…), download tag per media path, size limits for movies and per show, download from a link with a name and destination, auto-monitor what the library sync finds | PR #13 (with PR 3) |
 | 3. Library | Watch trailers already on the server, trailer management (auto, sources, quality), manually map media, watched / play count, Plex labels with collections | PR #13 |
-| 4. YouTube and ReadMeABook | Subscribe to channels (new, all, playlists), metadata for Plex and Jellyfin, audiobooks through ReadMeABook | PR #14 |
-| 5. Themes | Five themes in each style (dark, light, retro, futuristic, 16-bit, cinemas) plus Blockbuster | In review |
+| 4. YouTube and ReadMeABook | Subscribe to channels (new, all, playlists), metadata for Plex and Jellyfin, audiobooks through ReadMeABook | PR #15 (with PR 5) |
+| 5. Themes | Five themes in each style (dark, light, retro, futuristic, 16-bit, cinemas) plus Blockbuster | PR #15 |
 
 Already done in 0.9 (no work needed): delete episodes, seasons and movies; download or manually search one episode; manual search on a movie; collection maker synced to Plex and Jellyfin; download and import paths; Shelfmark search and download; rename and manage files; ask to search for upgrades after a profile change; Prowlarr search; change posters on Plex and Jellyfin; upgrades.
 

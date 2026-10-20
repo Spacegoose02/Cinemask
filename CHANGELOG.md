@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-20
+
 ### Added
 - The Downloads queue shows totals (how many, total size, what's left, speed and time left), and each download shows its speed and time left.
 - CAM, telesync, telecine and screener copies are skipped by default (Settings → Media management → Searching).
@@ -63,5 +65,6 @@ The first public beta. Every phase of the roadmap is in.
 - Home Assistant: `/api/stats` for sensors and webhook events for automations.
 - Docker image for amd64 and arm64, and an Unraid template.
 
-[Unreleased]: https://github.com/Spacegoose02/cinemask/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Spacegoose02/cinemask/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Spacegoose02/cinemask/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Spacegoose02/cinemask/releases/tag/v0.9.0
