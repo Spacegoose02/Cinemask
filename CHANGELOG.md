@@ -4,6 +4,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- Episode size by length (Settings → Media management → Searching): set a largest size for each episode length, such as 800 MB up to 30 minutes, 1.5 GB up to an hour, 2 GB up to 1½ hours and 2.5 GB up to 2 hours. A show uses the first row that fits its usual episode length, and the flat limit still applies when no rows are set or a title has its own limit.
+- YouTube: subscribe with "Let me pick from the channel's videos". Every video is listed and nothing downloads on its own; tick videos (or select all), search titles, page through older videos, and download the ones you picked. New uploads join the list for you to pick from.
+- Discover: more channels and networks, including Lifetime, Hallmark, Great American Family, USA Network, TNT, TBS, A&E, Syfy, Bravo, Freeform, Paramount Network, Comedy Central, Adult Swim, TLC, HGTV, Food Network, Tubi, The Roku Channel, Pluto TV, Freevee, MGM+ and BET+. On the Movies tab, the channel filter finds movies those channels made, such as Lifetime and Hallmark movies.
+- Discover: "Originals only" next to Streaming on shows just the shows or movies a picked service made itself, such as Netflix or Tubi originals.
+- Discover lists every streaming service TMDB knows for your region (Tubi was cut off before), with a search box on long filter lists.
+
 ## [0.10.2] - 2026-10-20
 
 0.10.1 was tagged before its version bump, so no image was built for it. 0.10.2 carries everything meant for 0.10.1, along with more fixes.

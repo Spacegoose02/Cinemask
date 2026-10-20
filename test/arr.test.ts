@@ -7,6 +7,8 @@ import { assertSafeUrl, isPrivateAddress } from '../src/server/arr/direct.js';
 import { parseFeed, type Release } from '../src/server/arr/indexers.js';
 import { trackDownloads } from '../src/server/arr/tracker.js';
 import { rssSync } from '../src/server/arr/rss.js';
+import { maxSizeFor } from '../src/server/arr/search.js';
+import { ensureMedia } from '../src/server/library/service.js';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
 import { fakeFetch, tmdbRoutes } from './fakes.js';
 
@@ -409,6 +411,31 @@ describe('qBittorrent sign-in', () => {
       const h = (init?.headers ?? {}) as Record<string, string>;
       expect(Object.keys(h).map((k) => k.toLowerCase())).not.toContain('referer');
       expect(h['user-agent']).toBe('Cinemask');
+    }
+  });
+});
+
+describe('episode size by length', () => {
+  it('picks the limit for the show’s episode length, falling back to the flat limit', async () => {
+    const t = await makeApp();
+    try {
+      const owner = await setupOwner(t.app);
+      const show = (tmdbId: number, runtime: number | null) => {
+        ensureMedia(t.app.ctx, 'show', tmdbId, { title: `Show ${tmdbId}` });
+        t.app.ctx.dbHandle.sqlite.prepare('update media set runtime = ? where kind = ? and tmdb_id = ?').run(runtime, 'show', tmdbId);
+        return { kind: 'show' as const, tmdbId, maxSizeMb: null };
+      };
+      const GB = 1024 ** 3;
+      await owner.req('PUT', '/api/settings/downloading', { maxEpisodeSizeGb: 3, episodeSizeByRuntime: [{ minutes: 60, gb: 1.5 }, { minutes: 30, gb: 0.8 }, { minutes: 90, gb: 2 }] });
+      expect(maxSizeFor(t.app.ctx, show(1, 22))).toBe(0.8 * GB);
+      expect(maxSizeFor(t.app.ctx, show(2, 45))).toBe(1.5 * GB);
+      expect(maxSizeFor(t.app.ctx, show(3, 88))).toBe(2 * GB);
+      expect(maxSizeFor(t.app.ctx, show(4, 140))).toBe(2 * GB); // longer than every row: the last one
+      expect(maxSizeFor(t.app.ctx, show(5, null))).toBe(3 * GB); // length unknown: the flat limit
+      expect(maxSizeFor(t.app.ctx, { ...show(6, 22), maxSizeMb: 500 })).toBe(500 * 1024 ** 2); // the show's own limit wins
+      expect((await owner.req('PUT', '/api/settings/downloading', { episodeSizeByRuntime: [{ minutes: 0, gb: 1 }] })).statusCode).toBe(400);
+    } finally {
+      await t.close();
     }
   });
 });

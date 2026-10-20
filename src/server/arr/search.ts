@@ -68,16 +68,31 @@ function queriesFor(ctx: AppContext, row: MonitoredRow, target: Target): SearchQ
 const GB = 1024 ** 3;
 const MB = 1024 ** 2;
 
-/** Largest wanted release for a title in bytes (per movie or per episode), or null for no limit. */
-export function maxSizeFor(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'maxSizeMb'>): number | null {
+/** The show's usual episode length in minutes, from TMDB, or null when unknown. */
+function episodeMinutes(ctx: AppContext, tmdbId: number): number | null {
+  return ctx.db.select({ r: media.runtime }).from(media).where(and(eq(media.kind, 'show'), eq(media.tmdbId, tmdbId))).get()?.r ?? null;
+}
+
+/**
+ * Largest wanted release for a title in bytes (per movie or per episode), or null for no limit.
+ * The title's own limit wins; then, for episodes, the runtime table; then the flat setting.
+ */
+export function maxSizeFor(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'maxSizeMb' | 'tmdbId'>): number | null {
   if (row.maxSizeMb !== null && row.maxSizeMb !== undefined) return row.maxSizeMb ? row.maxSizeMb * MB : null;
   const s = ctx.settings.get('downloading');
+  if (row.kind === 'show' && s.episodeSizeByRuntime.length) {
+    const minutes = episodeMinutes(ctx, row.tmdbId);
+    if (minutes) {
+      const tiers = [...s.episodeSizeByRuntime].sort((a, b) => a.minutes - b.minutes);
+      return (tiers.find((t) => minutes <= t.minutes) ?? tiers[tiers.length - 1]!).gb * GB;
+    }
+  }
   const gb = row.kind === 'movie' ? s.maxMovieSizeGb : s.maxEpisodeSizeGb;
   return gb ? gb * GB : null;
 }
 
 /** How releases are judged for a title, from settings and the title's own size limit. */
-export function decideOptions(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'maxSizeMb'>): DecideOptions {
+export function decideOptions(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'maxSizeMb' | 'tmdbId'>): DecideOptions {
   return { skipCam: ctx.settings.get('downloading').skipCamReleases, maxSize: maxSizeFor(ctx, row) };
 }
 

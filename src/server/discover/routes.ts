@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { tmdbClient } from '../library/service.js';
 import { upstream } from '../library/routes.js';
 import { parse } from '../lib/validate.js';
-import { discover, discoverFilter, NETWORKS, SORTS } from './service.js';
+import { discover, discoverFilter, NETWORKS, providerKey, SORTS } from './service.js';
 
 export async function discoverRoutes(app: FastifyInstance) {
   const ctx = app.ctx;
@@ -22,9 +22,10 @@ export async function discoverRoutes(app: FastifyInstance) {
       genres: genres.genres,
       providers: providers.results
         .sort((a, b) => a.display_priority - b.display_priority)
-        .slice(0, 40)
         .map((p) => ({ id: p.provider_id, name: p.provider_name, logoPath: p.logo_path })),
-      networks: kind === 'tv' ? NETWORKS : [],
+      networks: NETWORKS.filter((n) => kind === 'tv' || n.companies?.length).map((n) => ({ id: n.id, name: n.name })),
+      /** Services whose own shows or films can be picked out with "Originals only". */
+      originals: providers.results.filter((p) => NETWORKS.some((n) => n.provider?.test(providerKey(p.provider_name)))).map((p) => p.provider_id),
       sorts: Object.keys(SORTS),
       region: ctx.settings.get('metadata').region,
     };

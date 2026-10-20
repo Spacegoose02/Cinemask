@@ -194,6 +194,15 @@ export const SETTINGS = {
       /** Largest release to grab automatically, in GB. 0 means no limit. Titles can override it. */
       maxMovieSizeGb: z.number().min(0).max(1000).default(0),
       maxEpisodeSizeGb: z.number().min(0).max(1000).default(0),
+      /**
+       * Episode limits by runtime, such as 0.8 GB up to 30 minutes and 1.5 GB up to 60. The first
+       * row whose minutes cover the episode applies; longer episodes use the last row. Used when the
+       * show's runtime is known, ahead of maxEpisodeSizeGb. Empty means only maxEpisodeSizeGb.
+       */
+      episodeSizeByRuntime: z
+        .array(z.object({ minutes: z.number().int().min(1).max(600), gb: z.number().min(0.1).max(1000) }))
+        .max(10)
+        .default([]),
     }),
     secrets: [],
   },

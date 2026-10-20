@@ -17,6 +17,7 @@ interface Channel {
   mode: Mode;
   playlists: Playlist[];
   enabled: boolean;
+  pick: boolean;
   lastCheckedAt: number | null;
   lastError: string | null;
   counts: Partial<Record<VideoStatus, number>>;
@@ -47,10 +48,10 @@ function PlaylistPicker({ url, value, onChange }: { url: string; value: Playlist
   );
 }
 
-function AddChannel({ onClose }: { onClose: () => void }) {
+function AddChannel({ onClose, onAdded }: { onClose: () => void; onAdded: (id: number) => void }) {
   const qc = useQueryClient();
   const [url, setUrl] = useState('');
-  const [mode, setMode] = useState<Mode>('new');
+  const [mode, setMode] = useState<Mode | 'pick'>('new');
   const [picked, setPicked] = useState<Playlist[]>([]);
   const [listUrl, setListUrl] = useState('');
   const [error, setError] = useState('');
@@ -59,8 +60,9 @@ function AddChannel({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError('');
     try {
-      await api('/api/youtube/channels', { body: { url, mode, playlists: picked } });
+      const ch = await api<Channel>('/api/youtube/channels', { body: { url, mode: mode === 'pick' ? 'all' : mode, pick: mode === 'pick', playlists: picked } });
       await qc.invalidateQueries({ queryKey: ['yt-channels'] });
+      if (mode === 'pick') onAdded(ch.id);
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -79,12 +81,13 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             className="input"
             value={mode}
             onChange={(e) => {
-              setMode(e.target.value as Mode);
+              setMode(e.target.value as Mode | 'pick');
               if (e.target.value === 'playlists') setListUrl(url);
             }}
           >
             <option value="new">New videos from now on</option>
             <option value="all">Every video on the channel</option>
+            <option value="pick">Let me pick from the channel's videos</option>
             <option value="playlists">Only the playlists I pick</option>
           </select>
         </Field>
@@ -99,6 +102,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             )}
           </Field>
         )}
+        {mode === 'pick' && <p className="text-sm text-muted">Every video is listed and nothing downloads on its own. Tick the ones you want, and new uploads join the list for you to pick from.</p>}
         {error && <Alert>{error}</Alert>}
         <button className="btn-primary" disabled={busy || !url.trim() || (mode === 'playlists' && !picked.length)} onClick={add}>
           {busy ? 'Reading the channel…' : 'Subscribe'}
@@ -110,36 +114,82 @@ function AddChannel({ onClose }: { onClose: () => void }) {
 
 function Videos({ channel }: { channel: Channel }) {
   const qc = useQueryClient();
-  const [status, setStatus] = useState<'all' | VideoStatus>('all');
-  const videos = useQuery({ queryKey: ['yt-videos', channel.id, status], queryFn: () => api<{ total: number; videos: Video[] }>(`/api/youtube/channels/${channel.id}/videos?status=${status}`), refetchInterval: 15_000 });
+  const [status, setStatus] = useState<'all' | VideoStatus>(channel.pick ? 'skipped' : 'all');
+  const [q, setQ] = useState('');
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [msg, setMsg] = useState('');
+  const videos = useQuery({
+    queryKey: ['yt-videos', channel.id, status, q, page],
+    queryFn: () => api<{ total: number; videos: Video[] }>(`/api/youtube/channels/${channel.id}/videos?status=${status}&page=${page}&q=${encodeURIComponent(q)}`),
+    refetchInterval: 15_000,
+  });
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['yt-videos', channel.id] }), qc.invalidateQueries({ queryKey: ['yt-channels'] })]);
   const queue = async (id: number) => {
     await api(`/api/youtube/videos/${id}/download`, { method: 'POST' });
-    await qc.invalidateQueries({ queryKey: ['yt-videos', channel.id] });
+    await refresh();
   };
+  const pickable = (v: Video) => v.status === 'skipped' || v.status === 'failed';
+  const shown = videos.data?.videos.filter(pickable) ?? [];
+  const toggle = (id: number, on: boolean) => setSelected((s) => {
+    const n = new Set(s);
+    if (on) n.add(id);
+    else n.delete(id);
+    return n;
+  });
+  const downloadSelected = async () => {
+    const r = await api<{ queued: number }>('/api/youtube/videos/download', { body: { ids: [...selected] } });
+    setSelected(new Set());
+    setMsg(`Downloading ${r.queued} video${r.queued === 1 ? '' : 's'}.`);
+    await refresh();
+  };
+  const pages = videos.data ? Math.max(1, Math.ceil(videos.data.total / 100)) : 1;
   return (
     <div className="space-y-2 border-t border-border pt-3">
-      <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label="Show">
-        <option value="all">All videos</option>
-        {Object.entries(STATUS_LABEL).map(([k, v]) => (
-          <option key={k} value={k}>
-            {v}
-          </option>
-        ))}
-      </select>
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="input w-auto" value={status} onChange={(e) => (setStatus(e.target.value as typeof status), setPage(1))} aria-label="Show">
+          <option value="all">All videos</option>
+          {Object.entries(STATUS_LABEL).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+            </option>
+          ))}
+        </select>
+        <input className="input w-48" placeholder="Search titles" value={q} onChange={(e) => (setQ(e.target.value), setPage(1))} aria-label="Search titles" />
+        {shown.length > 0 && (
+          <button className="btn-secondary" onClick={() => setSelected((s) => new Set([...s, ...shown.map((v) => v.id)]))}>
+            Select all {shown.length}
+          </button>
+        )}
+        {selected.size > 0 && (
+          <>
+            <button className="btn-primary" onClick={() => void downloadSelected()}>
+              Download {selected.size} selected
+            </button>
+            <button className="btn-secondary" onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
+          </>
+        )}
+      </div>
+      {msg && <Alert kind="success">{msg}</Alert>}
       <ul className="max-h-96 space-y-1 overflow-y-auto text-sm">
         {videos.data?.videos.map((v) => (
           <li key={v.id} className="flex items-center justify-between gap-3 rounded px-2 py-1 hover:bg-surface-2">
-            <span className="min-w-0">
-              <a className="block truncate hover:underline" href={`https://www.youtube.com/watch?v=${v.videoId}`} target="_blank" rel="noreferrer">
-                {v.title}
-              </a>
-              <span className="text-xs text-muted">
-                {v.publishedAt ? `${v.publishedAt} · ` : ''}
-                {STATUS_LABEL[v.status]}
-                {v.error && <span className="text-danger">: {v.error}</span>}
+            <label className="flex min-w-0 items-start gap-2">
+              <input type="checkbox" className="mt-1" disabled={!pickable(v)} checked={selected.has(v.id)} onChange={(e) => toggle(v.id, e.target.checked)} aria-label={`Pick ${v.title}`} />
+              <span className="min-w-0">
+                <a className="block truncate hover:underline" href={`https://www.youtube.com/watch?v=${v.videoId}`} target="_blank" rel="noreferrer">
+                  {v.title}
+                </a>
+                <span className="text-xs text-muted">
+                  {v.publishedAt ? `${v.publishedAt} · ` : ''}
+                  {STATUS_LABEL[v.status]}
+                  {v.error && <span className="text-danger">: {v.error}</span>}
+                </span>
               </span>
-            </span>
-            {(v.status === 'skipped' || v.status === 'failed') && (
+            </label>
+            {pickable(v) && (
               <button className="btn-secondary shrink-0 px-2 py-1 text-xs" onClick={() => void queue(v.id)}>
                 {v.status === 'failed' ? 'Retry' : 'Download'}
               </button>
@@ -148,14 +198,24 @@ function Videos({ channel }: { channel: Channel }) {
         ))}
         {videos.data && !videos.data.videos.length && <li className="text-muted">No videos here.</li>}
       </ul>
-      {videos.data && videos.data.total > videos.data.videos.length && <p className="text-xs text-muted">Showing the newest {videos.data.videos.length} of {videos.data.total}.</p>}
+      {pages > 1 && (
+        <div className="flex items-center gap-2 text-xs text-muted">
+          <button className="btn-secondary px-2 py-1 text-xs" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+            Newer
+          </button>
+          Page {page} of {pages} ({videos.data?.total} videos)
+          <button className="btn-secondary px-2 py-1 text-xs" disabled={page >= pages} onClick={() => setPage(page + 1)}>
+            Older
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-function ChannelCard({ c }: { c: Channel }) {
+function ChannelCard({ c, startOpen }: { c: Channel; startOpen?: boolean }) {
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(Boolean(startOpen));
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const run = async (fn: () => Promise<string | void>) => {
     setMsg(null);
@@ -177,7 +237,7 @@ function ChannelCard({ c }: { c: Channel }) {
             {c.name}
           </a>
           <div className="text-xs text-muted">
-            {MODE_LABEL[c.mode]}
+            {c.pick ? 'You pick the videos' : MODE_LABEL[c.mode]}
             {c.mode === 'playlists' && `: ${c.playlists.map((p) => p.title).join(', ')}`} · checked {formatDate(c.lastCheckedAt)}
             {!c.enabled && ' · paused'}
           </div>
@@ -195,7 +255,7 @@ function ChannelCard({ c }: { c: Channel }) {
           <button className="btn-secondary" onClick={() => run(async () => `Found ${(await api<{ added: number }>(`/api/youtube/channels/${c.id}/check`, { body: {} })).added} new video(s).`)}>
             Check now
           </button>
-          {c.mode === 'new' && (
+          {c.mode === 'new' && !c.pick && (
             <button className="btn-secondary" onClick={() => confirm(`Download every video from ${c.name}?`) && run(async () => void (await api(`/api/youtube/channels/${c.id}`, { method: 'PATCH', body: { mode: 'all' } })))}>
               Get every video
             </button>
@@ -216,6 +276,7 @@ function ChannelCard({ c }: { c: Channel }) {
 
 export function YoutubePage() {
   const [adding, setAdding] = useState(false);
+  const [justAdded, setJustAdded] = useState<number | null>(null);
   const channels = useQuery({ queryKey: ['yt-channels'], queryFn: () => api<Channel[]>('/api/youtube/channels'), refetchInterval: 30_000 });
   return (
     <div className="space-y-4">
@@ -232,10 +293,10 @@ export function YoutubePage() {
       {channels.data?.length === 0 && <div className="card text-sm text-muted">No channels yet.</div>}
       <ul className="space-y-3">
         {channels.data?.map((c) => (
-          <ChannelCard key={c.id} c={c} />
+          <ChannelCard key={c.id} c={c} startOpen={c.id === justAdded} />
         ))}
       </ul>
-      {adding && <AddChannel onClose={() => setAdding(false)} />}
+      {adding && <AddChannel onClose={() => setAdding(false)} onAdded={setJustAdded} />}
     </div>
   );
 }

@@ -27,6 +27,8 @@ export function MediaManagementSettings() {
   const maps = m.values.remotePathMappings as { remote: string; local: string }[];
   const extra = m.values.extraFolders as { id: string; name: string; kind: 'movie' | 'show'; path: string; category: string }[];
   const setExtra = (i: number, patch: Partial<(typeof extra)[number]>) => m.set('extraFolders', extra.map((f, j) => (j === i ? { ...f, ...patch } : f)));
+  const tiers = d.values.episodeSizeByRuntime as { minutes: number; gb: number }[];
+  const setTier = (i: number, patch: Partial<(typeof tiers)[number]>) => d.set('episodeSizeByRuntime', tiers.map((t, j) => (j === i ? { ...t, ...patch } : t)));
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -158,6 +160,46 @@ export function MediaManagementSettings() {
             <input className="input w-28" type="number" min={0} step={0.5} value={d.values.maxEpisodeSizeGb} onChange={(e) => d.set('maxEpisodeSizeGb', Number(e.target.value))} />
           </Field>
         </div>
+        <div className="space-y-2">
+          <span className="label">Episode size by length</span>
+          <p className="hint">
+            Longer episodes can be bigger. The first row that covers a show's episode length applies, and longer episodes use the last row. Shows with no known length use the episode limit above.
+          </p>
+          {tiers.map((t, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
+              Up to
+              <input className="input w-20" type="number" min={1} max={600} value={t.minutes} onChange={(e) => setTier(i, { minutes: Number(e.target.value) })} aria-label="Minutes" />
+              minutes:
+              <input className="input w-24" type="number" min={0.1} step={0.1} value={t.gb} onChange={(e) => setTier(i, { gb: Number(e.target.value) })} aria-label="Largest size in GB" />
+              GB
+              <button className="btn-secondary px-2 py-1 text-xs" onClick={() => d.set('episodeSizeByRuntime', tiers.filter((_, j) => j !== i))}>
+                Remove
+              </button>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            {tiers.length < 10 && (
+              <button className="btn-secondary" onClick={() => d.set('episodeSizeByRuntime', [...tiers, { minutes: (tiers[tiers.length - 1]?.minutes ?? 0) + 30, gb: (tiers[tiers.length - 1]?.gb ?? 0.5) + 0.5 }])}>
+                Add a length
+              </button>
+            )}
+            {!tiers.length && (
+              <button
+                className="btn-secondary"
+                onClick={() =>
+                  d.set('episodeSizeByRuntime', [
+                    { minutes: 30, gb: 0.8 },
+                    { minutes: 60, gb: 1.5 },
+                    { minutes: 90, gb: 2 },
+                    { minutes: 120, gb: 2.5 },
+                  ])
+                }
+              >
+                Start from 30 min 0.8 GB, 1 h 1.5 GB, 1½ h 2 GB, 2 h 2.5 GB
+              </button>
+            )}
+          </div>
+        </div>
         <p className="hint">A bigger release is only grabbed when nothing within the limit is found, and the download is marked with a warning.</p>
         <Toggle
           label="Skip CAM and telesync copies"
@@ -177,7 +219,7 @@ export function MediaManagementSettings() {
       <section className="card space-y-4">
         <h2 className="font-semibold">Trailers, YouTube and posters</h2>
         <Toggle label="Allow trailer downloads" checked={x.values.trailersEnabled} onChange={(v) => x.set('trailersEnabled', v)} hint="Trailers are saved next to each movie so Plex and Jellyfin play them as extras." />
-        <Toggle label="Download a trailer for every new movie" checked={x.values.autoDownloadTrailers} onChange={(v) => x.set('autoDownloadTrailers', v)} />
+        <Toggle label="Download trailers automatically" hint="For every movie and show Cinemask manages that has files: after a download, and hourly for any still without one." checked={x.values.autoDownloadTrailers} onChange={(v) => x.set('autoDownloadTrailers', v)} />
         <Field label="Best trailer quality">
           <select className="input" value={x.values.trailerMaxHeight} onChange={(e) => x.set('trailerMaxHeight', Number(e.target.value))}>
             <option value={720}>720p</option>

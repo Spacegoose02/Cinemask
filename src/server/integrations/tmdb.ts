@@ -166,6 +166,10 @@ export class TmdbClient {
     return this.get<{ id: number; name: string; overview: string; poster_path: string | null; parts: TmdbSearchResult[] }>(`/collection/${id}`);
   }
 
+  searchCompanies(query: string) {
+    return this.get<Paged<{ id: number; name: string }>>('/search/company', { query }, 7 * 24 * 60 * 60 * 1000);
+  }
+
   searchCollections(query: string) {
     return this.get<Paged<{ id: number; name: string; poster_path: string | null }>>('/search/collection', { query }, 24 * 60 * 60 * 1000);
   }

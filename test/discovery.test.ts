@@ -53,7 +53,13 @@ describe('discovery, lists, collections, posters and trailers', () => {
       },
       [`${TMDB}/genre/movie/list`]: () => ({ genres: [{ id: 16, name: 'Animation' }] }),
       [`${TMDB}/genre/tv/list`]: () => ({ genres: [{ id: 16, name: 'Animation' }] }),
-      [`${TMDB}/watch/providers/tv`]: () => ({ results: [] }),
+      [`${TMDB}/watch/providers/tv`]: () => ({ results: [{ provider_id: 73, provider_name: 'Tubi TV', logo_path: '/t.jpg', display_priority: 3 }] }),
+      [`${TMDB}/discover/tv`]: (url: URL) => {
+        discoverUrl = url;
+        return { page: 1, total_pages: 1, total_results: 0, results: [] };
+      },
+      [`${TMDB}/search/company`]: (url: URL) =>
+        url.searchParams.get('query') === 'Lifetime' ? { results: [{ id: 3431, name: 'Lifetime' }, { id: 99, name: 'Lifetime Fitness' }] } : { results: [] },
       [`${TMDB}/watch/providers/movie`]: () => ({ results: [{ provider_id: 8, provider_name: 'Netflix', logo_path: '/n.jpg', display_priority: 1 }] }),
       'https://api.mdblist.com/lists/someone/family-night/items': () => ({
         movies: [
@@ -121,6 +127,30 @@ describe('discovery, lists, collections, posters and trailers', () => {
     expect((await kid.req('GET', '/api/discover?language=english')).statusCode).toBe(400);
     const opts = (await kid.req('GET', '/api/discover/options?kind=tv')).json();
     expect(opts.networks.find((n: { name: string }) => n.name === 'Discovery')).toBeTruthy();
+  });
+
+  it('filters by channel, including Lifetime and Hallmark movies, and by a service’s originals', async () => {
+    // TV: a chip covers its sibling networks.
+    await kid.req('GET', '/api/discover?kind=tv&networks=34');
+    expect(discoverUrl!.searchParams.get('with_networks')).toBe('34|1072|7103');
+    // Originals: Tubi's own shows instead of everything on Tubi.
+    await kid.req('GET', '/api/discover?kind=tv&providers=73&originals=true');
+    expect(discoverUrl!.searchParams.get('with_networks')).toBe('5187');
+    expect(discoverUrl!.searchParams.get('with_watch_providers')).toBeNull();
+    // Movies: a channel matches its production companies by exact name.
+    await kid.req('GET', '/api/discover?kind=movie&networks=34');
+    expect(discoverUrl!.searchParams.get('with_companies')).toBe('3431');
+    expect(discoverUrl!.searchParams.get('with_networks')).toBeNull();
+    // Nothing matched: no results rather than every movie.
+    await kid.req('GET', '/api/discover?kind=movie&networks=7282');
+    expect(discoverUrl!.searchParams.get('with_companies')).toBe('0');
+    const tv = (await kid.req('GET', '/api/discover/options?kind=tv')).json();
+    expect(tv.networks.map((n: { name: string }) => n.name)).toEqual(expect.arrayContaining(['Lifetime', 'Hallmark', 'Tubi', 'USA Network']));
+    expect(tv.originals).toEqual([73]);
+    const movie = (await kid.req('GET', '/api/discover/options?kind=movie')).json();
+    expect(movie.networks.map((n: { name: string }) => n.name)).toContain('Hallmark');
+    expect(movie.networks.map((n: { name: string }) => n.name)).not.toContain('ABC');
+    expect(movie.originals).toEqual([8]);
   });
 
   it('an mdblist list syncs, and with auto-add starts monitoring what is missing', async () => {

@@ -1,6 +1,6 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
-import { libraryEpisodes, libraryItems, monitored, monitoredEpisodes, monitorExclusions, type MediaKind } from '../db/schema.js';
+import { libraryEpisodes, libraryItems, media, monitored, monitoredEpisodes, monitorExclusions, type MediaKind } from '../db/schema.js';
 import { bestResolution } from '../integrations/http.js';
 import { refreshMetadata, tmdbClient } from '../library/service.js';
 import type { Target } from './decision.js';
@@ -49,10 +49,12 @@ export async function refreshEpisodes(ctx: AppContext, row: MonitoredRow, resetM
   const tmdb = tmdbClient(ctx);
   const show = await tmdb.show(row.tmdbId);
   const wantedSeasons: number[] | null = row.seasons ? (JSON.parse(row.seasons) as number[]) : null;
+  const runtimes: number[] = [];
   for (const s of show.seasons) {
     if (s.season_number === 0) continue; // specials are opt-in by searching manually
     const season = await tmdb.season(row.tmdbId, s.season_number);
     for (const e of season.episodes) {
+      if (e.runtime) runtimes.push(e.runtime);
       const isMonitored = !wantedSeasons || wantedSeasons.includes(s.season_number);
       ctx.db
         .insert(monitoredEpisodes)
@@ -63,6 +65,12 @@ export async function refreshEpisodes(ctx: AppContext, row: MonitoredRow, resetM
         })
         .run();
     }
+  }
+  // TMDB often leaves a show's own episode length empty; the episodes' typical length stands in,
+  // so size limits by runtime can apply.
+  if (runtimes.length) {
+    const typical = runtimes.sort((a, b) => a - b)[Math.floor(runtimes.length / 2)]!;
+    ctx.db.update(media).set({ runtime: typical }).where(and(eq(media.kind, 'show'), eq(media.tmdbId, row.tmdbId), isNull(media.runtime))).run();
   }
 }
 
