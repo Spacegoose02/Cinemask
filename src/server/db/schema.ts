@@ -405,7 +405,7 @@ export const apiKeys = sqliteTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     prefix: text('prefix').notNull(), // first characters, shown so people can tell keys apart
-    keyHash: text('key_hash').notNull().unique(), // sha256 of the key; the key itself is never stored
+    keyHash: text('key_hash').notNull().unique(), // HMAC-SHA256 of the key with the instance key; the key itself is never stored
     access: text('access', { enum: API_KEY_ACCESS }).notNull(),
     createdAt: integer('created_at').notNull(),
     lastUsedAt: integer('last_used_at'),

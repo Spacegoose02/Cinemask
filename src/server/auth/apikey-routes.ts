@@ -26,7 +26,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
     if (!app.ctx.settings.get('auth').apiKeysEnabled) throw badRequest('An admin has turned API keys off');
     const body = parse(z.object({ name: z.string().trim().min(1).max(100), access: z.enum(API_KEY_ACCESS).default('read'), expiresDays: z.number().int().min(1).max(3650).nullable().default(null) }), req.body);
     if (db().select({ id: apiKeys.id }).from(apiKeys).where(eq(apiKeys.userId, req.user!.id)).all().length >= MAX_KEYS) throw badRequest(`You can have up to ${MAX_KEYS} keys. Delete one first.`);
-    const { key, prefix, hash } = generateApiKey();
+    const { key, prefix, hash } = generateApiKey(app.ctx.secretKey);
     const now = Date.now();
     const row = db()
       .insert(apiKeys)

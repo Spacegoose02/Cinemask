@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { Orm } from '../db/database.js';
 import { apiKeys, users, type API_KEY_ACCESS } from '../db/schema.js';
-import { randomToken, sha256 } from '../security/crypto.js';
+import { keyedHash, randomToken } from '../security/crypto.js';
 import { toSessionUser, type SessionUser } from './sessions.js';
 
 export const API_KEY_HEADER = 'x-api-key';
@@ -22,10 +22,12 @@ declare module 'fastify' {
 }
 
 /** A new key. Only its hash is stored, so this is the one time anyone sees it. */
-export function generateApiKey(): { key: string; prefix: string; hash: string } {
+export function generateApiKey(secretKey: Buffer): { key: string; prefix: string; hash: string } {
   const key = `${PREFIX}${randomToken(30)}`;
-  return { key, prefix: key.slice(0, PREFIX.length + 6), hash: sha256(key) };
+  return { key, prefix: key.slice(0, PREFIX.length + 6), hash: hashApiKey(secretKey, key) };
 }
+
+const hashApiKey = (secretKey: Buffer, key: string) => keyedHash(secretKey, 'api-key', key);
 
 /** The key from `X-Api-Key` or `Authorization: Bearer`. Query strings are never read, since they end up in logs. */
 export function apiKeyFrom(headers: Record<string, string | string[] | undefined>): string | null {
@@ -37,9 +39,9 @@ export function apiKeyFrom(headers: Record<string, string | string[] | undefined
 }
 
 /** The user behind a key, or null if it's unknown, expired, or its user is disabled. */
-export function loadApiKey(db: Orm, key: string): { user: SessionUser; apiKey: ApiKeyInfo } | null {
+export function loadApiKey(db: Orm, secretKey: Buffer, key: string): { user: SessionUser; apiKey: ApiKeyInfo } | null {
   if (!key.startsWith(PREFIX) || key.length > 100) return null;
-  const row = db.select({ k: apiKeys, u: users }).from(apiKeys).innerJoin(users, eq(users.id, apiKeys.userId)).where(eq(apiKeys.keyHash, sha256(key))).get();
+  const row = db.select({ k: apiKeys, u: users }).from(apiKeys).innerJoin(users, eq(users.id, apiKeys.userId)).where(eq(apiKeys.keyHash, hashApiKey(secretKey, key))).get();
   if (!row || row.u.disabled) return null;
   const now = Date.now();
   if (row.k.expiresAt && row.k.expiresAt < now) return null;

@@ -20,6 +20,14 @@ export function loadOrCreateSecretKey(configDir: string): Buffer {
   return key;
 }
 
+/**
+ * HMAC-SHA256 with the instance key. Used for random API keys: they're 240-bit, so a slow password
+ * hash adds nothing, and keying the hash means a copy of the database alone can't check guesses.
+ */
+export function keyedHash(key: Buffer, purpose: string, value: string): string {
+  return crypto.createHmac('sha256', key).update(`${purpose}:${value}`).digest('hex');
+}
+
 export function secretKeyPath(configDir: string): string {
   return path.join(configDir, KEY_FILE);
 }

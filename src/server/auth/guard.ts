@@ -64,7 +64,7 @@ export function registerGuard(app: FastifyInstance): void {
     if (key) {
       // A key replaces the cookie entirely, so a browser session can never be mixed in.
       if (!app.ctx.settings.get('auth').apiKeysEnabled) throw unauthorized('API keys are turned off');
-      const found = loadApiKey(app.ctx.db, key);
+      const found = loadApiKey(app.ctx.db, app.ctx.secretKey, key);
       if (!found) throw unauthorized('Invalid API key');
       if (!access || !apiKeyAllowed(req.routeOptions.url ?? '', req.routeOptions.config)) throw forbidden('API keys cannot use this endpoint');
       if (found.apiKey.access === 'read' && !SAFE_METHODS.has(req.method)) throw forbidden('This API key is read-only');

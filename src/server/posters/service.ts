@@ -45,7 +45,8 @@ export async function searchThePosterDb(title: string, year: number | null, kind
     });
     if (!res.ok) return [];
     const html = await res.text();
-    const ids = [...new Set([...html.matchAll(/https:\/\/theposterdb\.com\/api\/assets\/(\d+)/g)].map((m) => m[1]!))].slice(0, 30);
+    // Only the numeric asset ids are taken from the page; the URLs are rebuilt on theposterdb.com.
+    const ids = [...new Set([...html.matchAll(/\/api\/assets\/(\d{1,12})\b/g)].map((m) => m[1]!))].slice(0, 30);
     return ids.map((id) => ({ source: 'theposterdb', value: `https://theposterdb.com/api/assets/${id}`, preview: `https://theposterdb.com/api/assets/${id}` }));
   } catch {
     return [];
