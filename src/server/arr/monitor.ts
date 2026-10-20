@@ -4,7 +4,7 @@ import { libraryEpisodes, libraryItems, media, monitored, monitoredEpisodes, mon
 import { bestResolution } from '../integrations/http.js';
 import { refreshMetadata, tmdbClient } from '../library/service.js';
 import type { Target } from './decision.js';
-import { belowCutoff, defaultProfileId, getProfile } from './profiles.js';
+import { belowCutoff, defaultProfileId, searchProfile } from './profiles.js';
 import { qualityFor } from './quality.js';
 import { assertRoot } from './roots.js';
 
@@ -93,7 +93,7 @@ function serverQuality(ctx: AppContext, kind: MediaKind, tmdbId: number): Map<st
 
 /** What still needs downloading (missing, or upgradable) for a monitored title. Null when nothing is wanted. */
 export function wantedTarget(ctx: AppContext, row: MonitoredRow, filter?: { season?: number; episode?: number }): Target | null {
-  const profile = getProfile(ctx, row.profileId);
+  const profile = searchProfile(ctx, row.profileId);
   if (!profile || !row.monitored) return null;
   if (row.kind === 'movie') {
     const current = row.fileQuality ?? (serverQuality(ctx, 'movie', row.tmdbId) as string | null);

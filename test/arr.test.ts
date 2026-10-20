@@ -284,6 +284,16 @@ describe('request → download → import', () => {
     expect(added).toHaveLength(0);
   });
 
+  it('the upgrades switch stops replacing downloaded files, whatever the profile allows', async () => {
+    await owner.req('PUT', '/api/settings/downloading', { upgrades: false });
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, profileId: await profileId('1080p or above'), search: false })).json();
+    t.app.ctx.dbHandle.sqlite.prepare("UPDATE monitored SET file_path = '/x.mkv', file_quality = 'WEBDL-720p' WHERE id = ?").run(m.id);
+    expect((await owner.req('POST', `/api/monitored/${m.id}/search`, {})).json().grabbed).toBe(0);
+    expect(added).toHaveLength(0);
+    await owner.req('PUT', '/api/settings/downloading', { upgrades: true });
+    expect((await owner.req('POST', `/api/monitored/${m.id}/search`, {})).json().grabbed).toBe(1);
+  });
+
   it('grabs a season pack for a show and imports each episode with the naming format', async () => {
     await owner.req('PUT', '/api/settings/naming', { seasonFolder: 'Season {season}', episodeFile: '{Series Title} - S{season:00}E{episode:00} - {Episode Title}' });
     await owner.req('POST', '/api/monitored', { kind: 'show', tmdbId: 82728, search: true });

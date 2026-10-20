@@ -32,6 +32,12 @@ export function getProfile(ctx: AppContext, id: number): Profile | null {
   return r ? toProfile(r) : null;
 }
 
+/** The profile as searches use it: upgrades also need the global switch (Settings → Media management). */
+export function searchProfile(ctx: AppContext, id: number): Profile | null {
+  const p = getProfile(ctx, id);
+  return p && { ...p, upgradesAllowed: p.upgradesAllowed && ctx.settings.get('downloading').upgrades };
+}
+
 /** Would a file of this quality still be upgraded under the profile? */
 export function belowCutoff(profile: Profile, current: string | null): boolean {
   if (!current) return true;

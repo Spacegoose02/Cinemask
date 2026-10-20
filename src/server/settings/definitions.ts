@@ -204,6 +204,8 @@ export const SETTINGS = {
       defaultShowProfile: z.number().int().positive().nullable().default(null),
       /** Never grab CAM, telesync, telecine or screener copies recorded in cinemas. */
       skipCamReleases: z.boolean().default(true),
+      // Off: nothing already downloaded is replaced by a better release, whatever the profiles say.
+      upgrades: z.boolean().default(true),
       /** Largest release to grab automatically, in GB. 0 means no limit. Titles can override it. */
       maxMovieSizeGb: z.number().min(0).max(1000).default(0),
       maxEpisodeSizeGb: z.number().min(0).max(1000).default(0),

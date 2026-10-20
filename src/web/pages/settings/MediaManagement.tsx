@@ -209,6 +209,12 @@ export function MediaManagementSettings() {
         </div>
         <p className="hint">A bigger release is only grabbed when nothing within the limit is found, and the download is marked with a warning.</p>
         <Toggle
+          label="Upgrade files automatically"
+          checked={d.values.upgrades ?? true}
+          onChange={(v) => d.set('upgrades', v)}
+          hint="Replace a downloaded movie or episode when a better release turns up, as each quality profile allows. Off: once a title is downloaded it stays as it is."
+        />
+        <Toggle
           label="Skip CAM and telesync copies"
           checked={d.values.skipCamReleases}
           onChange={(v) => d.set('skipCamReleases', v)}
