@@ -4,6 +4,16 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-20
+
+### Added
+- Settings → Media management: "When only bigger releases are found" decides what happens when every release is over the size limit. Download it anyway with a warning (as before), ask first, or don't download it. With "ask first", the release waits on Downloads with "Download anyway" and "Don't download" buttons, and you're notified.
+- Downloads shows the percentage done and the time left beside each progress bar. When the client gives no estimate, it's worked out from the size and speed.
+- Manual search asks before grabbing a release that's over the size limit.
+
+### Fixed
+- Torrents and NZBs that never reached the download client. Cinemask passed the indexer's link to qBittorrent, Transmission or SABnzbd to fetch, which fails silently when the client can't reach the indexer or Prowlarr (for example behind a VPN). Cinemask now fetches the .torrent or .nzb file itself and uploads it, as Sonarr and Radarr do. Magnet links are still passed on, and a qBittorrent refusal is now shown as an error.
+
 ## [0.11.1] - 2026-10-20
 
 ### Changed

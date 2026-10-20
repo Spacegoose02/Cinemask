@@ -277,7 +277,7 @@ export const downloadClients = sqliteTable('download_clients', {
   priority: integer('priority').notNull().default(1),
 });
 
-export const DOWNLOAD_STATUSES = ['queued', 'downloading', 'paused', 'completed', 'importing', 'imported', 'failed', 'removed'] as const;
+export const DOWNLOAD_STATUSES = ['held', 'queued', 'downloading', 'paused', 'completed', 'importing', 'imported', 'failed', 'removed'] as const;
 export type DownloadStatus = (typeof DOWNLOAD_STATUSES)[number];
 
 export const downloads = sqliteTable(
@@ -309,6 +309,8 @@ export const downloads = sqliteTable(
     warning: text('warning'),
     /** For links: where the finished download goes, as a destination key (see arr/roots.ts), with an optional name. JSON. */
     destination: text('destination'),
+    /** A release over the size limit waiting for someone to confirm it (status "held"): the release, sealed, since its link can carry an indexer key. */
+    heldRelease: text('held_release'),
   },
   (t) => [index('downloads_status_idx').on(t.status)],
 );

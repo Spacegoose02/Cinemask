@@ -16,7 +16,7 @@ import { excludeFromAutoMonitor, monitorTitle, refreshEpisodes, upgradeCandidate
 import { defaultProfileId, getProfile, listProfiles } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
-import { autoSearch, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
+import { autoSearch, confirmHeld, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats } from './tracker.js';
 import { assertRoot, linkDestinations, listRoots } from './roots.js';
@@ -332,7 +332,7 @@ export async function arrRoutes(app: FastifyInstance) {
   // ---------------- Downloads ----------------
   app.get('/api/downloads', { config: { access: 'manager' } }, async (req) => {
     const q = parse(z.object({ history: z.coerce.boolean().default(false) }), req.query);
-    const active = ['queued', 'downloading', 'paused', 'completed', 'importing'] as const;
+    const active = ['held', 'queued', 'downloading', 'paused', 'completed', 'importing'] as const;
     return db()
       .select()
       .from(downloads)
@@ -340,7 +340,7 @@ export async function arrRoutes(app: FastifyInstance) {
       .orderBy(desc(downloads.addedAt))
       .limit(300)
       .all()
-      .map((d) => ({ ...d, sourceUrl: undefined, speed: liveStats.get(d.id)?.speed ?? null, eta: liveStats.get(d.id)?.eta ?? null }));
+      .map((d) => ({ ...d, sourceUrl: undefined, heldRelease: undefined, speed: liveStats.get(d.id)?.speed ?? null, eta: liveStats.get(d.id)?.eta ?? null }));
   });
 
   app.get('/api/downloads/count', { config: { access: 'manager' } }, async () => ({
@@ -364,6 +364,21 @@ export async function arrRoutes(app: FastifyInstance) {
     db().update(downloads).set({ status: 'removed' }).where(eq(downloads.id, id)).run();
     audit(db(), req, 'download.removed', { target: d.title, details: q });
     return { ok: true };
+  });
+
+  // A download held back for being over the size limit, sent on once a manager says so.
+  app.post('/api/downloads/:id/confirm', { config: { access: 'manager' } }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const d = db().select().from(downloads).where(eq(downloads.id, id)).get();
+    if (!d) throw notFound();
+    if (d.status !== 'held') throw badRequest('That download is no longer waiting');
+    try {
+      const downloadId = await confirmHeld(ctx, id, req.user!.id);
+      audit(db(), req, 'download.confirmed', { target: d.title, details: { size: d.size, warning: d.warning } });
+      return { downloadId };
+    } catch (err) {
+      throw new HttpError(502, (err as Error).message, 'upstream');
+    }
   });
 
   // A free-text search of every indexer (Prowlarr included), for grabbing something that isn't a monitored title.

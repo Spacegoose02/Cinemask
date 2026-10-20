@@ -160,6 +160,13 @@ export function MediaManagementSettings() {
             <input className="input w-28" type="number" min={0} step={0.5} value={d.values.maxEpisodeSizeGb} onChange={(e) => d.set('maxEpisodeSizeGb', Number(e.target.value))} />
           </Field>
         </div>
+        <Field label="When only bigger releases are found" hint="Smaller releases are always picked first. This decides what happens when every release is over the limit.">
+          <select className="input sm:w-auto" value={d.values.oversize ?? 'warn'} onChange={(e) => d.set('oversize', e.target.value)}>
+            <option value="warn">Download it anyway, with a warning</option>
+            <option value="ask">Ask me first (it waits on Downloads until you confirm)</option>
+            <option value="skip">Don't download it</option>
+          </select>
+        </Field>
         <div className="space-y-2">
           <span className="label">Episode size by length</span>
           <p className="hint">

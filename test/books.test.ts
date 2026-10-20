@@ -5,7 +5,7 @@ import type { Release } from '../src/server/arr/indexers.js';
 import { trackDownloads } from '../src/server/arr/tracker.js';
 import { namesBook, pollReadMeABook, pollShelfmark, rankReleases, type BookRow } from '../src/server/books/service.js';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
-import { fakeFetch } from './fakes.js';
+import { bodyText, fakeFetch, torrentFile } from './fakes.js';
 
 const OL = 'https://openlibrary.org';
 const ABS = 'http://abs.local:13378';
@@ -150,9 +150,10 @@ describe('books, audiobooks and podcasts', () => {
             { title: 'The Hobbit 2012 1080p BluRay', size: 9000 * MB },
           ]),
         ),
+      [`${INDEXER}/dl/`]: torrentFile,
       [`${QBIT}/api/v2/auth/login`]: () => new Response('Ok.', { headers: { 'set-cookie': 'SID=abc; path=/' } }),
       [`${QBIT}/api/v2/torrents/add`]: (_u: URL, init?: RequestInit) => {
-        added.push(String(init?.body));
+        added.push(bodyText(init?.body));
         return new Response('Ok.');
       },
       [`${QBIT}/api/v2/torrents/info`]: () => qbitTorrents,

@@ -208,6 +208,11 @@ export const SETTINGS = {
       maxMovieSizeGb: z.number().min(0).max(1000).default(0),
       maxEpisodeSizeGb: z.number().min(0).max(1000).default(0),
       /**
+       * When only releases over the size limit are found: grab one anyway with a warning, hold it
+       * until a manager confirms it on Downloads, or grab nothing.
+       */
+      oversize: z.enum(['warn', 'ask', 'skip']).default('warn'),
+      /**
        * Episode limits by runtime, such as 0.8 GB up to 30 minutes and 1.5 GB up to 60. The first
        * row whose minutes cover the episode applies; longer episodes use the last row. Used when the
        * show's runtime is known, ahead of maxEpisodeSizeGb. Empty means only maxEpisodeSizeGb.
