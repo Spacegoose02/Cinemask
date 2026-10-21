@@ -9,6 +9,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Changed
 - Title pages have one "Watch trailer" button for everyone. It plays the trailer file on the server when there is one, and the YouTube trailer otherwise. The separate "Trailer on YouTube" and numbered trailer buttons are gone.
 
+### Added
+- Downloads → Search indexers: sort the results by release date (newest or oldest first), seeders or size. The choice is remembered.
+
 ## [0.15.1] - 2026-10-21
 
 ### Fixed
