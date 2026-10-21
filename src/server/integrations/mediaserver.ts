@@ -15,6 +15,8 @@ export interface ServerItem {
   lastViewedAt?: number | null;
   /** Plex labels or Jellyfin tags. */
   labels?: string[];
+  /** The library (Plex section) the item is in. */
+  library?: string | null;
   episodes?: { season: number; episode: number; title: string | null; resolution: string | null; viewCount?: number | null; lastViewedAt?: number | null }[];
 }
 

@@ -9,7 +9,7 @@ import { renderName } from './naming.js';
 import { parseRelease, VIDEO_EXTENSIONS } from './parser.js';
 import { insideRoot } from '../lib/paths.js';
 import { qualityRank } from './quality.js';
-import { rootOf } from './roots.js';
+import { listRoots, rootOf } from './roots.js';
 
 const SAMPLE_MAX = 80 * 1024 * 1024;
 
@@ -22,6 +22,33 @@ export function mapRemotePath(ctx: AppContext, remote: string): string {
     if (norm === from || norm.startsWith(`${from}/`)) return path.join(m.local, norm.slice(from.length));
   }
   return norm;
+}
+
+/**
+ * Where a finished download is on this side. When the client's path doesn't exist here (its
+ * folders are mounted elsewhere and no mapping covers them), the same file or folder name is looked
+ * for in the downloads folder (and its category folders), the watch folder and the library folders.
+ */
+export function locateDownload(ctx: AppContext, remote: string): string {
+  const mapped = mapRemotePath(ctx, remote);
+  if (fs.existsSync(mapped)) return mapped;
+  const name = path.basename(remote.replace(/\\/g, '/'));
+  if (!name || name === '.' || name === '..') return mapped;
+  const media = ctx.settings.get('media');
+  const look = (dir: string | null | undefined, depth: number, filesOnly = false): string | null => {
+    if (!dir || !fs.existsSync(dir)) return null;
+    const here = path.join(dir, name);
+    if (fs.existsSync(here) && !fs.lstatSync(here).isSymbolicLink() && (!filesOnly || fs.statSync(here).isFile())) return here;
+    if (depth <= 0) return null;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!e.isDirectory() || e.name.startsWith('.')) continue;
+      const found = look(path.join(dir, e.name), depth - 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  return look(media.downloadsPath, 2) ?? look(media.watchFolder, 0) ?? // In a library folder only a loose file counts: a folder there may be a title's own folder.
+    listRoots(ctx).reduce<string | null>((hit, r) => hit ?? look(r.path, 0, true), null) ?? mapped;
 }
 
 /** Video files in a download, skipping samples and extras. */
@@ -46,6 +73,7 @@ export function findVideos(p: string): string[] {
 
 /** Places a file at dest using the configured import mode. Hardlinks fall back to copying across disks. */
 export function placeFile(src: string, dest: string, mode: 'hardlink' | 'copy' | 'move') {
+  if (path.resolve(src) === path.resolve(dest)) return; // already in place; removing dest would lose it
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   if (fs.existsSync(dest)) fs.rmSync(dest);
   if (mode === 'move') {
@@ -92,8 +120,13 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
   if (!row) throw new Error('The movie or show was removed');
   const mediaSettings = ctx.settings.get('media');
   const naming = ctx.settings.get('naming');
-  const files = findVideos(mapRemotePath(ctx, sourcePath));
-  if (!files.length) throw new Error(`No video files found at ${sourcePath}. If the download client sees its folders at different paths, add a remote path mapping in Settings → Media management.`);
+  const files = findVideos(locateDownload(ctx, sourcePath));
+  if (!files.length) {
+    const clientDir = path.posix.dirname(sourcePath.replace(/\\/g, '/'));
+    throw new Error(
+      `No video files found at ${sourcePath}, and nothing by that name in the downloads, watch or library folders. If the download client sees its folders at different paths, add a remote path mapping in Settings → Media management from ${clientDir} to the same folder as Cinemask sees it.`,
+    );
+  }
   const result: ImportResult = { imported: [], skipped: [] };
 
   if (row.kind === 'movie') {

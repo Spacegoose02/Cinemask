@@ -13,7 +13,7 @@ import { badRequest, HttpError, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { withAvailability } from '../lists/routes.js';
 import { postersDir } from '../posters/service.js';
-import { clearPlexLabel, downloadMissing, importServerCollections, itemsOf, libraryLabels, jellyfinClient, plexClient, pushCollection, refreshCollectionItems, setItems } from './service.js';
+import { clearPlexLabel, downloadMissing, importServerCollections, itemsOf, libraryLabels, jellyfinClient, plexClient, plexLibraries, pushCollection, refreshCollectionItems, setItems } from './service.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const itemRef = z.object({ kind: z.enum(MEDIA_KINDS), tmdbId: z.coerce.number().int().positive() });
@@ -26,6 +26,8 @@ export const posterValue = z
   .refine((v) => /^\/[\w-]+\.(jpe?g|png|webp)$/i.test(v) || v.startsWith('https://'), 'Use a TMDB image or an https link');
 
 const labelValue = z.string().trim().min(1).max(100);
+/** The Plex library a collection lives in; null keeps it in every library that has its titles. */
+const libraryValue = z.string().trim().min(1).max(200).nullable();
 
 export async function checkPosterUrl(value: string | null | undefined) {
   if (value?.startsWith('https://')) {
@@ -73,6 +75,11 @@ export async function collectionRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/library/labels', { config: { access: 'manager' } }, async () => ({ labels: libraryLabels(ctx) }));
+  app.get('/api/library/plex-libraries', { config: { access: 'manager' } }, async () => ({ libraries: plexLibraries(ctx) }));
+
+  const checkLibrary = (library: string | null | undefined) => {
+    if (library && !plexLibraries(ctx).includes(library)) throw badRequest(`There is no Plex library called "${library}"`);
+  };
 
   app.get('/api/collections/:id', { config: { access: 'user' } }, async (req) => {
     const { id } = parse(idParam, req.params);
@@ -93,6 +100,7 @@ export async function collectionRoutes(app: FastifyInstance) {
         plexLabel: labelValue.nullable().default(null),
         /** Fill the collection from everything carrying this Plex label or Jellyfin tag. */
         fromLabel: labelValue.nullable().default(null),
+        library: libraryValue.default(null),
         /** Sync to whichever of Plex and Jellyfin are connected, and push straight away. */
         toServers: z.boolean().default(false),
         items: z.array(itemRef).max(500).default([]),
@@ -116,6 +124,7 @@ export async function collectionRoutes(app: FastifyInstance) {
       }
     }
     await checkPosterUrl(body.poster);
+    checkLibrary(body.library);
     if (body.source !== 'manual' && !body.sourceId) throw badRequest('Pick a TMDB collection or list');
     if (body.source === 'list' && !ctx.db.select().from(lists).where(eq(lists.id, body.sourceId!)).get()) throw badRequest('Unknown list');
     const { items, sourceId, toServers, ...values } = body;
@@ -156,14 +165,18 @@ export async function collectionRoutes(app: FastifyInstance) {
         syncJellyfin: z.boolean(),
         plexLabel: labelValue.nullable(),
         fromLabel: labelValue.nullable(),
+        library: libraryValue,
       }).partial(),
       req.body,
     );
     await checkPosterUrl(body.poster);
+    checkLibrary(body.library);
     const before = getCol(id);
     if (body.fromLabel && before.source !== 'manual') throw badRequest('Only a hand-made collection can follow a label');
-    ctx.db.update(collections).set(body).where(eq(collections.id, id)).run();
-    if (body.fromLabel && body.fromLabel !== before.fromLabel) await refreshCollectionItems(ctx, id);
+    // Moved to another library: the next push finds or makes the collection there.
+    const moved = body.library !== undefined && body.library !== before.library;
+    ctx.db.update(collections).set({ ...body, ...(moved ? { plexKey: null } : {}) }).where(eq(collections.id, id)).run();
+    if ((body.fromLabel && body.fromLabel !== before.fromLabel) || (moved && before.fromLabel)) await refreshCollectionItems(ctx, id);
     if (before.plexLabel && body.plexLabel !== undefined && body.plexLabel !== before.plexLabel) await clearPlexLabel(ctx, before.plexLabel).catch(() => undefined);
     audit(ctx.db, req, 'collection.updated', { target: before.name, details: body });
     return getCol(id);

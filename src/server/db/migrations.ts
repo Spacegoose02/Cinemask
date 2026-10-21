@@ -461,6 +461,13 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE monitored_episodes ADD COLUMN episode_type TEXT;
     `,
   },
+  {
+    id: 15,
+    name: 'library item section',
+    sql: `
+      ALTER TABLE library_items ADD COLUMN library TEXT;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

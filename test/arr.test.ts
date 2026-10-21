@@ -6,7 +6,8 @@ import { decide } from '../src/server/arr/decision.js';
 import { assertSafeUrl, isPrivateAddress } from '../src/server/arr/direct.js';
 import { parseFeed, type Release } from '../src/server/arr/indexers.js';
 import { trackDownloads } from '../src/server/arr/tracker.js';
-import { scanWatchFolder } from '../src/server/arr/watch.js';
+import { importDownload } from '../src/server/arr/importer.js';
+import { forgetWatchFailures, scanWatchFolder } from '../src/server/arr/watch.js';
 import { rssSync } from '../src/server/arr/rss.js';
 import { maxSizeFor } from '../src/server/arr/search.js';
 import { ensureMedia } from '../src/server/library/service.js';
@@ -322,6 +323,17 @@ describe('request → download → import', () => {
     // An unmatched drop isn't retried until it changes.
     expect(await scanWatchFolder(t.app.ctx)).toBe(0);
     expect((await owner.req('GET', '/api/downloads?history=true')).json()).toHaveLength(history.length);
+    // Nor after a restart, which forgets what failed.
+    forgetWatchFailures();
+    expect(await scanWatchFolder(t.app.ctx)).toBe(0);
+    expect((await owner.req('GET', '/api/downloads?history=true')).json()).toHaveLength(history.length);
+
+    // A second copy of something already in the library says so, and is left for Downloads → Import.
+    drop('Paddington.2014.1080p.BluRay.mkv');
+    expect(await scanWatchFolder(t.app.ctx)).toBe(0);
+    const dup = (await owner.req('GET', '/api/downloads?history=true')).json().find((d: { title: string }) => d.title === 'Paddington.2014.1080p.BluRay.mkv');
+    expect(dup.error).toMatch(/already in the library/);
+    expect(fs.existsSync(path.join(watch, 'Paddington.2014.1080p.BluRay.mkv'))).toBe(true);
   });
 
   it('imports a file by hand as a movie or an episode, only from the downloads or watch folder', async () => {
@@ -359,6 +371,21 @@ describe('request → download → import', () => {
     const [d] = (await owner.req('GET', '/api/downloads?history=true')).json();
     expect(d.status).toBe('failed');
     expect(d.error).toMatch(/Downloads → Import/);
+  });
+
+  it('finds a finished download by name when the client reports a folder Cinemask can\'t see', async () => {
+    await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: true });
+    await vi.waitFor(() => expect(added).toHaveLength(1));
+    // qBittorrent saved it under its own /data/Movies; here it is in the downloads folder's movies category.
+    fs.mkdirSync(path.join(dl, 'movies'), { recursive: true });
+    fs.writeFileSync(path.join(dl, 'movies', 'Paddington.2014.1080p.BluRay.x264-SPARKS.mkv'), 'movie');
+    qbitTorrents = [{ hash: 'h1', name: 'Paddington', progress: 1, state: 'uploading', size: 5, content_path: '/data/Movies/Paddington.2014.1080p.BluRay.x264-SPARKS.mkv', save_path: '/data/Movies', tags: 'mm-1' }];
+    await trackDownloads(t.app.ctx);
+    expect((await owner.req('GET', '/api/downloads?history=true')).json()[0].status).toBe('imported');
+    expect(fs.readdirSync(path.join(media, 'movies', 'Paddington (2014)'))).toHaveLength(1);
+
+    // Nowhere to be found: the message says which client folder to map.
+    expect(() => importDownload(t.app.ctx, 1, '/data/Movies/Gone.mkv')).toThrow(/mapping in Settings → Media management from \/data\/Movies/);
   });
 
   it('clears history, deletes files from the import list, and finds and deletes duplicate copies', async () => {

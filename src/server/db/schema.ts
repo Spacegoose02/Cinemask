@@ -124,6 +124,8 @@ export const libraryItems = sqliteTable(
     lastViewedAt: integer('last_viewed_at'),
     /** Plex labels or Jellyfin tags. JSON string[]. */
     labels: text('labels'),
+    /** The Plex library section the item is in ("Movies", "Kids Movies"); null for Jellyfin. */
+    library: text('library'),
   },
   (t) => [uniqueIndex('library_server_key').on(t.server, t.externalKey), index('library_items_media_idx').on(t.mediaId)],
 );

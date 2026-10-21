@@ -45,7 +45,7 @@ function Cover({ c }: { c: Collection }) {
   );
 }
 
-function NewCollection({ onClose }: { onClose: () => void }) {
+function NewCollection({ onClose, library: shownLibrary }: { onClose: () => void; library: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [source, setSource] = useState<'manual' | 'tmdb' | 'list' | 'label'>('manual');
@@ -57,6 +57,8 @@ function NewCollection({ onClose }: { onClose: () => void }) {
   const [listId, setListId] = useState<number | null>(null);
   const [syncPlex, setSyncPlex] = useState(true);
   const [syncJellyfin, setSyncJellyfin] = useState(false);
+  // A collection made while looking at one library belongs to it.
+  const [library, setLibrary] = useState(shownLibrary === 'all' ? '' : shownLibrary);
   const [error, setError] = useState<string | null>(null);
   const results = useQuery({ queryKey: ['tmdb-collections', q], queryFn: () => api<{ id: number; name: string; posterPath: string | null }[]>(`/api/collections/search-tmdb?q=${encodeURIComponent(q)}`), enabled: source === 'tmdb' && q.trim().length > 1 });
   const lists = useQuery({ queryKey: ['lists'], queryFn: () => api<ListRow[]>('/api/lists'), enabled: source === 'list' });
@@ -65,7 +67,7 @@ function NewCollection({ onClose }: { onClose: () => void }) {
     try {
       const sourceId = source === 'tmdb' ? tmdb?.id : source === 'list' ? listId : undefined;
       const c = await api<Collection>('/api/collections', {
-        body: { name: name || tmdb?.name || fromLabel, source: source === 'label' ? 'manual' : source, sourceId, syncPlex, syncJellyfin, fromLabel: source === 'label' ? fromLabel : null, plexLabel: plexLabel.trim() || null },
+        body: { name: name || tmdb?.name || fromLabel, source: source === 'label' ? 'manual' : source, sourceId, syncPlex, syncJellyfin, fromLabel: source === 'label' ? fromLabel : null, plexLabel: plexLabel.trim() || null, library: library || null },
       });
       await qc.invalidateQueries({ queryKey: ['collections'] });
       navigate(`/collections/${c.id}`);
@@ -120,6 +122,7 @@ function NewCollection({ onClose }: { onClose: () => void }) {
         </Field>
         <Toggle label="Keep a matching collection on Plex" checked={syncPlex} onChange={setSyncPlex} />
         <Toggle label="Keep a matching collection on Jellyfin" checked={syncJellyfin} onChange={setSyncJellyfin} />
+        {syncPlex && <PlexLibraryField value={library} onChange={setLibrary} />}
         {syncPlex && (
           <Field label="Also label the items on Plex (optional)" hint="Plex smart collections and sharing restrictions can filter on labels. Pick a label only this collection uses: Cinemask takes it off anything not in the collection.">
             <input className="input" list="library-labels" value={plexLabel} onChange={(e) => setPlexLabel(e.target.value)} placeholder="Movie night" />
@@ -220,13 +223,31 @@ export function CollectionsPage() {
           </Link>
         ))}
       </div>
-      {creating && <NewCollection onClose={() => setCreating(false)} />}
+      {creating && <NewCollection library={library} onClose={() => setCreating(false)} />}
     </div>
   );
 }
 
 function useLabels() {
   return useQuery({ queryKey: ['library-labels'], queryFn: () => api<{ labels: string[] }>('/api/library/labels') });
+}
+
+/** Which Plex library the collection lives in; empty puts it in every library that has its titles. */
+function PlexLibraryField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const libs = useQuery({ queryKey: ['plex-libraries'], queryFn: () => api<{ libraries: string[] }>('/api/library/plex-libraries') });
+  const options = libs.data?.libraries ?? [];
+  return (
+    <Field label="Plex library" hint="Only titles in this library join the collection on Plex, so Kids Movies and Movies keep their own collections.">
+      <select className="input" value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Every library that has the titles</option>
+        {[...new Set([...options, ...(value ? [value] : [])])].map((l) => (
+          <option key={l} value={l}>
+            {l}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
 }
 
 function LabelOptions({ labels }: { labels?: string[] }) {
@@ -242,12 +263,12 @@ function LabelOptions({ labels }: { labels?: string[] }) {
 function EditCollection({ c, onClose }: { c: Collection; onClose: () => void }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [v, setV] = useState({ name: c.name, description: c.description ?? '', poster: c.poster?.startsWith('/') || c.poster?.startsWith('https://') ? c.poster : '', syncPlex: c.syncPlex, syncJellyfin: c.syncJellyfin, plexLabel: c.plexLabel ?? '', fromLabel: c.fromLabel ?? '' });
+  const [v, setV] = useState({ name: c.name, description: c.description ?? '', poster: c.poster?.startsWith('/') || c.poster?.startsWith('https://') ? c.poster : '', syncPlex: c.syncPlex, syncJellyfin: c.syncJellyfin, plexLabel: c.plexLabel ?? '', fromLabel: c.fromLabel ?? '', library: c.library ?? '' });
   const labels = useLabels();
   const [error, setError] = useState<string | null>(null);
   const save = async () => {
     try {
-      await api(`/api/collections/${c.id}`, { method: 'PUT', body: { ...v, plexLabel: v.plexLabel.trim() || null, fromLabel: c.source === 'manual' ? v.fromLabel.trim() || null : undefined, description: v.description || null, poster: v.poster || (c.poster && /^(plex|jellyfin):/.test(c.poster) ? undefined : null) } });
+      await api(`/api/collections/${c.id}`, { method: 'PUT', body: { ...v, library: v.library || null, plexLabel: v.plexLabel.trim() || null, fromLabel: c.source === 'manual' ? v.fromLabel.trim() || null : undefined, description: v.description || null, poster: v.poster || (c.poster && /^(plex|jellyfin):/.test(c.poster) ? undefined : null) } });
       await qc.invalidateQueries({ queryKey: ['collection', String(c.id)] });
       onClose();
     } catch (e) {
@@ -274,6 +295,7 @@ function EditCollection({ c, onClose }: { c: Collection; onClose: () => void }) 
         </Field>
         <Toggle label="Sync to Plex" checked={v.syncPlex} onChange={(syncPlex) => setV({ ...v, syncPlex })} />
         <Toggle label="Sync to Jellyfin" checked={v.syncJellyfin} onChange={(syncJellyfin) => setV({ ...v, syncJellyfin })} />
+        {v.syncPlex && <PlexLibraryField value={v.library} onChange={(library) => setV({ ...v, library })} />}
         {v.syncPlex && (
           <Field label="Label the items on Plex" hint="Leave empty for no label. Pick a label only this collection uses: Cinemask takes it off anything not in the collection.">
             <input className="input" list="library-labels" value={v.plexLabel} onChange={(e) => setV({ ...v, plexLabel: e.target.value })} />

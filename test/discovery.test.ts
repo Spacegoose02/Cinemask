@@ -190,6 +190,36 @@ describe('discovery, lists, collections, posters and trailers', () => {
     expect((await kid.req('POST', `/api/collections/${c.id}/push`)).statusCode).toBe(403);
   });
 
+  it('keeps a library\'s collection to that library on Plex', async () => {
+    // Paddington is in Kids Movies too, as its own Plex item.
+    t.app.ctx.dbHandle.sqlite.prepare("INSERT INTO library_items (server, external_key, kind, title, year, tmdb_id, library) VALUES ('plex', '40', 'movie', 'Paddington', 2014, 116149, 'Kids Movies')").run();
+    const prev = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: string | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/library/metadata/40') return new Response(JSON.stringify({ MediaContainer: { Metadata: [{ librarySectionID: 4 }] } }));
+      if (url.pathname === '/library/sections/4/all' && init?.method === 'PUT') {
+        plexWrites.push(`${url.searchParams.get('id')} +${url.searchParams.get('collection[0].tag.tag')}`);
+        return new Response('');
+      }
+      return prev(input, init);
+    });
+    expect((await owner.req('GET', '/api/library/plex-libraries')).json()).toEqual({ libraries: ['Kids Movies', 'Movies', 'TV Shows'] });
+    expect((await kid.req('GET', '/api/library/plex-libraries')).statusCode).toBe(403);
+    expect((await owner.req('POST', '/api/collections', { name: 'X', library: 'Nope', syncPlex: true })).statusCode).toBe(400);
+
+    const kids = (await owner.req('POST', '/api/collections', { name: 'Kids Bears', library: 'Kids Movies', syncPlex: true, items: [{ kind: 'movie', tmdbId: 116149 }] })).json();
+    plexWrites.length = 0;
+    expect((await owner.req('POST', `/api/collections/${kids.id}/push`)).json().plex).toEqual({ added: 1, removed: 0, notOnServer: 0 });
+    expect(plexWrites).toEqual(['40 +Kids Bears']); // not the copy in Movies
+
+    // Moved to Movies: only that library's copy is tagged.
+    await owner.req('PUT', `/api/collections/${kids.id}`, { library: 'Movies' });
+    plexWrites.length = 0;
+    await owner.req('POST', `/api/collections/${kids.id}/push`);
+    expect(plexWrites[0]).toBe('10 +Kids Bears');
+    expect(plexWrites.some((w) => w.startsWith('40 '))).toBe(false);
+  });
+
   it('fills a collection from a Plex label and labels a collection\'s items on Plex', async () => {
     expect((await owner.req('GET', '/api/library/labels')).json()).toEqual({ labels: ['Kids'] });
     expect((await kid.req('GET', '/api/library/labels')).statusCode).toBe(403);

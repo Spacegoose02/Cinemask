@@ -48,17 +48,37 @@ export function setItems(ctx: AppContext, id: number, items: ListItem[]) {
   });
 }
 
-/** Server keys (Plex ratingKey / Jellyfin Id) for collection items that are on that server. */
-function serverKeys(ctx: AppContext, server: ServerType, items: ListItem[]): Map<string, MediaKind> {
+/**
+ * Server keys (Plex ratingKey / Jellyfin Id) for collection items that are on that server. A Plex
+ * collection tied to one library only takes that library's copies: a Kids Movies collection must
+ * not tag the same film in Movies, or Plex grows a second collection there.
+ */
+function serverKeys(ctx: AppContext, server: ServerType, items: ListItem[], library: string | null = null): Map<string, MediaKind> {
   const out = new Map<string, MediaKind>();
+  const only = server === 'plex' ? library : null;
   for (const kind of ['movie', 'show'] as const) {
     const ids = items.filter((i) => i.kind === kind).map((i) => i.tmdbId);
     if (!ids.length) continue;
-    for (const r of ctx.db.select({ key: libraryItems.externalKey }).from(libraryItems).where(and(eq(libraryItems.server, server), eq(libraryItems.kind, kind), inArray(libraryItems.tmdbId, ids))).all()) {
+    for (const r of ctx.db
+      .select({ key: libraryItems.externalKey })
+      .from(libraryItems)
+      .where(and(eq(libraryItems.server, server), eq(libraryItems.kind, kind), inArray(libraryItems.tmdbId, ids), only ? eq(libraryItems.library, only) : undefined))
+      .all()) {
       out.set(r.key, kind);
     }
   }
   return out;
+}
+
+/** The Plex libraries seen in the last library sync, for the collection library picker. */
+export function plexLibraries(ctx: AppContext): string[] {
+  return ctx.db
+    .selectDistinct({ library: libraryItems.library })
+    .from(libraryItems)
+    .where(and(eq(libraryItems.server, 'plex'), isNotNull(libraryItems.library)))
+    .all()
+    .map((r) => r.library!)
+    .sort((a, b) => a.localeCompare(b));
 }
 
 export interface PushResult {
@@ -83,8 +103,11 @@ export async function pushCollection(ctx: AppContext, id: number): Promise<{ ple
     try {
       const plex = plexClient(ctx);
       if (!plex) throw new Error('Plex is not connected');
-      const wanted = serverKeys(ctx, 'plex', items);
-      const existing = (await plex.collections()).find((c) => (col.plexKey ? c.ratingKey === col.plexKey : c.title === col.name));
+      // Until a library sync records which library each item is in, a library's collection can't be matched up.
+      if (col.library && !plexLibraries(ctx).length) throw new Error('Waiting for the next library sync to learn which Plex library each title is in');
+      const wanted = serverKeys(ctx, 'plex', items, col.library);
+      const sameLibrary = (c: { sectionTitle?: string }) => !col.library || c.sectionTitle === col.library;
+      const existing = (await plex.collections()).find((c) => (col.plexKey ? c.ratingKey === col.plexKey : c.title === col.name && sameLibrary(c)));
       const current = existing ? new Set(await plex.collectionChildren(existing.ratingKey)) : new Set<string>();
       // Plex collections are tags: tag under the collection's current name on the server.
       const tagName = existing?.title ?? col.name;
@@ -100,8 +123,8 @@ export async function pushCollection(ctx: AppContext, id: number): Promise<{ ple
         await plex.setCollectionTag(await plex.sectionOf(key), kind, key, tagName, true);
         r.removed++;
       }
-      if (col.plexLabel) await syncPlexLabel(ctx, plex, col.plexLabel, wanted);
-      const after = (await plex.collections()).find((c) => (existing ? c.ratingKey === existing.ratingKey : c.title === col.name));
+      if (col.plexLabel) await syncPlexLabel(ctx, plex, col.plexLabel, wanted, col.library);
+      const after = (await plex.collections()).find((c) => (existing ? c.ratingKey === existing.ratingKey : c.title === col.name && sameLibrary(c)));
       if (after) {
         if (after.title !== col.name) await plex.renameCollection(after.section, after.ratingKey, col.name);
         if (poster) await plex.setPosterUrl(after.ratingKey, poster);
@@ -150,19 +173,20 @@ export async function pushCollection(ctx: AppContext, id: number): Promise<{ ple
 }
 
 /** Libraries' labels as last synced, by server item key. */
-function labelled(ctx: AppContext, server: ServerType, label: string) {
+function labelled(ctx: AppContext, server: ServerType, label: string, library: string | null = null) {
   const want = label.toLowerCase();
+  const only = server === 'plex' ? library : null;
   return ctx.db
     .select({ key: libraryItems.externalKey, kind: libraryItems.kind, tmdbId: libraryItems.tmdbId, title: libraryItems.title, year: libraryItems.year, labels: libraryItems.labels })
     .from(libraryItems)
-    .where(and(eq(libraryItems.server, server), isNotNull(libraryItems.labels)))
+    .where(and(eq(libraryItems.server, server), isNotNull(libraryItems.labels), only ? eq(libraryItems.library, only) : undefined))
     .all()
     .filter((r) => (JSON.parse(r.labels!) as string[]).some((l) => l.toLowerCase() === want));
 }
 
 /** Puts a Plex label on every item of the collection and takes it off items that left it. */
-async function syncPlexLabel(ctx: AppContext, plex: NonNullable<ReturnType<typeof plexClient>>, label: string, wanted: Map<string, MediaKind>) {
-  const has = new Map(labelled(ctx, 'plex', label).map((r) => [r.key, r.kind]));
+async function syncPlexLabel(ctx: AppContext, plex: NonNullable<ReturnType<typeof plexClient>>, label: string, wanted: Map<string, MediaKind>, library: string | null = null) {
+  const has = new Map(labelled(ctx, 'plex', label, library).map((r) => [r.key, r.kind]));
   for (const [key, kind] of wanted) if (!has.has(key)) await plex.setLabel(await plex.sectionOf(key), kind, key, label);
   for (const [key, kind] of has) if (!wanted.has(key)) await plex.setLabel(await plex.sectionOf(key), kind, key, label, true);
 }
@@ -230,7 +254,7 @@ export async function refreshCollectionItems(ctx: AppContext, id: number): Promi
     // Everything carrying the label on either server, once per title.
     const found = new Map<string, ListItem>();
     for (const server of SERVERS) {
-      for (const r of labelled(ctx, server, col.fromLabel)) {
+      for (const r of labelled(ctx, server, col.fromLabel, col.library)) {
         if (r.tmdbId) found.set(`${r.kind}:${r.tmdbId}`, { kind: r.kind, tmdbId: r.tmdbId, title: r.title, year: r.year, posterPath: null });
       }
     }
