@@ -30,6 +30,7 @@ Already done in 0.9 (no work needed): delete episodes, seasons and movies; downl
 ## How the newer pieces fit
 
 - **Airing** (`airing()` in `arr/overview.ts`, `GET /api/airing`, user): one next and one latest episode per monitored show within `days`. The web side is `components/Airing.tsx`, used by Home (`airing_next`/`airing_recent` rows) and Library.
+- **Library filter**: `library_items.library` (the Plex section name) feeds `GET /api/library?library=` and `GET /api/library/sections` (user), which lists each library with its kind and item count.
 - **Monitored page** (`arr/overview.ts`, `/api/monitored/overview`): one pass over monitored rows, media, library items and episodes. A file counts if Cinemask has one or Plex/Jellyfin lists it; only aired, monitored, non-special episodes count as missing.
 - **Date-named episodes**: `Target.episodes[].airDate` lets `decide()` and the importer map `Show.2025.10.17` to its episode. `searchMonitored()` adds Newznab date queries (season = year, ep = `MM/DD`) only when no numbered release matched.
 - **Collections per Plex library**: `library_items.library` is the Plex section title (migration 15). `collections.library` scopes `serverKeys()`, label lookups and the find-by-name of the Plex collection to that section; null means every section. Pushes for a library-scoped collection refuse until a library sync has filled the column, so they never strip a collection empty.

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql, type AnyColumn } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql, type AnyColumn } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
@@ -35,6 +35,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
         q: z.string().trim().max(200).optional(),
         resolution: z.enum(['SD', '720p', '1080p', '2160p']).optional(),
         watched: z.enum(['watched', 'unwatched']).optional(),
+        library: z.string().trim().min(1).max(200).optional(),
         unmatched: z.enum(['true', '1']).optional(),
         sort: z.enum(['title', 'year', 'added', 'release', 'rating']).default('added'),
         order: z.enum(['asc', 'desc']).optional(),
@@ -47,6 +48,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
       q.kind ? eq(libraryItems.kind, q.kind) : undefined,
       q.q ? contains(libraryItems.title, q.q) : undefined,
       q.resolution ? eq(libraryItems.resolution, q.resolution) : undefined,
+      q.library ? eq(libraryItems.library, q.library) : undefined,
       q.unmatched ? isNull(libraryItems.tmdbId) : undefined,
     );
     // Watched on any server counts as watched.
@@ -102,6 +104,17 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
       })),
     };
   });
+
+  // The Plex libraries titles are in ("Movies", "Kids Movies", "4K Movies"), for the Library filter.
+  app.get('/api/library/sections', { config: { access: 'user' } }, async () => ({
+    libraries: ctx.db
+      .select({ name: sql<string>`${libraryItems.library}`, kind: libraryItems.kind, count: sql<number>`count(*)` })
+      .from(libraryItems)
+      .where(isNotNull(libraryItems.library))
+      .groupBy(libraryItems.library, libraryItems.kind)
+      .orderBy(asc(libraryItems.library))
+      .all(),
+  }));
 
   app.get('/api/search', { config: { access: 'user' } }, async (req) => {
     const { q, page } = parse(z.object({ q: z.string().trim().min(1).max(200), page: z.coerce.number().int().min(1).max(50).default(1) }), req.query);
