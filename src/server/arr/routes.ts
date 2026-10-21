@@ -19,7 +19,7 @@ import { QUALITY_IDS } from './quality.js';
 import { autoSearch, confirmHeld, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats, refreshMediaServers } from './tracker.js';
-import { importFolders, listImportable, manualImport } from './manual.js';
+import { deleteImportable, importFolders, listImportable, manualImport } from './manual.js';
 import { assertRoot, linkDestinations, listRoots } from './roots.js';
 import { sanitizeSegment } from './naming.js';
 import { moveToRoot, scanFolder, titleOnDisk } from '../files/service.js';
@@ -454,6 +454,26 @@ export async function arrRoutes(app: FastifyInstance) {
     } catch (err) {
       throw badRequest((err as Error).message);
     }
+  });
+
+  app.post('/api/manual-import/delete', { config: { access: 'manager' } }, async (req) => {
+    const { path: file } = parse(z.object({ path: z.string().min(1).max(4000) }), req.body);
+    try {
+      const r = deleteImportable(ctx, file);
+      audit(db(), req, 'download.file_deleted', { target: file, details: r });
+      return r;
+    } catch (err) {
+      throw badRequest((err as Error).message);
+    }
+  });
+
+  // Clears finished, failed and removed downloads from History; nothing in the queue or on disk changes.
+  app.delete('/api/downloads/history', { config: { access: 'manager' } }, async (req) => {
+    const { only } = parse(z.object({ only: z.enum(['all', 'failed']).default('all') }), req.query);
+    const statuses = only === 'failed' ? (['failed', 'removed'] as const) : (['imported', 'failed', 'removed'] as const);
+    const n = db().delete(downloads).where(inArray(downloads.status, [...statuses])).run().changes;
+    audit(db(), req, 'download.history_cleared', { details: { only, cleared: n } });
+    return { cleared: n };
   });
 
   app.post('/api/downloads/direct', { config: { access: 'manager', rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req) => {

@@ -223,6 +223,8 @@ export const monitoredEpisodes = sqliteTable(
     monitored: integer('monitored', { mode: 'boolean' }).notNull().default(true),
     filePath: text('file_path'),
     fileQuality: text('file_quality'),
+    /** TMDB's episode_type: "standard", "mid_season" or "finale". */
+    episodeType: text('episode_type'),
   },
   (t) => [uniqueIndex('monitored_episode_key').on(t.monitoredId, t.season, t.episode)],
 );

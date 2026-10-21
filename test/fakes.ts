@@ -83,7 +83,7 @@ export const tmdbRoutes = {
   }),
   'https://api.themoviedb.org/3/tv/82728/season/1': () => ({
     season_number: 1,
-    episodes: [1, 2, 3].map((n) => ({ episode_number: n, name: `Ep ${n}`, air_date: '2018-10-01', overview: '', still_path: null, runtime: 7 })),
+    episodes: [1, 2, 3].map((n) => ({ episode_number: n, name: `Ep ${n}`, air_date: '2018-10-01', overview: '', still_path: null, runtime: 7, episode_type: n === 3 ? 'finale' : 'standard' })),
   }),
   'https://api.themoviedb.org/3/tv/82728': () => ({
     id: 82728,

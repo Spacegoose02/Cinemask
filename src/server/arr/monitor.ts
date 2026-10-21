@@ -58,10 +58,10 @@ export async function refreshEpisodes(ctx: AppContext, row: MonitoredRow, resetM
       const isMonitored = !wantedSeasons || wantedSeasons.includes(s.season_number);
       ctx.db
         .insert(monitoredEpisodes)
-        .values({ monitoredId: row.id, season: s.season_number, episode: e.episode_number, title: e.name, airDate: e.air_date, monitored: isMonitored })
+        .values({ monitoredId: row.id, season: s.season_number, episode: e.episode_number, title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, monitored: isMonitored })
         .onConflictDoUpdate({
           target: [monitoredEpisodes.monitoredId, monitoredEpisodes.season, monitoredEpisodes.episode],
-          set: { title: e.name, airDate: e.air_date, ...(resetMonitored ? { monitored: isMonitored } : {}) },
+          set: { title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, ...(resetMonitored ? { monitored: isMonitored } : {}) },
         })
         .run();
     }

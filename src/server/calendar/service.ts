@@ -7,11 +7,15 @@ import { episodesOnServer } from '../library/service.js';
 
 export type ReleaseType = 'cinema' | 'digital' | 'physical';
 
+export type EpisodeMarker = 'series_premiere' | 'season_premiere' | 'season_finale' | 'series_finale';
+
 export interface CalendarEpisode {
   season: number;
   episode: number;
   title: string | null;
   hasFile: boolean;
+  /** A premiere or finale, for the calendar's badges and its premieres view. */
+  marker: EpisodeMarker | null;
 }
 
 export interface CalendarEntry {
@@ -26,6 +30,8 @@ export interface CalendarEntry {
   monitored: boolean;
   /** Movies only. */
   releaseType?: ReleaseType;
+  /** Movies only: this is the movie's first release (theaters, or digital/disc when it skips them). */
+  premiere?: boolean;
   hasFile: boolean;
   /** Shows only: every episode of the show airing that day, so the UI can show "Title +5". */
   episodes?: CalendarEpisode[];
@@ -53,9 +59,10 @@ export function calendar(ctx: AppContext, start: string, end: string): CalendarE
       ['digital', meta.digitalRelease],
       ['physical', meta.physicalRelease],
     ];
+    const first = dates.map(([, d]) => d).filter((d): d is string => Boolean(d)).sort()[0];
     for (const [releaseType, date] of dates) {
       if (!date || date < start || date > end) continue;
-      entries.push({ date, kind: 'movie', tmdbId: m.tmdbId, title: m.title, year: m.year, posterPath: meta.posterPath, overview: meta.overview, trailerKey: meta.trailerKey, monitored: m.monitored, releaseType, hasFile: Boolean(m.filePath) });
+      entries.push({ date, kind: 'movie', tmdbId: m.tmdbId, title: m.title, year: m.year, posterPath: meta.posterPath, overview: meta.overview, trailerKey: meta.trailerKey, monitored: m.monitored, releaseType, premiere: date === first, hasFile: Boolean(m.filePath) });
     }
   }
 
@@ -66,6 +73,25 @@ export function calendar(ctx: AppContext, start: string, end: string): CalendarE
     .where(and(gte(monitoredEpisodes.airDate, start), lte(monitoredEpisodes.airDate, end)))
     .orderBy(monitoredEpisodes.airDate, monitoredEpisodes.season, monitoredEpisodes.episode)
     .all();
+  // Last known episode of each season, and the show's last season, for finales TMDB hasn't flagged.
+  const lastEp = new Map<string, number>();
+  const lastSeason = new Map<number, number>();
+  for (const id of new Set(eps.map(({ m }) => m.id))) {
+    for (const r of ctx.db.select({ season: monitoredEpisodes.season, episode: monitoredEpisodes.episode }).from(monitoredEpisodes).where(eq(monitoredEpisodes.monitoredId, id)).all()) {
+      lastEp.set(`${id}:${r.season}`, Math.max(lastEp.get(`${id}:${r.season}`) ?? 0, r.episode));
+      lastSeason.set(id, Math.max(lastSeason.get(id) ?? 0, r.season));
+    }
+  }
+  const ended = (tmdbId: number) => /ended|canceled|cancelled/i.test(metaFor('show', tmdbId)?.tmdbStatus ?? '');
+  const markerFor = (m: typeof monitored.$inferSelect, e: typeof monitoredEpisodes.$inferSelect): EpisodeMarker | null => {
+    if (e.episode === 1) return e.season === 1 ? 'series_premiere' : 'season_premiere';
+    const isLast = lastEp.get(`${m.id}:${e.season}`) === e.episode;
+    const lastSeasonOfShow = lastSeason.get(m.id) === e.season;
+    // Without TMDB's flag, the last listed episode is only known to be the finale once a later season exists or the show has ended.
+    const finale = e.episodeType === 'finale' || (e.episodeType === null && isLast && (!lastSeasonOfShow || ended(m.tmdbId)));
+    if (!finale) return null;
+    return lastSeasonOfShow && ended(m.tmdbId) && isLast ? 'series_finale' : 'season_finale';
+  };
   const grouped = new Map<string, CalendarEntry>();
   const onServer = new Map<number, ReturnType<typeof episodesOnServer>>();
   for (const { e, m } of eps) {
@@ -78,7 +104,7 @@ export function calendar(ctx: AppContext, start: string, end: string): CalendarE
       entry = { date: e.airDate!, kind: 'show', tmdbId: m.tmdbId, title: m.title, year: m.year, posterPath: meta?.posterPath ?? null, overview: meta?.overview ?? null, trailerKey: meta?.trailerKey ?? null, monitored: m.monitored && e.monitored, hasFile: true, episodes: [] };
       grouped.set(key, entry);
     }
-    entry.episodes!.push({ season: e.season, episode: e.episode, title: e.title, hasFile });
+    entry.episodes!.push({ season: e.season, episode: e.episode, title: e.title, hasFile, marker: markerFor(m, e) });
     entry.hasFile = entry.hasFile && hasFile;
     entry.monitored = entry.monitored || (m.monitored && e.monitored);
   }

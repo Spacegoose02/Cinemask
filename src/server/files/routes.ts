@@ -9,6 +9,7 @@ import { badRequest, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { applyRename, deleteFiles, deleteFolder, listFiles, renamePreview, scanFolder, type DeleteScope } from './service.js';
 import { autoTrailer } from '../trailers/service.js';
+import { deleteDuplicate, findDuplicates } from './duplicates.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const num = z.number().int().min(0).max(5000);
@@ -28,6 +29,18 @@ export async function fileRoutes(app: FastifyInstance) {
       throw badRequest((err as Error).message);
     }
   };
+
+  // Two or more copies of one movie or episode on disk, and titles the media servers list twice.
+  app.get('/api/duplicates', { config: { access: 'manager' } }, async () => findDuplicates(ctx));
+
+  app.post('/api/duplicates/delete', { config: { access: 'manager' } }, async (req) => {
+    const body = parse(z.object({ monitoredId: z.number().int().positive(), path: z.string().min(1).max(4000) }), req.body);
+    const row = getRow(body.monitoredId);
+    const result = safely(() => deleteDuplicate(ctx, row.id, body.path));
+    audit(ctx.db, req, 'files.duplicate_deleted', { target: row.title, details: { path: body.path, freed: result.freed } });
+    void refreshMediaServers(ctx);
+    return result;
+  });
 
   app.get('/api/monitored/:id/files', { config: { access: 'manager' } }, async (req) => {
     const { id } = parse(idParam, req.params);
