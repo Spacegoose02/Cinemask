@@ -212,6 +212,47 @@ describe('request → download → import', () => {
     expect((await kid.req('GET', '/api/requests')).json()[0].status).toBe('available');
   });
 
+  it('unpacks a download that arrived as an archive, and a manager can retry a failed import', async () => {
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    const res = (await owner.req('GET', `/api/monitored/${m.id}/releases`)).json();
+    await owner.req('POST', `/api/monitored/${m.id}/grab`, { guid: res.releases.find((r: { accepted: boolean }) => r.accepted).guid });
+    const folder = path.join(dl, 'Paddington.2014.1080p.BluRay.x264-SPARKS');
+    fs.mkdirSync(folder, { recursive: true });
+    const archive = path.join(folder, 'Paddington.2014.1080p.BluRay.x264-SPARKS.7z');
+    fs.writeFileSync(archive, 'packed');
+    // The client reports the archive itself as the download, as SABnzbd does for a single-file job.
+    qbitTorrents = [{ hash: 'h1', name: 'Paddington', progress: 1, state: 'stalledUP', size: 5, content_path: archive, save_path: dl, tags: 'mm-1' }];
+    const history = async () => (await owner.req('GET', '/api/downloads?history=true')).json()[0];
+
+    // With unpacking off, the import fails and says why.
+    await owner.req('PUT', '/api/settings/media', { unpackArchives: false });
+    await trackDownloads(t.app.ctx);
+    expect(await history()).toMatchObject({ status: 'failed', error: expect.stringMatching(/packed in an archive.*Unpack archives/) });
+
+    // A password-protected archive can't be unpacked.
+    const unar = path.join(t.dir, 'unar');
+    fs.writeFileSync(unar, '#!/bin/sh\necho "This archive requires a password to unpack." >&2\nexit 1\n', { mode: 0o755 });
+    vi.stubEnv('UNAR_PATH', unar);
+    await owner.req('PUT', '/api/settings/media', { unpackArchives: true });
+    const d = await history();
+    expect((await kid.req('POST', `/api/downloads/${d.id}/retry-import`)).statusCode).toBe(403);
+    expect((await owner.req('POST', `/api/downloads/${d.id}/retry-import`)).json()).toEqual({ ok: true });
+    await trackDownloads(t.app.ctx);
+    expect(await history()).toMatchObject({ status: 'failed', error: expect.stringMatching(/Couldn't unpack .*\.7z: it is password-protected/) });
+
+    // unar writes the video into a folder of its own, which goes once the movie is imported.
+    fs.writeFileSync(unar, '#!/bin/sh\nwhile [ "$1" != "-o" ]; do shift; done\necho video > "$2/paddington.2014.1080p.bluray.x264-sparks.mkv"\n', { mode: 0o755 });
+    await owner.req('POST', `/api/downloads/${d.id}/retry-import`);
+    await trackDownloads(t.app.ctx);
+    expect(await history()).toMatchObject({ status: 'imported' });
+    expect(fs.existsSync(path.join(media, 'movies', 'Paddington (2014)', 'Paddington (2014) - Bluray-1080p.mkv'))).toBe(true);
+    expect(fs.existsSync(`${archive}_unpacked`)).toBe(false);
+    expect(fs.existsSync(archive)).toBe(true);
+    // Only failed downloads go back.
+    expect((await owner.req('POST', `/api/downloads/${d.id}/retry-import`)).statusCode).toBe(400);
+    vi.unstubAllEnvs();
+  });
+
   it('managers skip approval', async () => {
     const r = (await owner.req('POST', '/api/requests', { kind: 'movie', tmdbId: 116149 })).json();
     expect(r.status).toBe('approved');

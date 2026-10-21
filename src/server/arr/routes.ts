@@ -379,6 +379,17 @@ export async function arrRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  // A download whose import failed goes back to the tracker, which tries the import again on its next poll.
+  app.post('/api/downloads/:id/retry-import', { config: { access: 'manager' } }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const d = db().select().from(downloads).where(eq(downloads.id, id)).get();
+    if (!d) throw notFound();
+    if (d.status !== 'failed' || !d.monitoredId || !d.clientId || !d.downloadId) throw badRequest('Only a failed download still in a download client can be imported again');
+    db().update(downloads).set({ status: 'completed', error: null, completedAt: Date.now() }).where(eq(downloads.id, id)).run();
+    audit(db(), req, 'download.retry_import', { target: d.title });
+    return { ok: true };
+  });
+
   // A download held back for being over the size limit, sent on once a manager says so.
   app.post('/api/downloads/:id/confirm', { config: { access: 'manager' } }, async (req) => {
     const { id } = parse(idParam, req.params);
