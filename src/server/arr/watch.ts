@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gte } from 'drizzle-orm';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext } from '../context.js';
@@ -10,6 +10,7 @@ import { findVideos, importDownload } from './importer.js';
 import { monitorTitle } from './monitor.js';
 import { parseRelease } from './parser.js';
 import { defaultProfileId } from './profiles.js';
+import { refreshMediaServers } from './tracker.js';
 import { listRoots } from './roots.js';
 
 /** A drop is left alone until nothing in it has changed for this long, so half-copied files aren't moved. */
@@ -17,6 +18,11 @@ const SETTLE_MS = 2 * 60 * 1000;
 
 /** Drops that couldn't be imported, by name and last change, so they aren't retried until something changes. */
 const failed = new Map<string, number>();
+
+/** For tests: what a restart does to the memory above. */
+export function forgetWatchFailures() {
+  failed.clear();
+}
 
 function lastChange(p: string): number {
   // Only the videos count: a folder's own time changes whenever anything inside it does.
@@ -62,6 +68,16 @@ export async function scanWatchFolder(ctx: AppContext): Promise<number> {
     if (!videos.length) continue;
     const changed = lastChange(full);
     if (Date.now() - changed < SETTLE_MS || failed.get(entry.name) === changed) continue;
+    // Failed already and unchanged since (the memory above is lost on restart): don't add the same failure again.
+    const before = ctx.db
+      .select({ id: downloads.id })
+      .from(downloads)
+      .where(and(eq(downloads.indexer, 'Watch folder'), eq(downloads.title, entry.name), eq(downloads.status, 'failed'), gte(downloads.addedAt, Math.floor(changed))))
+      .get();
+    if (before) {
+      failed.set(entry.name, changed);
+      continue;
+    }
     const dl = ctx.db
       .insert(downloads)
       .values({ title: entry.name, protocol: 'direct', indexer: 'Watch folder', status: 'importing', progress: 1, size: videos.reduce((n, v) => n + fs.statSync(v).size, 0), addedAt: Date.now(), completedAt: Date.now() })
@@ -74,7 +90,12 @@ export async function scanWatchFolder(ctx: AppContext): Promise<number> {
       const row = existing ?? (await monitorTitle(ctx, { kind: match.kind, tmdbId: match.tmdbId, profileId: defaultProfileId(ctx, match.kind) }));
       ctx.db.update(downloads).set({ monitoredId: row.id }).where(eq(downloads.id, dl.id)).run();
       const result = importDownload(ctx, dl.id, full, { mode: 'move' });
-      if (!result.imported.length) throw new Error(result.skipped.join('; ') || 'Nothing to import');
+      if (!result.imported.length) {
+        if (result.skipped.length && result.skipped.every((r) => r.endsWith('existing file is as good or better'))) {
+          throw new Error(`${row.title} is already in the library at this quality or better. Delete this copy from Downloads → Import, or import it there to replace the library file.`);
+        }
+        throw new Error(result.skipped.join('; ') || 'Nothing to import');
+      }
       imported += result.imported.length;
       // A folder whose videos all moved only holds leftovers (samples, .nfo, artwork) now.
       if (entry.isDirectory() && !findVideos(full).length) fs.rmSync(full, { recursive: true, force: true });
@@ -87,5 +108,6 @@ export async function scanWatchFolder(ctx: AppContext): Promise<number> {
       notify(ctx, { event: 'download.failed', title: 'Watch folder import failed', message: `${entry.name}: ${(err as Error).message}`, data: { release: entry.name } });
     }
   }
+  if (imported) await refreshMediaServers(ctx);
   return imported;
 }

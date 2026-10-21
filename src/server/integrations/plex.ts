@@ -46,7 +46,7 @@ export class PlexClient implements MediaServerClient {
   }
 
   async fetchLibrary(): Promise<ServerItem[]> {
-    const sections = await this.get<{ Directory?: { key: string; type: string }[] }>('/library/sections');
+    const sections = await this.get<{ Directory?: { key: string; type: string; title?: string }[] }>('/library/sections');
     const items: ServerItem[] = [];
     for (const section of sections.Directory ?? []) {
       if (section.type !== 'movie' && section.type !== 'show') continue;
@@ -64,6 +64,7 @@ export class PlexClient implements MediaServerClient {
           viewCount: m.viewCount ?? 0,
           lastViewedAt: m.lastViewedAt ? m.lastViewedAt * 1000 : null,
           labels: (m.Label ?? []).map((l) => l.tag),
+          library: section.title ?? null,
           episodes: section.type === 'show' ? [] : undefined,
         };
         byKey.set(m.ratingKey, item);

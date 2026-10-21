@@ -299,6 +299,7 @@ export class LibrarySync {
             viewCount: item.viewCount ?? null,
             lastViewedAt: item.lastViewedAt ?? null,
             labels: item.labels?.length ? JSON.stringify(item.labels) : null,
+            library: item.library ?? null,
           })
           .onConflictDoNothing()
           .returning({ id: libraryItems.id })

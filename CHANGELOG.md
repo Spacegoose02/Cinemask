@@ -4,6 +4,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-10-21
+
+### Fixed
+- Plex collections stay in their own library. A Kids Movies collection no longer tags the same films in Movies, which made Plex grow a matching collection there. Collections now have a "Plex library" choice (new ones default to the library you're viewing). Leaving it empty keeps the old behaviour: every library that has the titles.
+- A finished download whose folder the client reports at a path Cinemask can't see (no remote path mapping) is now found by name in the downloads folder and its category folders, the watch folder, or the library folders. When it still can't be found, the message names the client folder to map.
+- The watch folder no longer adds the same failure to History again after a restart. A copy of something already in the library says so and points to Downloads → Import.
+- Plex and Jellyfin rescan after watch-folder imports, as they already did after other imports.
+
 ## [0.15.0] - 2026-10-21
 
 ### Added
