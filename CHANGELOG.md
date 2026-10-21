@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-21
+
+### Added
+- Library has a library filter: pick one of your Plex libraries (Movies, Kids Movies, Kids Shows, 4K Movies and so on) to see only what's in it. It follows the Type filter, and only appears when there's more than one library. Jellyfin titles carry no library name, so they show under "All libraries" only.
+
 ## [0.17.0] - 2026-10-21
 
 ### Added

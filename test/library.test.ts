@@ -60,6 +60,19 @@ describe('library sync', () => {
     expect((await owner.req('GET', '/api/library?kind=show')).json().total).toBe(1);
   });
 
+  it('lists the Plex libraries and filters by one', async () => {
+    const u = await createUser(owner, 'viewer', 'user');
+    const user = new Client(t.app);
+    await user.login('viewer', u.password);
+    expect((await user.req('GET', '/api/library/sections')).json().libraries).toEqual([
+      { name: 'Movies', kind: 'movie', count: 2 },
+      { name: 'TV Shows', kind: 'show', count: 1 },
+    ]);
+    const movies = (await user.req('GET', '/api/library?library=Movies&sort=title')).json();
+    expect(movies.items.map((i: { title: string }) => i.title)).toEqual(['Old Agent Movie', 'Paddington']);
+    expect((await user.req('GET', '/api/library?library=Kids%20Movies')).json().total).toBe(0);
+  });
+
   it('monitors what it finds without searching for anything already out', async () => {
     const rows = t.app.ctx.dbHandle.sqlite.prepare('SELECT id, kind, title, monitored FROM monitored ORDER BY title').all() as { id: number; kind: string; title: string; monitored: number }[];
     expect(rows.map((r) => [r.title, r.monitored])).toContainEqual(['Paddington', 0]);

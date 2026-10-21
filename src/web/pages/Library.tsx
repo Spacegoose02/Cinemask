@@ -36,14 +36,18 @@ export function LibraryPage() {
   const resolution = params.get('resolution') ?? '';
   const q = params.get('q') ?? '';
   const watched = params.get('watched') ?? '';
+  const library = params.get('library') ?? '';
   const { me } = useAuth();
   const isManager = hasRole(me, 'manager');
   const qc = useQueryClient();
   const [fixing, setFixing] = useState<LibraryItem | null>(null);
   const [dupes, setDupes] = useState(false);
   const page = Number(params.get('page') ?? 1);
-  const qs = new URLSearchParams({ sort, page: String(page), pageSize: String(PAGE_SIZE), ...(kind && { kind }), ...(resolution && { resolution }), ...(q && { q }), ...(watched === 'unmatched' ? { unmatched: 'true' } : watched && { watched }) });
+  const qs = new URLSearchParams({ sort, page: String(page), pageSize: String(PAGE_SIZE), ...(kind && { kind }), ...(resolution && { resolution }), ...(library && { library }), ...(q && { q }), ...(watched === 'unmatched' ? { unmatched: 'true' } : watched && { watched }) });
   const lib = useQuery({ queryKey: ['library', qs.toString()], queryFn: () => api<LibraryResponse>(`/api/library?${qs}`) });
+  const sections = useQuery({ queryKey: ['library-sections'], queryFn: () => api<{ libraries: { name: string; kind: MediaKind; count: number }[] }>('/api/library/sections') });
+  // One entry per Plex library, narrowed to the chosen type.
+  const libraries = [...new Set((sections.data?.libraries ?? []).filter((l) => !kind || l.kind === kind).map((l) => l.name))];
 
   const set = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -54,7 +58,7 @@ export function LibraryPage() {
   };
   const pages = Math.max(1, Math.ceil((lib.data?.total ?? 0) / PAGE_SIZE));
   // Shows airing this week sit above the library, until it's filtered or paged.
-  const showAiring = page === 1 && kind !== 'movie' && !q && !resolution && !watched;
+  const showAiring = page === 1 && kind !== 'movie' && !q && !resolution && !watched && !library;
   const airing = useAiring();
 
   return (
@@ -68,6 +72,17 @@ export function LibraryPage() {
             <option value="movie">Movies</option>
             <option value="show">Shows</option>
           </select>
+          {(libraries.length > 1 || library) && (
+            <select className="input w-auto" value={library} onChange={(e) => set('library', e.target.value)} aria-label="Library">
+              <option value="">All libraries</option>
+              {libraries.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+              {library && !libraries.includes(library) && <option value={library}>{library}</option>}
+            </select>
+          )}
           <select className="input w-auto" value={resolution} onChange={(e) => set('resolution', e.target.value)} aria-label="Quality">
             <option value="">Any quality</option>
             <option value="2160p">4K</option>
