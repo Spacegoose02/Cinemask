@@ -15,7 +15,7 @@ export class ApiError extends Error {
 }
 
 /** Fetch wrapper: same-origin cookies, CSRF header on writes, JSON in and out. */
-export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown; headers?: Record<string, string>; raw?: BodyInit } = {}): Promise<T> {
+export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown; headers?: Record<string, string>; raw?: BodyInit } = {}, retried = false): Promise<T> {
   const method = init.method ?? (init.body !== undefined || init.raw ? 'POST' : 'GET');
   const headers: Record<string, string> = { 'x-requested-with': 'fetch', ...init.headers };
   if (csrfToken) headers['x-csrf-token'] = csrfToken;
@@ -26,8 +26,24 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   }
   const res = await fetch(path, { method, headers, body, credentials: 'same-origin' });
   const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
-  if (!res.ok) throw new ApiError(res.status, data?.error ?? res.statusText, data?.code);
+  if (!res.ok) {
+    // This tab's token is from an older session (signed in again in another tab, say): fetch the current one and try once more.
+    if (res.status === 403 && data?.code === 'csrf' && !retried && (await refreshCsrfToken())) return api<T>(path, init, true);
+    throw new ApiError(res.status, data?.error ?? res.statusText, data?.code);
+  }
   return data as T;
+}
+
+async function refreshCsrfToken(): Promise<boolean> {
+  const res = await fetch('/api/auth/me', { headers: { 'x-requested-with': 'fetch' }, credentials: 'same-origin' });
+  if (!res.ok) {
+    if (res.status === 401) throw new ApiError(401, 'You were signed out. Reload the page and sign in again.', 'unauthorized');
+    return false;
+  }
+  const r = (await res.json()) as { csrfToken: string | null };
+  if (!r.csrfToken) return false;
+  csrfToken = r.csrfToken;
+  return true;
 }
 
 export type Role = 'user' | 'manager' | 'admin';

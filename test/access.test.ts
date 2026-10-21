@@ -54,6 +54,10 @@ describe('CSRF', () => {
     c.cookie = owner.cookie;
     const res = await c.req('POST', '/api/backups');
     expect(res.statusCode).toBe(403);
+    // Marked so the browser knows to fetch its session's current token and try again.
+    expect(res.json()).toMatchObject({ code: 'csrf' });
+    c.csrf = 'stale-token-from-an-older-session';
+    expect((await c.req('POST', '/api/backups')).json()).toMatchObject({ code: 'csrf' });
   });
 
   it('rejects any POST without the custom request header', async () => {
