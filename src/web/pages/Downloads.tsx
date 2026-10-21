@@ -408,6 +408,15 @@ export function DownloadsPage() {
     await qc.invalidateQueries({ queryKey: ['downloads'] });
   };
 
+  const retryImport = async (d: DownloadRow) => {
+    try {
+      await api(`/api/downloads/${d.id}/retry-import`, { method: 'POST' });
+    } catch (err) {
+      alert((err as Error).message);
+    }
+    await qc.invalidateQueries({ queryKey: ['downloads'] });
+  };
+
   const [histMsg, setHistMsg] = useState('');
   const clearHistory = async (only: 'all' | 'failed') => {
     if (!confirm(only === 'all' ? 'Clear all finished, failed and removed downloads from History? Files on disk and the queue are not touched.' : 'Clear failed and removed downloads from History?')) return;
@@ -477,6 +486,11 @@ export function DownloadsPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className={`text-xs ${d.status === 'held' ? 'text-warning' : 'capitalize text-muted'}`}>{d.status === 'held' ? 'Waiting for you' : d.status}</span>
+                {d.status === 'failed' && d.monitoredId && d.protocol !== 'direct' && (
+                  <button className="btn-secondary text-xs" onClick={() => void retryImport(d)}>
+                    Retry import
+                  </button>
+                )}
                 {tab === 'queue' && d.status === 'held' && (
                   <>
                     <button className="btn-primary text-xs" onClick={() => void confirmHeld(d)}>

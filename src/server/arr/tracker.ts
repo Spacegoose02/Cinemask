@@ -4,7 +4,8 @@ import type { AppContext } from '../context.js';
 import { blocklist, downloadClients, downloads, monitored, type DownloadClientType } from '../db/schema.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import { createClient, type ClientItem } from './clients.js';
-import { importDownload, mapRemotePath } from './importer.js';
+import { importDownload, locateDownload, mapRemotePath } from './importer.js';
+import { removeUnpacked, unpackDownload } from './unpack.js';
 import { deliverLink } from './direct.js';
 import { autoSearch } from './search.js';
 import { autoTrailer } from '../trailers/service.js';
@@ -113,7 +114,11 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
         continue;
       }
       try {
+        // A download that arrived packed (RAR, 7z, zip) is unpacked first; the unpacked copy goes once it's imported.
+        const location = locateDownload(ctx, item.outputPath);
+        const unpacked = await unpackDownload(ctx, location);
         const r = importDownload(ctx, d.id, item.outputPath);
+        if (unpacked) removeUnpacked(location);
         if (r.imported.length) {
           imported = true;
           const row = ctx.db.select().from(monitored).where(eq(monitored.id, d.monitoredId)).get();

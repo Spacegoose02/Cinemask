@@ -4,6 +4,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-21
+
+### Added
+- Downloads that arrive packed (a RAR, 7z or zip with no video beside it, as when SABnzbd leaves a .7z unextracted) are unpacked before the import, into an `_unpacked` folder that's removed once the video is in the library. Password-protected archives fail with a clear message. It's on by default; turn it off in Settings → Media management → "Unpack archives". The Docker image now includes `unar`.
+- Downloads → History: "Retry import" on a failed download that's still in the download client, so a fixed problem (a path mapping, an archive) doesn't need a new download.
+
 ## [0.18.0] - 2026-10-21
 
 ### Added

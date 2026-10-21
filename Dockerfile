@@ -18,9 +18,10 @@ ENV NODE_ENV=production \
     APP_VERSION=${APP_VERSION}
 WORKDIR /app
 # ffmpeg merges the video and audio streams of trailer downloads; yt-dlp fetches them.
+# unar unpacks downloads that arrive as RAR, 7z or zip archives.
 # yt-dlp tracks YouTube changes closely, so each image build takes the newest release.
 ARG YTDLP_URL=https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux
-RUN apt-get update && apt-get install -y --no-install-recommends tini ffmpeg ca-certificates curl \
+RUN apt-get update && apt-get install -y --no-install-recommends tini ffmpeg unar ca-certificates curl \
  && curl -fsSL -o /usr/local/bin/yt-dlp "${YTDLP_URL}" \
  && chmod 0755 /usr/local/bin/yt-dlp \
  && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*

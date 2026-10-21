@@ -71,6 +71,35 @@ export function findVideos(p: string): string[] {
   return real.length ? real : out;
 }
 
+export const UNPACKED = '_unpacked';
+
+/** Where a download's archives are unpacked (see unpack.ts): a folder inside it, or next to a download that is a single archive. */
+export function unpackedDir(p: string): string {
+  return fs.existsSync(p) && fs.statSync(p).isFile() ? `${p}${UNPACKED}` : path.join(p, UNPACKED);
+}
+
+/** The first volume of a RAR, 7z or zip archive (part2.rar, .r01 and .7z.002 follow on from it). */
+const FIRST_VOLUME = /(?:(?<!\.part\d+)\.rar|\.part0*1\.rar|\.7z(?:\.0*1)?|\.zip)$/i;
+
+/** Archives in a download that a client left packed. */
+export function findArchives(p: string): string[] {
+  if (!fs.existsSync(p)) return [];
+  if (fs.statSync(p).isFile()) return FIRST_VOLUME.test(p) ? [p] : [];
+  const out: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    if (depth > 4) return;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, e.name);
+      if (e.isSymbolicLink()) continue;
+      if (e.isDirectory()) {
+        if (e.name !== UNPACKED) walk(full, depth + 1);
+      } else if (FIRST_VOLUME.test(e.name)) out.push(full);
+    }
+  };
+  walk(p, 0);
+  return out;
+}
+
 /** Places a file at dest using the configured import mode. Hardlinks fall back to copying across disks. */
 export function placeFile(src: string, dest: string, mode: 'hardlink' | 'copy' | 'move') {
   if (path.resolve(src) === path.resolve(dest)) return; // already in place; removing dest would lose it
@@ -120,8 +149,15 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
   if (!row) throw new Error('The movie or show was removed');
   const mediaSettings = ctx.settings.get('media');
   const naming = ctx.settings.get('naming');
-  const files = findVideos(locateDownload(ctx, sourcePath));
+  const located = locateDownload(ctx, sourcePath);
+  const found = findVideos(located);
+  const files = found.length ? found : findVideos(unpackedDir(located));
   if (!files.length) {
+    if (findArchives(located).length) {
+      throw new Error(
+        `${path.basename(located)} is packed in an archive with no video files beside it. Turn on "Unpack archives" in Settings → Media management, or unpacking in the download client, then retry the import.`,
+      );
+    }
     const clientDir = path.posix.dirname(sourcePath.replace(/\\/g, '/'));
     throw new Error(
       `No video files found at ${sourcePath}, and nothing by that name in the downloads, watch or library folders. If the download client sees its folders at different paths, add a remote path mapping in Settings → Media management from ${clientDir} to the same folder as Cinemask sees it.`,
