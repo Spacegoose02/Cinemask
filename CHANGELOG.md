@@ -11,6 +11,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 - Downloads → Search indexers: sort the results by release date (newest or oldest first), seeders or size. The choice is remembered.
+- News and talk shows filed by air date (20/20, 48 Hours, nightly shows) are found and imported: a release or file named like `20.20.2025.10.17` counts as the episode that aired that day. When a show's search finds nothing by season and episode, it searches by air date for the newest wanted episodes.
+
+### Changed
+- Downloads → Search indexers lists releases of exactly what you typed first, so "48 hours" shows 48 Hours ahead of "Travel Man: 48 Hours In…".
 
 ## [0.15.1] - 2026-10-21
 

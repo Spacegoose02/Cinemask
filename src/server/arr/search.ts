@@ -7,7 +7,7 @@ import { createClient } from './clients.js';
 import { CATEGORIES, searchIndexer, type IndexerConfig, type Release, type SearchQuery } from './indexers.js';
 import { wantedTarget, type MonitoredRow } from './monitor.js';
 import { searchProfile } from './profiles.js';
-import { parseRelease } from './parser.js';
+import { parseRelease, titlesMatch } from './parser.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { rootOf } from './roots.js';
 import { notify } from '../notify/service.js';
@@ -129,7 +129,14 @@ export async function manualSearch(ctx: AppContext, q: string, type: keyof typeo
   for (const r of releases) recentReleases.set(`manual:${r.guid}`, { release: r, covers: null, at: Date.now() });
   if (recentReleases.size > 5000) for (const k of [...recentReleases.keys()].slice(0, 1000)) recentReleases.delete(k);
   return {
-    releases: releases.map((r) => ({ ...r, quality: parseRelease(r.title).quality })).sort((a, b) => (b.seeders ?? -1) - (a.seeders ?? -1) || (b.publishedAt ?? 0) - (a.publishedAt ?? 0)),
+    // Releases of exactly what was typed come first, so "48 hours" lists 48 Hours before Travel Man: 48 Hours in….
+    releases: releases
+      .map((r) => {
+        const parsed = parseRelease(r.title);
+        return { ...r, quality: parsed.quality, exact: titlesMatch(parsed.title, q) };
+      })
+      .sort((a, b) => Number(b.exact) - Number(a.exact) || (b.seeders ?? -1) - (a.seeders ?? -1) || (b.publishedAt ?? 0) - (a.publishedAt ?? 0))
+      .map(({ exact: _exact, ...r }) => r),
     errors: [...new Set(errors)],
   };
 }
@@ -138,6 +145,22 @@ export async function manualSearch(ctx: AppContext, q: string, type: keyof typeo
 export function rememberedManual(guid: string): Release | null {
   const hit = recentReleases.get(`manual:${guid}`);
   return hit && Date.now() - hit.at < 60 * 60 * 1000 ? hit.release : null;
+}
+
+/** At most this many episodes are looked up by air date in one search. */
+const DATE_QUERIES = 6;
+
+/**
+ * Searches by air date for the newest wanted episodes, the way indexers file news and talk shows
+ * ("20.20.2025.10.17"): Newznab takes the year as the season and "MM/DD" as the episode.
+ */
+function dateQueries(ctx: AppContext, row: MonitoredRow, target: Target): SearchQuery[] {
+  const m = ctx.db.select().from(media).where(and(eq(media.kind, row.kind), eq(media.tmdbId, row.tmdbId))).get();
+  return (target.episodes ?? [])
+    .filter((e) => e.airDate)
+    .sort((a, b) => b.airDate!.localeCompare(a.airDate!))
+    .slice(0, DATE_QUERIES)
+    .map((e) => ({ type: 'tvsearch' as const, q: row.title, tvdbId: m?.tvdbId, season: Number(e.airDate!.slice(0, 4)), episode: `${e.airDate!.slice(5, 7)}/${e.airDate!.slice(8, 10)}`, categories: CATEGORIES.tv }));
 }
 
 /** Every episode of a season (or just one) as a manual-search target, for when nothing in it is wanted. */
@@ -161,18 +184,27 @@ export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter
     episodes: filter?.season !== undefined ? seasonEpisodes(ctx, row.id, filter.season, filter.episode) : undefined,
   };
   if (!profile) return { decisions: [], errors: ['Quality profile is missing'] };
-  const queries = queriesFor(ctx, row, target);
   const all: Release[] = [];
   const errors: string[] = [];
-  for (const q of queries) {
-    const r = await searchAll(ctx, q);
-    all.push(...r.releases);
-    errors.push(...r.errors);
-  }
-  const unique = [...new Map(all.map((r) => [r.title, r])).values()];
+  const run = async (queries: SearchQuery[]) => {
+    for (const q of queries) {
+      const r = await searchAll(ctx, q);
+      all.push(...r.releases);
+      errors.push(...r.errors);
+    }
+  };
   const bl = blocked(ctx, row.id);
   const opts = decideOptions(ctx, row);
-  const decisions = unique.map((r) => decide(r, target, profile, bl, opts)).sort((a, b) => Number(b.accepted) - Number(a.accepted) || byPreference(a, b));
+  const judge = () => [...new Map(all.map((r) => [r.title, r])).values()].map((r) => decide(r, target, profile, bl, opts));
+  await run(queriesFor(ctx, row, target));
+  let judged = judge();
+  // Nothing by season and episode, and the indexers have no SxxEyy releases of it: it may be filed by air date instead.
+  const numbered = judged.some((d) => d.parsed.season !== null && !d.rejections.includes('Title does not match'));
+  if (row.kind === 'show' && !judged.some((d) => d.accepted) && !numbered) {
+    await run(dateQueries(ctx, row, target));
+    judged = judge();
+  }
+  const decisions = judged.sort((a, b) => Number(b.accepted) - Number(a.accepted) || byPreference(a, b));
   for (const d of decisions) recentReleases.set(`${row.id}:${d.release.guid}`, { release: d.release, covers: d.covers, at: Date.now() });
   if (recentReleases.size > 5000) for (const k of [...recentReleases.keys()].slice(0, 1000)) recentReleases.delete(k);
   ctx.db.update(monitored).set({ lastSearchAt: Date.now() }).where(eq(monitored.id, row.id)).run();
