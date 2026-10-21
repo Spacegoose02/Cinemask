@@ -29,6 +29,8 @@ Already done in 0.9 (no work needed): delete episodes, seasons and movies; downl
 
 ## How the newer pieces fit
 
+- **Monitored page** (`arr/overview.ts`, `/api/monitored/overview`): one pass over monitored rows, media, library items and episodes. A file counts if Cinemask has one or Plex/Jellyfin lists it; only aired, monitored, non-special episodes count as missing.
+- **Date-named episodes**: `Target.episodes[].airDate` lets `decide()` and the importer map `Show.2025.10.17` to its episode. `searchMonitored()` adds Newznab date queries (season = year, ep = `MM/DD`) only when no numbered release matched.
 - **Collections per Plex library**: `library_items.library` is the Plex section title (migration 15). `collections.library` scopes `serverKeys()`, label lookups and the find-by-name of the Plex collection to that section; null means every section. Pushes for a library-scoped collection refuse until a library sync has filled the column, so they never strip a collection empty.
 - **Finding downloads** (`locateDownload()` in `arr/importer.ts`): mapping first, then the same name in the downloads folder (two levels), the watch folder and the library roots.
 - **Root folders** (`arr/roots.ts`): the main Movies/TV folders are id `default`; extra ones live in `media.extraFolders`. `monitored.root_id` picks one; `rootFor()` in `files/service.ts` is the root every path check uses. `moveToRoot()` moves a title's folder.

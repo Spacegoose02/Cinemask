@@ -92,6 +92,12 @@ describe('release decisions', () => {
     expect(decide(rel('Bluey.S01E02.1080p.WEB-DL'), show, profile, new Set()).accepted).toBe(false);
     expect(decide(rel('Bluey.S01.1080p.WEB-DL'), show, profile, new Set()).covers).toEqual({ season: 1, episodes: [3] });
   });
+
+  it('matches a news or talk show release named by the day it aired', () => {
+    const show = { kind: 'show' as const, title: '20/20', year: 1978, episodes: [{ season: 48, episode: 7, currentQuality: null, airDate: '2025-10-17' }] };
+    expect(decide(rel('20.20.2025.10.17.1080p.WEB.h264-BAE'), show, profile, new Set())).toMatchObject({ accepted: true, covers: { season: 48, episodes: [7] } });
+    expect(decide(rel('20-20.2025.10.10.1080p.WEB.h264-BAE'), show, profile, new Set()).rejections).toContain('No wanted episode aired on 2025-10-10');
+  });
 });
 
 describe('direct download safety', () => {
@@ -572,6 +578,14 @@ describe('request → download → import', () => {
 
   it('searches the indexers for anything and delivers a result to the folder picked', async () => {
     expect((await kid.req('GET', '/api/indexers/search?q=paddington')).statusCode).toBe(403);
+    // What was typed comes first, ahead of better-seeded releases that only contain it.
+    const prev = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: string | URL, init?: RequestInit) =>
+      new URL(String(input)).searchParams.get('q') === '48 hours'
+        ? new Response(torznab([{ title: 'Travel.Man.48.Hours.In.S13E02.1080p.HDTV', seeders: 79 }, { title: '48.Hours.S36E07.WEBRip.x264-XENON', seeders: 21 }]))
+        : prev(input, init),
+    );
+    expect((await owner.req('GET', '/api/indexers/search?q=48%20hours&type=tv')).json().releases.map((r: { title: string }) => r.title)).toEqual(['48.Hours.S36E07.WEBRip.x264-XENON', 'Travel.Man.48.Hours.In.S13E02.1080p.HDTV']);
     const found = (await owner.req('GET', '/api/indexers/search?q=paddington&type=movies')).json();
     expect(found.releases[0]).toMatchObject({ title: 'Paddington.2014.1080p.BluRay.x264-SPARKS', quality: 'Bluray-1080p', seeders: 50 });
     // Only a guid from the search can be sent, never a URL.

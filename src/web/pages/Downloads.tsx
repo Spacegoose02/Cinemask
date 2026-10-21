@@ -107,6 +107,21 @@ interface FoundRelease {
   infoUrl: string | null;
 }
 
+type ReleaseSort = 'best' | 'newest' | 'oldest' | 'seeders' | 'size';
+
+/** Orders search results; "best" keeps the order the server ranked them in. Undated releases go last. */
+function sortReleases(list: FoundRelease[], by: ReleaseSort): FoundRelease[] {
+  if (by === 'best') return list;
+  const date = (r: FoundRelease) => r.publishedAt ?? (by === 'oldest' ? Infinity : -Infinity);
+  const key: Record<Exclude<ReleaseSort, 'best'>, (a: FoundRelease, b: FoundRelease) => number> = {
+    newest: (a, b) => date(b) - date(a),
+    oldest: (a, b) => date(a) - date(b),
+    seeders: (a, b) => (b.seeders ?? -1) - (a.seeders ?? -1),
+    size: (a, b) => b.size - a.size,
+  };
+  return [...list].sort(key[by]);
+}
+
 /** A free-text search of the indexers (Prowlarr included); a result goes to the folder picked here. */
 function IndexerSearch({ destinations }: { destinations: { key: string; name: string; path: string }[] }) {
   const qc = useQueryClient();
@@ -117,6 +132,21 @@ function IndexerSearch({ destinations }: { destinations: { key: string; name: st
   const [found, setFound] = useState<{ releases: FoundRelease[]; errors: string[] } | null>(null);
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const [sent, setSent] = useState<Set<string>>(new Set());
+  const [sort, setSort] = useState<ReleaseSort>(() => {
+    try {
+      return (localStorage.getItem('indexer-search-sort') as ReleaseSort | null) ?? 'best';
+    } catch {
+      return 'best';
+    }
+  });
+  const chooseSort = (v: ReleaseSort) => {
+    setSort(v);
+    try {
+      localStorage.setItem('indexer-search-sort', v);
+    } catch {
+      // private window: the choice just isn't remembered
+    }
+  };
   const search = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -171,9 +201,23 @@ function IndexerSearch({ destinations }: { destinations: { key: string; name: st
           {e}
         </Alert>
       ))}
+      {found && found.releases.length > 1 && (
+        <div className="flex items-center justify-end gap-2 text-sm">
+          <label htmlFor="indexer-sort" className="text-muted">
+            Sort by
+          </label>
+          <select id="indexer-sort" className="input w-auto" value={sort} onChange={(e) => chooseSort(e.target.value as ReleaseSort)}>
+            <option value="best">Best match</option>
+            <option value="newest">Release date, newest first</option>
+            <option value="oldest">Release date, oldest first</option>
+            <option value="seeders">Most seeders</option>
+            <option value="size">Largest</option>
+          </select>
+        </div>
+      )}
       {found && (
         <ul className="max-h-[32rem] divide-y divide-border overflow-y-auto text-sm">
-          {found.releases.map((r) => (
+          {sortReleases(found.releases, sort).map((r) => (
             <li key={r.guid} className="flex items-center justify-between gap-3 py-2">
               <div className="min-w-0">
                 <div className="break-all">{r.infoUrl ? <a className="hover:underline" href={r.infoUrl} target="_blank" rel="noreferrer">{r.title}</a> : r.title}</div>

@@ -12,6 +12,7 @@ interface Run {
   total: number;
   done: number;
   added: number;
+  updated?: number;
   skipped: number;
   errors: string[];
   finishedAt: number | null;
@@ -21,13 +22,13 @@ const ABOUT: Record<Source, { name: string; port: string; text: string; button: 
   radarr: {
     name: 'Radarr',
     port: '7878',
-    text: 'Every movie in Radarr is added to Cinemask with the quality profile of the same name (or your default). Files are found where they already are in your movie folders, so nothing is downloaded or moved.',
+    text: 'Every movie in Radarr is added to Cinemask with the quality profile of the same name (or your default). Files are found where they already are in your movie folders, so nothing is downloaded or moved. Movies already in Cinemask take Radarr’s monitored or unmonitored state.',
     button: 'Import movies',
   },
   sonarr: {
     name: 'Sonarr',
     port: '8989',
-    text: 'Every show in Sonarr is added with the seasons it monitors and the quality profile of the same name. Episodes already on disk are found in your TV folders; nothing is downloaded or moved.',
+    text: 'Every show in Sonarr is added with the seasons it monitors and the quality profile of the same name. Episodes already on disk are found in your TV folders; nothing is downloaded or moved. Shows already in Cinemask take Sonarr’s monitored state and seasons.',
     button: 'Import shows',
   },
   overseerr: {
@@ -85,7 +86,7 @@ function ImportSection({ source }: { source: Source }) {
             </div>
           )}
           <p className="text-muted">
-            {r.running ? `Working through ${r.done} of ${r.total}.` : `Finished: ${r.added} added, ${r.skipped} skipped${r.errors.length ? `, ${r.errors.length} with problems` : ''}.`}
+            {r.running ? `Working through ${r.done} of ${r.total}.` : `Finished: ${r.added} added, ${r.updated ?? 0} updated, ${r.skipped} skipped${r.errors.length ? `, ${r.errors.length} with problems` : ''}.`}
           </p>
           {r.errors.length > 0 && (
             <ul className="max-h-40 list-disc overflow-y-auto pl-5 text-xs text-danger">

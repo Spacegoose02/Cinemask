@@ -52,6 +52,11 @@ export function Layout({ children }: { children: ReactNode }) {
         Requests {badge(reqCount.data?.pending)}
       </NavLink>
       {isManager && (
+        <NavLink to="/monitored" className={linkClass}>
+          Monitored
+        </NavLink>
+      )}
+      {isManager && (
         <NavLink to="/downloads" className={(p) => `${linkClass(p)} flex items-center`}>
           Downloads {badge(dlCount.data?.active)}
         </NavLink>

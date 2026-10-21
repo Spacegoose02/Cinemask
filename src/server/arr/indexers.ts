@@ -25,7 +25,8 @@ export interface SearchQuery {
   tmdbId?: number | null;
   tvdbId?: number | null;
   season?: number;
-  episode?: number;
+  /** An episode number, or "MM/DD" for a show named by air date (with the year as season). */
+  episode?: number | string;
   categories: number[];
   /** Omit q/ids to fetch the latest releases (RSS). */
   limit?: number;

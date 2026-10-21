@@ -151,8 +151,12 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     const grabbed = dl.episodes ? (JSON.parse(dl.episodes) as { season: number; episodes: number[] }) : null;
     for (const file of files) {
       const parsed = parseRelease(path.basename(file));
-      const season = opts.episode?.season ?? parsed.season ?? grabbed?.season ?? null;
-      const eps = opts.episode?.episodes ?? (parsed.episodes.length ? parsed.episodes : grabbed?.episodes.length === 1 ? grabbed.episodes : []);
+      // A file named by air date ("20.20.2025.10.17") is the episode that aired that day.
+      const dated = !opts.episode && parsed.season === null && parsed.airDate
+        ? ctx.db.select().from(monitoredEpisodes).where(and(eq(monitoredEpisodes.monitoredId, row.id), eq(monitoredEpisodes.airDate, parsed.airDate))).get()
+        : undefined;
+      const season = opts.episode?.season ?? dated?.season ?? parsed.season ?? grabbed?.season ?? null;
+      const eps = opts.episode?.episodes ?? (dated ? [dated.episode] : parsed.episodes.length ? parsed.episodes : grabbed?.episodes.length === 1 ? grabbed.episodes : []);
       if (season === null || !eps.length) {
         result.skipped.push(`${path.basename(file)}: could not tell which episode it is`);
         continue;

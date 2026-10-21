@@ -3,7 +3,7 @@ import type { AppContext } from '../context.js';
 import { monitored, monitorExclusions, requests, users, type MediaKind } from '../db/schema.js';
 import { fetchJson } from '../integrations/http.js';
 import { refreshMetadata, tmdbClient } from '../library/service.js';
-import { monitorTitle } from '../arr/monitor.js';
+import { monitorTitle, refreshEpisodes } from '../arr/monitor.js';
 import { defaultProfileId, listProfiles } from '../arr/profiles.js';
 import { scanFolder } from '../files/service.js';
 
@@ -16,6 +16,8 @@ export interface ImportProgress {
   total: number;
   done: number;
   added: number;
+  /** Already in Cinemask: their monitored state (and Sonarr's seasons) were brought in line with the source. */
+  updated: number;
   skipped: number;
   errors: string[];
   startedAt: number;
@@ -83,7 +85,7 @@ export function startImport(ctx: AppContext, source: ImportSource, userId: numbe
   const current = importRuns.get(source);
   if (current?.running) return current;
   connection(ctx, source); // fail fast when it isn't set up
-  const run: ImportProgress = { source, running: true, total: 0, done: 0, added: 0, skipped: 0, errors: [], startedAt: Date.now(), finishedAt: null };
+  const run: ImportProgress = { source, running: true, total: 0, done: 0, added: 0, updated: 0, skipped: 0, errors: [], startedAt: Date.now(), finishedAt: null };
   importRuns.set(source, run);
   const job = source === 'radarr' ? importRadarr : source === 'sonarr' ? importSonarr : importOverseerr;
   void job(ctx, run, userId)
@@ -95,10 +97,13 @@ export function startImport(ctx: AppContext, source: ImportSource, userId: numbe
   return run;
 }
 
-/** Titles Cinemask already manages keep their settings, and titles removed by hand stay removed. */
-function alreadyHere(ctx: AppContext, kind: MediaKind, tmdbId: number): boolean {
-  const where = (t: typeof monitored | typeof monitorExclusions) => and(eq(t.kind, kind), eq(t.tmdbId, tmdbId));
-  return Boolean(ctx.db.select({ id: monitored.id }).from(monitored).where(where(monitored)).get() || ctx.db.select().from(monitorExclusions).where(where(monitorExclusions)).get());
+/** Titles removed from monitoring by hand stay removed; titles already here only take the source's monitored state. */
+function excluded(ctx: AppContext, kind: MediaKind, tmdbId: number): boolean {
+  return Boolean(ctx.db.select().from(monitorExclusions).where(and(eq(monitorExclusions.kind, kind), eq(monitorExclusions.tmdbId, tmdbId))).get());
+}
+
+function existing(ctx: AppContext, kind: MediaKind, tmdbId: number) {
+  return ctx.db.select().from(monitored).where(and(eq(monitored.kind, kind), eq(monitored.tmdbId, tmdbId))).get();
 }
 
 const note = (run: ImportProgress, title: string, err: unknown) => {
@@ -114,8 +119,15 @@ export async function importRadarr(ctx: AppContext, run: ImportProgress, userId:
   run.total = movies.length;
   for (const m of movies) {
     try {
-      if (!m.tmdbId || alreadyHere(ctx, 'movie', m.tmdbId)) {
+      if (!m.tmdbId || excluded(ctx, 'movie', m.tmdbId)) {
         run.skipped++;
+        continue;
+      }
+      // Added earlier (by library sync, say): take Radarr's monitored state, keep everything else.
+      const have = existing(ctx, 'movie', m.tmdbId);
+      if (have) {
+        ctx.db.update(monitored).set({ monitored: m.monitored }).where(eq(monitored.id, have.id)).run();
+        run.updated++;
         continue;
       }
       const row = await monitorTitle(ctx, { kind: 'movie', tmdbId: m.tmdbId, profileId: profileFor(ctx, 'movie', profiles, m.qualityProfileId), addedBy: userId });
@@ -141,12 +153,21 @@ export async function importSonarr(ctx: AppContext, run: ImportProgress, userId:
       let tmdbId = s.tmdbId || null;
       if (!tmdbId && s.tvdbId) tmdbId = (await tmdb.findByExternal(String(s.tvdbId), 'tvdb_id')).tv_results?.[0]?.id ?? null;
       if (!tmdbId && s.imdbId) tmdbId = (await tmdb.findByExternal(s.imdbId, 'imdb_id')).tv_results?.[0]?.id ?? null;
-      if (!tmdbId || alreadyHere(ctx, 'show', tmdbId)) {
+      if (!tmdbId || excluded(ctx, 'show', tmdbId)) {
         run.skipped++;
         continue;
       }
       const seasons = s.seasons?.filter((x) => x.seasonNumber > 0);
       const picked = seasons?.filter((x) => x.monitored).map((x) => x.seasonNumber) ?? [];
+      // Added earlier: take Sonarr's monitored state and seasons, keep everything else.
+      const have = existing(ctx, 'show', tmdbId);
+      if (have) {
+        const chosen = !seasons?.length || picked.length === seasons.length ? null : picked;
+        ctx.db.update(monitored).set({ monitored: s.monitored, seasons: chosen ? JSON.stringify(chosen) : null }).where(eq(monitored.id, have.id)).run();
+        await refreshEpisodes(ctx, { ...have, seasons: chosen ? JSON.stringify(chosen) : null }, true).catch(() => undefined);
+        run.updated++;
+        continue;
+      }
       const row = await monitorTitle(ctx, {
         kind: 'show',
         tmdbId,

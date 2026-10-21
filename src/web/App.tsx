@@ -19,6 +19,7 @@ import { HomePage } from './pages/Home';
 import { LibraryPage } from './pages/Library';
 import { LoginPage } from './pages/Login';
 import { MediaDetailPage } from './pages/MediaDetail';
+import { MonitoredPage } from './pages/Monitored';
 import { SearchPage } from './pages/Search';
 import { SettingsPage } from './pages/Settings';
 import { SetupPage } from './pages/Setup';
@@ -61,6 +62,14 @@ export function App() {
         <Route path="/collections" element={<CollectionsPage />} />
         <Route path="/collections/:id" element={<CollectionDetailPage />} />
         <Route path="/requests" element={<RequestsPage />} />
+        <Route
+          path="/monitored"
+          element={
+            <RequireRole role="manager">
+              <MonitoredPage />
+            </RequireRole>
+          }
+        />
         <Route
           path="/youtube"
           element={

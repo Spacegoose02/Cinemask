@@ -109,7 +109,7 @@ export function wantedTarget(ctx: AppContext, row: MonitoredRow, filter?: { seas
     .filter((e) => (filter ? true : e.monitored) && e.airDate && e.airDate <= today())
     .filter((e) => filter?.season === undefined || e.season === filter.season)
     .filter((e) => filter?.episode === undefined || e.episode === filter.episode)
-    .map((e) => ({ season: e.season, episode: e.episode, currentQuality: e.fileQuality ?? onServer.get(`${e.season}:${e.episode}`) ?? null }))
+    .map((e) => ({ season: e.season, episode: e.episode, airDate: e.airDate, currentQuality: e.fileQuality ?? onServer.get(`${e.season}:${e.episode}`) ?? null }))
     .filter((e) => !e.currentQuality || belowCutoff(profile, e.currentQuality));
   return eps.length ? { kind: 'show', title: row.title, year: row.year, episodes: eps } : null;
 }

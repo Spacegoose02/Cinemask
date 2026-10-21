@@ -4,6 +4,18 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-21
+
+### Added
+- A Monitored page (managers) lists every movie and show Cinemask follows: monitored or unmonitored, and what's missing ("Missing", "3 of 40 episodes missing", "Not released yet"). It has filters, Monitor/Unmonitor, and a Search button for titles with something missing.
+- Downloads → Search indexers: sort the results by release date (newest or oldest first), seeders or size. The choice is remembered.
+- News and talk shows filed by air date (20/20, 48 Hours, nightly shows) are found and imported: a release or file named like `20.20.2025.10.17` counts as the episode that aired that day. When a show's search finds nothing by season and episode, it searches by air date for the newest wanted episodes.
+
+### Changed
+- Title pages have one "Watch trailer" button for everyone. It plays the trailer file on the server when there is one, and the YouTube trailer otherwise. The separate "Trailer on YouTube" and numbered trailer buttons are gone.
+- Importing from Radarr or Sonarr again brings titles already in Cinemask (from library sync, say) in line with them: they take Radarr's or Sonarr's monitored state, and Sonarr's monitored seasons. Their files and profiles are left alone.
+- Downloads → Search indexers lists releases of exactly what you typed first, so "48 hours" shows 48 Hours ahead of "Travel Man: 48 Hours In…".
+
 ## [0.15.1] - 2026-10-21
 
 ### Fixed
