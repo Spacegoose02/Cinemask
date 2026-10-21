@@ -122,14 +122,10 @@ export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; ac
             <StatusBadge status={m.availability.status} resolution={m.availability.resolution} />
             {m.overview && <p className="max-w-3xl text-sm leading-relaxed">{m.overview}</p>}
             <div className="flex flex-wrap gap-2">
-              {local.data?.map((t) => (
-                <button key={t.index} className="btn-secondary" onClick={() => setTrailer(t.index)} title={t.name}>
-                  ▶ {local.data.length > 1 ? `Trailer ${t.index + 1}` : 'Watch trailer'}
-                </button>
-              ))}
-              {m.trailerKey && (
-                <button className="btn-secondary" onClick={() => setTrailer('online')}>
-                  ▶ {local.data?.length ? 'Trailer on YouTube' : 'Watch trailer'}
+              {(local.data?.length || m.trailerKey) && (
+                // One button for everyone: a trailer file on the server first, YouTube when there isn't one.
+                <button className="btn-secondary" onClick={() => setTrailer(local.data?.length ? 0 : 'online')}>
+                  ▶ Watch trailer
                 </button>
               )}
               {actions?.(m)}

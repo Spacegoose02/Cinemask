@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-10-21
+
+### Changed
+- Title pages have one "Watch trailer" button for everyone. It plays the trailer file on the server when there is one, and the YouTube trailer otherwise. The separate "Trailer on YouTube" and numbered trailer buttons are gone.
+
 ## [0.15.1] - 2026-10-21
 
 ### Fixed
