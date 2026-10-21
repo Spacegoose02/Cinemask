@@ -110,3 +110,16 @@ export async function manualImport(
   if (!result.imported.length) throw new Error(result.skipped.join('; ') || 'Nothing was imported');
   return { ...result, monitoredId: row.id };
 }
+
+/** Deletes a file from the downloads or watch folder (and its folder, once no videos are left in it). */
+export function deleteImportable(ctx: AppContext, file: string): { freed: number } {
+  const root = importFolders(ctx).find((f) => insideRoot(f.path, file));
+  if (!root) throw new Error('Only files in the downloads or watch folder can be deleted here');
+  if (!findVideos(file).includes(file)) throw new Error('That file is gone or is not a video');
+  const freed = fs.statSync(file).size;
+  fs.rmSync(file);
+  // Leftovers (samples, .nfo, artwork) go with the release folder once its last video is gone.
+  const top = path.join(root.path, path.relative(root.path, file).split(path.sep)[0]!);
+  if (top !== file && insideRoot(root.path, top) && fs.existsSync(top) && !findVideos(top).length) fs.rmSync(top, { recursive: true, force: true });
+  return { freed };
+}

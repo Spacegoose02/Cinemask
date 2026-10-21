@@ -4,6 +4,17 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-21
+
+### Added
+- Downloads → History: "Clear history" and "Clear failed and removed". Only the list is cleared; the queue and files on disk aren't touched.
+- Downloads → Import: a Delete button removes a file from the downloads or watch folder, with its release folder's leftovers once its last video is gone.
+- Library → Find duplicates: movies and episodes with more than one video in their folder (trailers and extras don't count), with a Delete button for each extra copy, plus titles Plex or Jellyfin list more than once.
+- Calendar: a "Premieres only" or "Premieres and finales" view, a Movies or Shows filter, and badges for series premieres, season premieres, season finales and series finales. Finales come from TMDB, so they appear once a show's episodes are refreshed (every 12 hours).
+
+### Fixed
+- Finding a movie's file in its folder no longer picks a trailer or featurette that happens to be bigger.
+
 ## [0.14.0] - 2026-10-20
 
 ### Added

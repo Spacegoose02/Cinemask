@@ -18,11 +18,32 @@ interface Entry {
   trailerKey: string | null;
   monitored: boolean;
   releaseType?: 'cinema' | 'digital' | 'physical';
+  premiere?: boolean;
   hasFile: boolean;
-  episodes?: { season: number; episode: number; title: string | null; hasFile: boolean }[];
+  episodes?: { season: number; episode: number; title: string | null; hasFile: boolean; marker: Marker | null }[];
 }
 
+type Marker = 'series_premiere' | 'season_premiere' | 'season_finale' | 'series_finale';
 type View = 'month' | 'week' | 'agenda';
+type Only = 'all' | 'premieres' | 'premieres_finales';
+type KindFilter = 'all' | 'movie' | 'show';
+
+const MARKER_LABEL: Record<Marker, string> = { series_premiere: 'Series premiere', season_premiere: 'Season premiere', season_finale: 'Season finale', series_finale: 'Series finale' };
+const MARKER_SHORT: Record<Marker, string> = { series_premiere: 'NEW', season_premiere: 'PREMIERE', season_finale: 'FINALE', series_finale: 'FINALE' };
+const isPremiere = (m: Marker | null) => m === 'series_premiere' || m === 'season_premiere';
+
+/** Keeps what the view asks for; a show's day keeps only its premiere (and finale) episodes. */
+function filterEntries(entries: Entry[], only: Only, kind: KindFilter): Entry[] {
+  return entries
+    .filter((e) => kind === 'all' || e.kind === kind)
+    .map((e) => {
+      if (only === 'all') return e;
+      if (e.kind === 'movie') return e.premiere ? e : null;
+      const eps = (e.episodes ?? []).filter((ep) => (only === 'premieres' ? isPremiere(ep.marker) : ep.marker !== null));
+      return eps.length ? { ...e, episodes: eps, hasFile: eps.every((ep) => ep.hasFile) } : null;
+    })
+    .filter((e): e is Entry => e !== null);
+}
 
 const RELEASE_LABEL = { cinema: 'In theaters', digital: 'Digital release', physical: 'Disc release' };
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -63,10 +84,22 @@ function rangeFor(view: View, anchor: Date): { start: Date; end: Date } {
 
 function Chip({ e, onClick }: { e: Entry; onClick: () => void }) {
   const eps = e.episodes ?? [];
+  // A finale outranks a premiere on the same day only when there's no premiere.
+  const marker = eps.find((ep) => isPremiere(ep.marker))?.marker ?? eps.find((ep) => ep.marker)?.marker ?? null;
   return (
     <button onClick={onClick} className={`flex w-full items-center gap-1 rounded border px-1.5 py-0.5 text-left text-xs ${tone(e)}`} title={entryLabel(e)}>
       {e.kind === 'movie' && <span className="shrink-0 opacity-70">{e.releaseType === 'cinema' ? '🎬' : e.releaseType === 'physical' ? '💿' : '📺'}</span>}
       <span className="min-w-0 truncate">{e.kind === 'show' && eps.length ? `${e.title} ${epCode(eps[0]!)}` : e.title}</span>
+      {marker && (
+        <span className={`shrink-0 rounded px-1 text-[10px] font-bold ${isPremiere(marker) ? 'bg-accent text-accent-fg' : 'bg-warning text-black'}`} title={MARKER_LABEL[marker]}>
+          {MARKER_SHORT[marker]}
+        </span>
+      )}
+      {e.kind === 'movie' && e.premiere && e.releaseType !== 'cinema' && (
+        <span className="shrink-0 rounded bg-accent px-1 text-[10px] font-bold text-accent-fg" title="First release">
+          PREMIERE
+        </span>
+      )}
       {/* The "+5" stays visible however narrow the cell is. */}
       {eps.length > 1 && <span className="ml-auto shrink-0 rounded bg-black/30 px-1 font-semibold">+{eps.length - 1}</span>}
     </button>
@@ -91,6 +124,7 @@ function Details({ e, onClose }: { e: Entry; onClose: () => void }) {
                 <li key={epCode(ep)} className="flex justify-between gap-2">
                   <span>
                     <span className="text-muted">{epCode(ep)}</span> {ep.title}
+                    {ep.marker && <span className={`ml-2 rounded px-1 text-[10px] font-bold ${isPremiere(ep.marker) ? 'bg-accent text-accent-fg' : 'bg-warning text-black'}`}>{MARKER_LABEL[ep.marker]}</span>}
                   </span>
                   <span className={ep.hasFile ? 'text-success' : 'text-muted'}>{ep.hasFile ? 'Downloaded' : e.date > todayIso() ? 'Upcoming' : 'Missing'}</span>
                 </li>
@@ -120,10 +154,27 @@ export function CalendarPage() {
   const [view, setView] = useState<View>(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'agenda' : 'month'));
   const [anchor, setAnchor] = useState(() => new Date());
   const [selected, setSelected] = useState<Entry | null>(null);
+  const [only, setOnly] = useState<Only>(() => {
+    try {
+      return (localStorage.getItem('calendar-only') as Only | null) ?? 'all';
+    } catch {
+      return 'all';
+    }
+  });
+  const [kind, setKind] = useState<KindFilter>('all');
+  const pickOnly = (v: Only) => {
+    setOnly(v);
+    try {
+      localStorage.setItem('calendar-only', v);
+    } catch {
+      // private mode: the choice just isn't remembered
+    }
+  };
   const { start, end } = rangeFor(view, anchor);
   const q = useQuery({ queryKey: ['calendar', iso(start), iso(end)], queryFn: () => api<Entry[]>(`/api/calendar?start=${iso(start)}&end=${iso(end)}`) });
   const byDate = new Map<string, Entry[]>();
-  for (const e of q.data ?? []) byDate.set(e.date, [...(byDate.get(e.date) ?? []), e]);
+  const shown = filterEntries(q.data ?? [], only, kind);
+  for (const e of shown) byDate.set(e.date, [...(byDate.get(e.date) ?? []), e]);
 
   const step = (dir: -1 | 1) => {
     if (view === 'month') setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1));
@@ -149,6 +200,16 @@ export function CalendarPage() {
               </button>
             ))}
           </div>
+          <select className="input w-auto" value={only} onChange={(e) => pickOnly(e.target.value as Only)} aria-label="Show">
+            <option value="all">Everything</option>
+            <option value="premieres">Premieres only</option>
+            <option value="premieres_finales">Premieres and finales</option>
+          </select>
+          <select className="input w-auto" value={kind} onChange={(e) => setKind(e.target.value as KindFilter)} aria-label="Type">
+            <option value="all">Movies and shows</option>
+            <option value="movie">Movies</option>
+            <option value="show">Shows</option>
+          </select>
           <button className="btn-secondary" onClick={() => step(-1)} aria-label="Previous">
             ‹
           </button>
@@ -177,7 +238,7 @@ export function CalendarPage() {
                 </div>
               </section>
             ))}
-          {q.data && !q.data.length && <p className="text-muted">Nothing monitored is coming out in the next 30 days.</p>}
+          {q.data && !shown.length && <p className="text-muted">{only === 'all' ? 'Nothing monitored is coming out in the next 30 days.' : 'No premieres in the next 30 days.'}</p>}
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -213,6 +274,11 @@ export function CalendarPage() {
           <span className="h-2.5 w-2.5 rounded-sm bg-danger/60" /> Missing
         </span>
         <span>🎬 theaters · 📺 digital · 💿 disc</span>
+        <span className="flex items-center gap-1">
+          <span className="rounded bg-accent px-1 text-[10px] font-bold text-accent-fg">NEW</span> series premiere
+          <span className="rounded bg-accent px-1 text-[10px] font-bold text-accent-fg">PREMIERE</span> season premiere
+          <span className="rounded bg-warning px-1 text-[10px] font-bold text-black">FINALE</span> season or series finale
+        </span>
       </div>
       {selected && <Details e={selected} onClose={() => setSelected(null)} />}
     </div>

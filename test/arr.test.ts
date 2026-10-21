@@ -361,6 +361,46 @@ describe('request → download → import', () => {
     expect(d.error).toMatch(/Downloads → Import/);
   });
 
+  it('clears history, deletes files from the import list, and finds and deletes duplicate copies', async () => {
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    const db = t.app.ctx.dbHandle.sqlite;
+    const add = (status: string) => db.prepare("INSERT INTO downloads (title, protocol, status, added_at) VALUES ('x', 'torrent', ?, 1)").run(status);
+    ['imported', 'failed', 'removed', 'queued'].forEach(add);
+    expect((await kid.req('DELETE', '/api/downloads/history')).statusCode).toBe(403);
+    expect((await owner.req('DELETE', '/api/downloads/history?only=failed')).json().cleared).toBe(2);
+    expect((await owner.req('DELETE', '/api/downloads/history')).json().cleared).toBe(1);
+    expect((db.prepare('SELECT status FROM downloads').all() as { status: string }[]).map((r) => r.status)).toEqual(['queued']);
+
+    // Deleting from the import list takes the release folder's leftovers with its last video.
+    const rel = path.join(dl, 'Some.Release.2014');
+    fs.mkdirSync(rel, { recursive: true });
+    fs.writeFileSync(path.join(rel, 'some.release.mkv'), 'v');
+    fs.writeFileSync(path.join(rel, 'info.nfo'), 'n');
+    expect((await kid.req('POST', '/api/manual-import/delete', { path: path.join(rel, 'some.release.mkv') })).statusCode).toBe(403);
+    expect((await owner.req('POST', '/api/manual-import/delete', { path: path.join(media, 'x.mkv') })).statusCode).toBe(400);
+    expect((await owner.req('POST', '/api/manual-import/delete', { path: path.join(rel, 'some.release.mkv') })).statusCode).toBe(200);
+    expect(fs.existsSync(rel)).toBe(false);
+
+    // Two copies of the movie (the trailer doesn't count); deleting one leaves the other tracked.
+    const folder = path.join(media, 'movies', 'Paddington (2014)');
+    fs.mkdirSync(folder, { recursive: true });
+    const a = path.join(folder, 'Paddington.2014.1080p.BluRay.mkv');
+    const b = path.join(folder, 'Paddington.2014.720p.WEB-DL.mkv');
+    for (const f of [a, b, path.join(folder, 'Paddington-trailer.mkv')]) fs.writeFileSync(f, 'v');
+    await owner.req('POST', `/api/monitored/${m.id}/scan`);
+    expect((await kid.req('GET', '/api/duplicates')).statusCode).toBe(403);
+    const dupes = (await owner.req('GET', '/api/duplicates')).json();
+    expect(dupes.files).toHaveLength(1);
+    expect(dupes.files[0].files.map((f: { path: string }) => f.path).sort()).toEqual([a, b]);
+    expect((await owner.req('POST', '/api/duplicates/delete', { monitoredId: m.id, path: '/etc/passwd' })).statusCode).toBe(400);
+    expect((await owner.req('POST', '/api/duplicates/delete', { monitoredId: m.id, path: a })).statusCode).toBe(200);
+    expect(fs.existsSync(a)).toBe(false);
+    expect((await owner.req('GET', '/api/duplicates')).json().files).toEqual([]);
+    expect((await owner.req('GET', `/api/monitored/${m.id}/files`)).json().files[0]).toMatchObject({ path: b, exists: true });
+    // The last copy can't be deleted from here.
+    expect((await owner.req('POST', '/api/duplicates/delete', { monitoredId: m.id, path: b })).statusCode).toBe(400);
+  });
+
   it('the upgrades switch stops replacing downloaded files, whatever the profile allows', async () => {
     await owner.req('PUT', '/api/settings/downloading', { upgrades: false });
     const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, profileId: await profileId('1080p or above'), search: false })).json();

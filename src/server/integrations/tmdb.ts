@@ -70,7 +70,7 @@ export interface TmdbShow {
 
 export interface TmdbSeason {
   season_number: number;
-  episodes: { episode_number: number; name: string; air_date: string | null; overview: string; still_path: string | null; runtime: number | null }[];
+  episodes: { episode_number: number; name: string; air_date: string | null; overview: string; still_path: string | null; runtime: number | null; episode_type?: string | null }[];
 }
 
 interface Paged<T> {

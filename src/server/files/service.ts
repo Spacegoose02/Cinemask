@@ -67,6 +67,11 @@ function pruneEmpty(root: string, dir: string) {
   }
 }
 
+/** Extras named the Plex way ("Movie-trailer.mkv", or in a "Trailers" or "Featurettes" folder) sit next to a movie on purpose; they aren't the movie. */
+const EXTRA_FILE = /-(trailer|teaser|featurette|behindthescenes|deleted|interview|scene|short|other|sample)$/i;
+const EXTRA_DIR = /^(trailers|featurettes|behind the scenes|deleted scenes|interviews|scenes|shorts|other|extras|samples?)$/i;
+export const isExtra = (folder: string, file: string) => EXTRA_FILE.test(path.basename(file, path.extname(file))) || path.relative(folder, file).split(path.sep).slice(0, -1).some((d) => EXTRA_DIR.test(d));
+
 const sizeOf = (p: string | null) => {
   try {
     return p ? fs.statSync(p).size : null;
@@ -199,8 +204,9 @@ export function scanFolder(ctx: AppContext, row: MonitoredRow): { found: number;
       ctx.db.update(monitored).set({ filePath: null, fileQuality: null }).where(eq(monitored.id, row.id)).run();
     }
     const current = row.filePath && fs.existsSync(row.filePath) ? row.filePath : null;
-    if (!current && videos.length) {
-      const file = videos.sort((a, b) => fs.statSync(b).size - fs.statSync(a).size)[0]!;
+    const movies = videos.filter((f) => !isExtra(folder, f));
+    if (!current && movies.length) {
+      const file = movies.sort((a, b) => fs.statSync(b).size - fs.statSync(a).size)[0]!;
       ctx.db.update(monitored).set({ path: folder, filePath: file, fileQuality: parseRelease(path.basename(file)).quality }).where(eq(monitored.id, row.id)).run();
       found++;
     }

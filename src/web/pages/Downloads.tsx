@@ -273,6 +273,18 @@ function ManualImport() {
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const list = useQuery({ queryKey: ['manual-import'], queryFn: () => api<{ folders: { name: string; path: string }[]; files: ImportableFile[] }>('/api/manual-import') });
   const files = (list.data?.files ?? []).filter((f) => showImported || !f.imported);
+  const remove = async (f: ImportableFile) => {
+    const seeding = f.folder === 'Downloads' ? ' If it is still seeding in your torrent client, the torrent will stop working.' : '';
+    if (!confirm(`Delete ${f.name} from disk? This can't be undone.${seeding}`)) return;
+    setMsg(null);
+    try {
+      const r = await api<{ freed: number }>('/api/manual-import/delete', { body: { path: f.path } });
+      setMsg({ kind: 'success', text: `Deleted ${f.name} (${formatBytes(r.freed)}).` });
+      await qc.invalidateQueries({ queryKey: ['manual-import'] });
+    } catch (err) {
+      setMsg({ kind: 'error', text: (err as Error).message });
+    }
+  };
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
@@ -295,9 +307,14 @@ function ManualImport() {
               <div className="break-all text-sm font-medium">{f.name}</div>
               <div className="text-xs text-muted">{[f.folder, formatBytes(f.size), formatDate(f.modifiedAt), guessText(f.guess), f.imported ? 'already imported' : null].filter(Boolean).join(' · ')}</div>
             </div>
-            <button className="btn-primary text-xs" onClick={() => setFile(f)}>
-              Import…
-            </button>
+            <div className="flex gap-2">
+              <button className="btn-primary text-xs" onClick={() => setFile(f)}>
+                Import…
+              </button>
+              <button className="btn-danger text-xs" onClick={() => void remove(f)}>
+                Delete
+              </button>
+            </div>
           </li>
         ))}
         {list.data && !files.length && <li className="card text-sm text-muted">Nothing waiting to be imported.</li>}
@@ -347,6 +364,14 @@ export function DownloadsPage() {
     await qc.invalidateQueries({ queryKey: ['downloads'] });
   };
 
+  const [histMsg, setHistMsg] = useState('');
+  const clearHistory = async (only: 'all' | 'failed') => {
+    if (!confirm(only === 'all' ? 'Clear all finished, failed and removed downloads from History? Files on disk and the queue are not touched.' : 'Clear failed and removed downloads from History?')) return;
+    const r = await api<{ cleared: number }>(`/api/downloads/history?only=${only}`, { method: 'DELETE' });
+    setHistMsg(`Cleared ${r.cleared} from History.`);
+    await qc.invalidateQueries({ queryKey: ['downloads'] });
+  };
+
   const direct = async (e: React.FormEvent) => {
     e.preventDefault();
     setMsg(null);
@@ -374,6 +399,17 @@ export function DownloadsPage() {
       </div>
       {tab === 'import' && <ManualImport />}
       {tab === 'queue' && list.data && <QueueTotals rows={list.data} />}
+      {tab === 'history' && (
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-secondary text-xs" onClick={() => void clearHistory('failed')}>
+            Clear failed and removed
+          </button>
+          <button className="btn-danger text-xs" onClick={() => void clearHistory('all')}>
+            Clear history
+          </button>
+          {histMsg && <span className="self-center text-xs text-muted">{histMsg}</span>}
+        </div>
+      )}
       <ul className={`space-y-2 ${tab === 'import' ? 'hidden' : ''}`}>
         {list.data?.map((d) => (
           <li key={d.id} className="card space-y-2 p-3">

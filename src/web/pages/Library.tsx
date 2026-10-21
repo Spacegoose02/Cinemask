@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { DuplicatesDialog } from '../components/Duplicates';
 import { MatchPicker } from '../components/MatchPicker';
 import { MediaGrid } from '../components/media';
 import { api, hasRole } from '../lib/api';
@@ -38,6 +39,7 @@ export function LibraryPage() {
   const isManager = hasRole(me, 'manager');
   const qc = useQueryClient();
   const [fixing, setFixing] = useState<LibraryItem | null>(null);
+  const [dupes, setDupes] = useState(false);
   const page = Number(params.get('page') ?? 1);
   const qs = new URLSearchParams({ sort, page: String(page), pageSize: String(PAGE_SIZE), ...(kind && { kind }), ...(resolution && { resolution }), ...(q && { q }), ...(watched === 'unmatched' ? { unmatched: 'true' } : watched && { watched }) });
   const lib = useQuery({ queryKey: ['library', qs.toString()], queryFn: () => api<LibraryResponse>(`/api/library?${qs}`) });
@@ -82,6 +84,11 @@ export function LibraryPage() {
             <option value="release">Release date</option>
             <option value="rating">Rating</option>
           </select>
+          {isManager && (
+            <button className="btn-secondary" onClick={() => setDupes(true)}>
+              Find duplicates
+            </button>
+          )}
         </div>
       </div>
       {lib.data && lib.data.total === 0 && (
@@ -123,6 +130,7 @@ export function LibraryPage() {
           </button>
         </div>
       )}
+      {dupes && <DuplicatesDialog onClose={() => setDupes(false)} />}
     </div>
   );
 }
