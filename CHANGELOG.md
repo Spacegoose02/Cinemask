@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-10-21
+
+### Fixed
+- "Invalid CSRF token" when saving a setting in a tab left open after signing in again elsewhere (another tab, or after the session was replaced). The page now fetches the current token and retries once; if you were signed out, it says so.
+
 ## [0.19.0] - 2026-10-21
 
 ### Added

@@ -86,7 +86,7 @@ export function registerGuard(app: FastifyInstance): void {
       if (req.session) {
         const token = req.headers[CSRF_HEADER];
         if (typeof token !== 'string' || !timingSafeEqualStrings(token, req.session.csrfToken)) {
-          throw forbidden('Invalid CSRF token');
+          throw new HttpError(403, 'Invalid CSRF token', 'csrf');
         }
       }
     }
