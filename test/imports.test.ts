@@ -78,11 +78,11 @@ describe('importing from Radarr, Sonarr and Overseerr', () => {
     expect(await finished('radarr')).toMatchObject({ total: 2, added: 1, skipped: 1, errors: [] });
     const [m] = (await owner.req('GET', '/api/monitored')).json();
     expect(m).toMatchObject({ tmdbId: 116149, monitored: false, filePath: path.join(folder, 'Paddington.2014.1080p.BluRay.mkv') });
-    // Running it again leaves titles already here as they are.
+    // A title already here (library sync monitors everything) takes Radarr's monitored state, and keeps its file.
     await owner.req('PATCH', `/api/monitored/${m.id}`, { monitored: true });
     await owner.req('POST', '/api/import/radarr');
-    expect(await finished('radarr')).toMatchObject({ added: 0, skipped: 2 });
-    expect((await owner.req('GET', '/api/monitored')).json()[0].monitored).toBe(true);
+    expect(await finished('radarr')).toMatchObject({ added: 0, updated: 1, skipped: 1 });
+    expect((await owner.req('GET', '/api/monitored')).json()[0]).toMatchObject({ monitored: false, filePath: m.filePath });
   });
 
   it('imports Sonarr shows by TVDB id when Sonarr has no TMDB id', async () => {

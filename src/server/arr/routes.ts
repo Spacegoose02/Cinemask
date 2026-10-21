@@ -23,6 +23,7 @@ import { deleteImportable, importFolders, listImportable, manualImport } from '.
 import { assertRoot, linkDestinations, listRoots } from './roots.js';
 import { sanitizeSegment } from './naming.js';
 import { moveToRoot, scanFolder, titleOnDisk } from '../files/service.js';
+import { monitoredOverview } from './overview.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const kind = z.enum(MEDIA_KINDS);
@@ -176,6 +177,9 @@ export async function arrRoutes(app: FastifyInstance) {
       .all()
       .map((r) => ({ ...monitoredView(r), episodes: undefined }));
   });
+
+  /** Everything followed, with whether it is monitored and what's missing, for the Monitored page. */
+  app.get('/api/monitored/overview', { config: { access: 'manager' } }, async () => monitoredOverview(ctx));
 
   app.get('/api/monitored/lookup/:kind/:tmdbId', { config: { access: 'user' } }, async (req) => {
     const p = parse(z.object({ kind, tmdbId: z.coerce.number().int().positive() }), req.params);

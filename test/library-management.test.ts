@@ -159,6 +159,25 @@ describe('file management, calendar and health', () => {
     expect((await kid.req('GET', '/api/calendar?start=2018-01-01&end=2018-12-31')).statusCode).toBe(400);
   });
 
+  it('lists what is monitored and what is missing', async () => {
+    const show = await addShowWithFiles();
+    const movie = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 555, search: false });
+    expect((await kid.req('GET', '/api/monitored/overview')).statusCode).toBe(403);
+    const byTitle = () => owner.req('GET', '/api/monitored/overview').then((r) => Object.fromEntries(r.json().map((x: { title: string }) => [x.title, x])));
+    let o = await byTitle();
+    expect(o.Bluey).toMatchObject({ monitored: true, status: 'downloaded', episodes: { aired: 3, missing: 0 } });
+    expect(o.Paddington).toMatchObject({ monitored: true, status: 'missing', episodes: null });
+    expect(o['Future Film']).toMatchObject({ status: 'upcoming' });
+
+    // An episode's file goes: the show is partly missing. Unmonitoring shows too.
+    t.app.ctx.dbHandle.sqlite.prepare('UPDATE monitored_episodes SET file_path = NULL WHERE monitored_id = ? AND episode = 1').run(show);
+    await owner.req('PATCH', `/api/monitored/${movie.id}`, { monitored: false });
+    o = await byTitle();
+    expect(o.Bluey).toMatchObject({ status: 'partial', episodes: { aired: 3, missing: 1 } });
+    expect(o.Paddington.monitored).toBe(false);
+  });
+
   it('health checks report missing folders and are admin only', async () => {
     fs.rmSync(movies, { recursive: true });
     expect((await kid.req('GET', '/api/system/health')).statusCode).toBe(403);
