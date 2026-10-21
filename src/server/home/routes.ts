@@ -8,6 +8,8 @@ export const homeRow = z.discriminatedUnion('type', [
   z.object({ type: z.literal('featured') }),
   z.object({ type: z.literal('recent') }),
   z.object({ type: z.literal('upcoming') }),
+  z.object({ type: z.literal('airing_next') }),
+  z.object({ type: z.literal('airing_recent') }),
   z.object({ type: z.literal('requests') }),
   z.object({ type: z.literal('trending'), kind: z.enum(['all', 'movie', 'tv']).default('all') }),
   z.object({ type: z.literal('popular'), kind: z.enum(['movie', 'tv']) }),
@@ -20,6 +22,8 @@ export type HomeRow = z.infer<typeof homeRow>;
 export const DEFAULT_HOME: HomeRow[] = [
   { type: 'featured' },
   { type: 'recent' },
+  { type: 'airing_next' },
+  { type: 'airing_recent' },
   { type: 'upcoming' },
   { type: 'trending', kind: 'movie' },
   { type: 'trending', kind: 'tv' },

@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { AiringRow, useAiring } from '../components/Airing';
 import { MediaRow } from '../components/media';
 import { Modal } from '../components/Modal';
 import { Alert } from '../components/ui';
@@ -10,7 +11,7 @@ import { useAuth } from '../lib/auth';
 import { mediaPath, poster, type MediaCardData } from '../lib/media';
 
 type HomeRow =
-  | { type: 'featured' | 'recent' | 'upcoming' | 'requests' | 'collections' }
+  | { type: 'featured' | 'recent' | 'upcoming' | 'requests' | 'collections' | 'airing_next' | 'airing_recent' }
   | { type: 'trending'; kind: 'all' | 'movie' | 'tv' }
   | { type: 'popular'; kind: 'movie' | 'tv' }
   | { type: 'list' | 'collection'; id: number };
@@ -35,6 +36,10 @@ function useNames() {
         return 'Recently added';
       case 'upcoming':
         return 'Coming up';
+      case 'airing_next':
+        return 'Airing next';
+      case 'airing_recent':
+        return 'Recently aired';
       case 'requests':
         return 'My requests';
       case 'collections':
@@ -74,6 +79,8 @@ async function loadRow(r: HomeRow): Promise<Card[]> {
     case 'collection':
       return (await api<{ items: Card[] }>(`/api/collections/${r.id}`)).items;
     case 'collections':
+    case 'airing_next':
+    case 'airing_recent':
       return [];
   }
 }
@@ -140,6 +147,12 @@ function CollectionsRow({ items: all }: { items: ReturnType<typeof useNames>['co
   );
 }
 
+/** Followed shows by their next episode (tonight first) or their latest one. */
+function Airing({ which, label }: { which: 'next' | 'recent'; label: string }) {
+  const q = useAiring();
+  return <AiringRow title={label} items={q.data?.[which] ?? []} more="/calendar" />;
+}
+
 function Row({ row, label, more }: { row: HomeRow; label: string; more?: string }) {
   const q = useQuery({ queryKey: ['home-row', rowKey(row)], queryFn: () => loadRow(row) });
   return <MediaRow title={label} items={q.data ?? []} more={more} />;
@@ -153,6 +166,8 @@ function Customize({ rows, onClose }: { rows: HomeRow[]; onClose: () => void }) 
   const builtIn: HomeRow[] = [
     { type: 'featured' },
     { type: 'recent' },
+    { type: 'airing_next' },
+    { type: 'airing_recent' },
     { type: 'upcoming' },
     { type: 'requests' },
     { type: 'collections' },
@@ -241,6 +256,8 @@ export function HomePage() {
           <Featured key="featured" />
         ) : r.type === 'collections' ? (
           <CollectionsRow key="collections" items={collections} />
+        ) : r.type === 'airing_next' || r.type === 'airing_recent' ? (
+          <Airing key={r.type} which={r.type === 'airing_next' ? 'next' : 'recent'} label={label(r)} />
         ) : (
           <Row key={rowKey(r)} row={r} label={label(r)} more={r.type === 'recent' ? '/library' : r.type === 'list' ? `/lists/${r.id}` : r.type === 'collection' ? `/collections/${r.id}` : r.type === 'upcoming' ? '/calendar' : r.type === 'requests' ? '/requests' : undefined} />
         ),

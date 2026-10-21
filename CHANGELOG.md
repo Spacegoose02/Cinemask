@@ -4,6 +4,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-21
+
+### Added
+- "Airing next" and "Recently aired" rows on Home and at the top of Library: each followed show's next episode this week (tonight first) and its latest one, with the day it airs and whether it's downloaded. Home layouts you've customized can add them under Customize.
+
+### Changed
+- Monitored is a poster grid, like Sonarr. Under each poster: a bar with episodes on disk out of those aired (red when a monitored title is missing something, orange when an unmonitored one is, green or blue when complete), "Monitored · quality profile", and when the next episode airs. It can be sorted by next airing.
+
 ## [0.16.0] - 2026-10-21
 
 ### Added
