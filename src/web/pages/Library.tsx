@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { AiringRow, useAiring } from '../components/Airing';
 import { DuplicatesDialog } from '../components/Duplicates';
 import { MatchPicker } from '../components/MatchPicker';
 import { MediaGrid } from '../components/media';
@@ -52,6 +53,9 @@ export function LibraryPage() {
     setParams(next);
   };
   const pages = Math.max(1, Math.ceil((lib.data?.total ?? 0) / PAGE_SIZE));
+  // Shows airing this week sit above the library, until it's filtered or paged.
+  const showAiring = page === 1 && kind !== 'movie' && !q && !resolution && !watched;
+  const airing = useAiring();
 
   return (
     <div className="space-y-4">
@@ -91,6 +95,12 @@ export function LibraryPage() {
           )}
         </div>
       </div>
+      {showAiring && (
+        <>
+          <AiringRow title="Airing next" items={airing.data?.next ?? []} more="/calendar" />
+          <AiringRow title="Recently aired" items={airing.data?.recent ?? []} more="/calendar" />
+        </>
+      )}
       {lib.data && lib.data.total === 0 && (
         <div className="card text-sm text-muted">Nothing here yet. An admin can connect Plex or Jellyfin in Settings → Media servers.</div>
       )}

@@ -176,6 +176,26 @@ describe('file management, calendar and health', () => {
     o = await byTitle();
     expect(o.Bluey).toMatchObject({ status: 'partial', episodes: { aired: 3, missing: 1 } });
     expect(o.Paddington.monitored).toBe(false);
+    expect(o.Paddington).toMatchObject({ profile: expect.any(String), ended: false, nextAir: null });
+  });
+
+  it('lists each followed show\'s next and latest episode for anyone', async () => {
+    const show = await addShowWithFiles();
+    const day = (offset: number) => new Date(Date.now() + offset * 864e5).toISOString().slice(0, 10);
+    const setAir = (episode: number, date: string) => t.app.ctx.dbHandle.sqlite.prepare('UPDATE monitored_episodes SET air_date = ? WHERE monitored_id = ? AND episode = ?').run(date, show, episode);
+    setAir(1, day(-3));
+    setAir(2, day(-1));
+    setAir(3, day(0));
+    const res = (await kid.req('GET', '/api/airing?days=7')).json();
+    expect(res.next).toEqual([expect.objectContaining({ title: 'Bluey', season: 1, episode: 3, airDate: day(0), hasFile: true })]);
+    expect(res.recent).toEqual([expect.objectContaining({ episode: 2, airDate: day(-1) })]);
+    expect((await owner.req('GET', '/api/monitored/overview')).json()[0]).toMatchObject({ title: 'Bluey', nextAir: null });
+    setAir(3, day(2));
+    expect((await owner.req('GET', '/api/monitored/overview')).json()[0]).toMatchObject({ nextAir: day(2), episodes: { aired: 2 } });
+    // Unmonitored shows aren't listed.
+    await owner.req('PATCH', `/api/monitored/${show}`, { monitored: false });
+    expect((await kid.req('GET', '/api/airing')).json()).toEqual({ next: [], recent: [] });
+    expect((await kid.req('GET', '/api/airing?days=90')).statusCode).toBe(400);
   });
 
   it('health checks report missing folders and are admin only', async () => {
