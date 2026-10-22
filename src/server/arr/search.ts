@@ -49,6 +49,9 @@ function activeDownloads(ctx: AppContext, monitoredId: number) {
     .all();
 }
 
+/** A title as indexers search it: "20/20" finds nothing, "20 20" finds "20.20.2025.10.17". */
+const queryText = (title: string) => title.replace(/[/\\:]+/g, ' ').replace(/\s+/g, ' ').trim();
+
 function queriesFor(ctx: AppContext, row: MonitoredRow, target: Target): SearchQuery[] {
   const m = ctx.db.select().from(media).where(and(eq(media.kind, row.kind), eq(media.tmdbId, row.tmdbId))).get();
   if (row.kind === 'movie') {
@@ -60,7 +63,7 @@ function queriesFor(ctx: AppContext, row: MonitoredRow, target: Target): SearchQ
   const seasons = [...new Set((target.episodes ?? []).map((e) => e.season))];
   return seasons.flatMap((season) => {
     const eps = (target.episodes ?? []).filter((e) => e.season === season);
-    const base = { type: 'tvsearch' as const, q: row.title, tvdbId: m?.tvdbId, categories: CATEGORIES.tv };
+    const base = { type: 'tvsearch' as const, q: queryText(row.title), tvdbId: m?.tvdbId, categories: CATEGORIES.tv };
     // Ask for single episodes when only a few are missing; otherwise ask for the season (catches packs too).
     return eps.length <= 2 ? eps.map((e) => ({ ...base, season, episode: e.episode })) : [{ ...base, season }];
   });
@@ -166,7 +169,7 @@ function dateQueries(ctx: AppContext, row: MonitoredRow, target: Target): Search
     .filter((e) => e.airDate)
     .sort((a, b) => b.airDate!.localeCompare(a.airDate!))
     .slice(0, DATE_QUERIES)
-    .map((e) => ({ type: 'tvsearch' as const, q: row.title, tvdbId: m?.tvdbId, season: Number(e.airDate!.slice(0, 4)), episode: `${e.airDate!.slice(5, 7)}/${e.airDate!.slice(8, 10)}`, categories: CATEGORIES.tv }));
+    .map((e) => ({ type: 'tvsearch' as const, q: queryText(row.title), tvdbId: m?.tvdbId, season: Number(e.airDate!.slice(0, 4)), episode: `${e.airDate!.slice(5, 7)}/${e.airDate!.slice(8, 10)}`, categories: CATEGORIES.tv }));
 }
 
 /** Every episode of a season (or just one) as a manual-search target, for when nothing in it is wanted. */
@@ -204,9 +207,9 @@ export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter
   const judge = () => [...new Map(all.map((r) => [r.title, r])).values()].map((r) => decide(r, target, profile, bl, opts));
   await run(queriesFor(ctx, row, target));
   let judged = judge();
-  // Nothing by season and episode, and the indexers have no SxxEyy releases of it: it may be filed by air date instead.
-  const numbered = judged.some((d) => d.parsed.season !== null && !d.rejections.includes('Title does not match'));
-  if (row.kind === 'show' && !judged.some((d) => d.accepted) && !numbered) {
+  // Nothing by season and episode: news and talk shows (Dateline, 20/20) are often filed by air date instead,
+  // even when some of their episodes do carry SxxEyy names.
+  if (row.kind === 'show' && !judged.some((d) => d.accepted)) {
     await run(dateQueries(ctx, row, target));
     judged = judge();
   }
@@ -290,24 +293,23 @@ function scopeLabel(row: MonitoredRow, filter?: SearchFilter) {
  * An automatic search that also says why nothing was grabbed (nothing wanted, nothing found, every
  * release rejected, already downloading, or the download client refused it), for the Search buttons.
  */
-export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter): Promise<{ grabbed: number; message: string }> {
+export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter): Promise<{ grabbed: number; message: string; errors: string[] }> {
   const label = scopeLabel(row, filter);
   if (!wantedTarget(ctx, row, filter)) {
-    if (filter?.missingOnly) return { grabbed: 0, message: `Nothing missing for ${label}: ${row.kind === 'show' ? 'every monitored episode that has aired has a file' : 'it has a file'}.` };
-    return { grabbed: 0, message: `Nothing to search for: ${label} already has a file at the profile's cutoff${row.kind === 'show' ? ", or hasn't aired yet" : ''}.` };
+    if (filter?.missingOnly) return { grabbed: 0, errors: [], message: `Nothing missing for ${label}: ${row.kind === 'show' ? 'every monitored episode that has aired has a file' : 'it has a file'}.` };
+    return { grabbed: 0, errors: [], message: `Nothing to search for: ${label} already has a file at the profile's cutoff${row.kind === 'show' ? ", or hasn't aired yet" : ''}.` };
   }
   const { decisions, errors } = await searchMonitored(ctx, row, filter);
   const notes: string[] = [];
   const grabbed = await grabBest(ctx, row, decisions, notes);
-  const indexerNote = errors.length ? ` Indexer errors: ${errors.join('; ')}.` : '';
-  if (grabbed) return { grabbed, message: `Grabbed ${grabbed === 1 ? 'a release' : `${grabbed} releases`} for ${label}. It's on Downloads.` };
-  if (notes.length) return { grabbed, message: `Nothing grabbed for ${label}. ${[...new Set(notes)].join(' ')}${indexerNote}` };
-  if (!decisions.length) return { grabbed, message: `No releases found for ${label}.${indexerNote}` };
+  if (grabbed) return { grabbed, errors, message: `Grabbed ${grabbed === 1 ? 'a release' : `${grabbed} releases`} for ${label}. It's on Downloads.` };
+  if (notes.length) return { grabbed, errors, message: `Nothing grabbed for ${label}. ${[...new Set(notes)].join(' ')}` };
+  if (!decisions.length) return { grabbed, errors, message: `No releases found for ${label}.` };
   // Every release was rejected: name the most common reason, so it can be fixed or overridden with Manual.
   const counts = new Map<string, number>();
   for (const d of decisions) for (const r of new Set(d.rejections)) counts.set(r, (counts.get(r) ?? 0) + 1);
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
-  return { grabbed, message: `Found ${decisions.length} release(s) for ${label}, but none fit${top ? `: ${top[0]} (${top[1]})` : ''}. Manual shows each one and why.${indexerNote}` };
+  return { grabbed, errors, message: `Found ${decisions.length} release(s) for ${label}, but none fit${top ? `: ${top[0]} (${top[1]})` : ''}. Manual shows each one and why.` };
 }
 
 /**

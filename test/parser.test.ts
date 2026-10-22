@@ -17,6 +17,12 @@ describe('release parser', () => {
     ['Movie.Title.2020.MULTi.1080p.WEB.H264.PROPER-GRP', { title: 'Movie Title', languages: ['multi'], proper: true }],
     ['Some.Old.Movie.1985.DVDRip.XviD', { title: 'Some Old Movie', year: 1985, quality: 'DVD' }],
     ['No.Quality.Info.2021', { title: 'No Quality Info', year: 2021, quality: 'Unknown' }],
+    // A language word in the title isn't the release's language; after it, it is.
+    ['The.French.Dispatch.2021.1080p.WEB-DL', { title: 'The French Dispatch', languages: ['en'] }],
+    ['My.Big.Fat.Greek.Wedding.2002.1080p.BluRay', { title: 'My Big Fat Greek Wedding', languages: ['en'] }],
+    ['Dark.S01E01.German.DL.1080p.WEB', { title: 'Dark', languages: ['de'] }],
+    ['Some.Movie.Hungarian.1080p.WEB', { title: 'Some Movie', languages: ['hu'] }],
+    ['Film.2020.ITA.ENG.1080p.BluRay', { title: 'Film', languages: ['en', 'it'] }],
   ];
   for (const [name, expected] of cases) {
     it(name, () => expect(parseRelease(name)).toMatchObject(expected));
@@ -44,6 +50,10 @@ describe('title matching', () => {
     expect(titlesMatch('Law and Order SVU', 'Law & Order: SVU')).toBe(true);
     expect(titlesMatch('Bluey 2018', 'Bluey')).toBe(true);
     expect(titlesMatch('Blue', 'Bluey')).toBe(false);
+    // A network name on one side only.
+    expect(titlesMatch('Dateline', 'Dateline NBC')).toBe(true);
+    expect(titlesMatch('ABC 20 20', '20/20')).toBe(true);
+    expect(titlesMatch('NBC', 'Dateline NBC')).toBe(false);
   });
 });
 

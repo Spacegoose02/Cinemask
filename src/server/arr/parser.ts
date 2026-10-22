@@ -19,6 +19,7 @@ export interface ParsedRelease {
 
 const LANGUAGES: [RegExp, string][] = [
   [/\b(multi|dual[ .-]?audio)\b/i, 'multi'],
+  [/\b(english|eng)\b/i, 'en'],
   [/\b(french|vff|vfq|vostfr|truefrench)\b/i, 'fr'],
   [/\b(german|deutsch)\b/i, 'de'],
   [/\b(spanish|espanol|castellano|latino)\b/i, 'es'],
@@ -35,6 +36,17 @@ const LANGUAGES: [RegExp, string][] = [
   [/\b(norwegian|nor)\b/i, 'no'],
   [/\b(finnish)\b/i, 'fi'],
   [/\b(chinese|mandarin|cantonese)\b/i, 'zh'],
+  [/\b(hungarian)\b/i, 'hu'],
+  [/\b(czech|cz)\b/i, 'cs'],
+  [/\b(turkish)\b/i, 'tr'],
+  [/\b(arabic)\b/i, 'ar'],
+  [/\b(hebrew)\b/i, 'he'],
+  [/\b(ukrainian|ukr)\b/i, 'uk'],
+  [/\b(greek)\b/i, 'el'],
+  [/\b(romanian)\b/i, 'ro'],
+  [/\b(thai)\b/i, 'th'],
+  [/\b(vietnamese)\b/i, 'vi'],
+  [/\b(nordic)\b/i, 'nordic'],
 ];
 
 /** Parses a scene/P2P release name like "Show.Name.S01E02.1080p.WEB-DL.DDP5.1-GROUP". */
@@ -80,6 +92,8 @@ export function parseRelease(raw: string): ParsedRelease {
   const yearMatch = [...s.matchAll(/\b(19\d{2}|20\d{2})\b/g)].filter((m) => m.index! > 0 && m.index! < limit && (!daily || m.index !== daily.index)).pop();
   const year = yearMatch ? Number(yearMatch[1]) : null;
   if (yearMatch && !airDate) mark(yearMatch.index!);
+  // Where the title surely ends: an episode, a date or a year (a resolution can follow a language tag).
+  const titleEnd = cut;
 
   let resolution: string | null = null;
   const resMatch = /\b(2160p|4k|uhd|1080[pi]|720p|576p|480p)\b/i.exec(s);
@@ -109,10 +123,15 @@ export function parseRelease(raw: string): ParsedRelease {
   }
   for (const m of [/\b(remux|blu ?ray|bdrip|brrip|web ?dl|web ?rip|web|hdtv|dvd ?rip)\b/i.exec(s)]) if (m) mark(m.index);
 
-  const languages = LANGUAGES.filter(([re]) => re.test(s)).map(([, code]) => code);
-  for (const [re] of LANGUAGES) {
-    const m = re.exec(s);
-    if (m && m.index > 0) mark(m.index);
+  // A language word counts only after the title ("The French Dispatch 2021 1080p" is English, while
+  // "Show S01E01 GERMAN 1080p" isn't); with no episode, date or year to end the title, anywhere but the start.
+  const from = titleEnd < s.length ? titleEnd : 1;
+  const languages: string[] = [];
+  for (const [re, code] of LANGUAGES) {
+    const m = re.exec(s.slice(from));
+    if (!m) continue;
+    languages.push(code);
+    mark(from + m.index);
   }
 
   const group = /-([A-Za-z0-9]+)$/.exec(name.trim())?.[1] ?? null;
@@ -157,12 +176,18 @@ export function normalizeTitle(t: string): string {
     .trim();
 }
 
+/** TV networks that release names (or TMDB) put before or after a show's name: "Dateline NBC", "ABC 20/20". */
+const NETWORK = '(abc|nbc|cbs|fox|pbs|cnn|msnbc|bbc|itv|hbo|cw|amc|tlc|hgtv)';
+const withoutNetwork = (t: string) => t.replace(new RegExp(`^${NETWORK} (?=.)`), '').replace(new RegExp(`(?<=.) ${NETWORK}$`), '');
+
 export function titlesMatch(releaseTitle: string, ...candidates: string[]): boolean {
   const r = normalizeTitle(releaseTitle);
   return candidates.some((c) => {
     const n = normalizeTitle(c);
     // Allow the release to carry a trailing year or country tag the database title lacks.
-    return r === n || r === `${n} ${new Date().getFullYear()}` || r.replace(/ (19|20)\d{2}$/, '') === n || r.replace(/ (us|uk)$/, '') === n;
+    if (r === n || r === `${n} ${new Date().getFullYear()}` || r.replace(/ (19|20)\d{2}$/, '') === n || r.replace(/ (us|uk)$/, '') === n) return true;
+    // A network name on one side only: "Dateline" is "Dateline NBC", "ABC 20 20" is "20/20".
+    return withoutNetwork(r) === withoutNetwork(n);
   });
 }
 

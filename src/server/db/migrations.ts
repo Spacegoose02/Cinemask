@@ -475,6 +475,14 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE monitored ADD COLUMN larger_files INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    id: 17,
+    name: 'english profiles',
+    // Profiles were "any language", which grabbed dubbed releases; English is what was meant. Settings → Profiles changes it back.
+    sql: `
+      UPDATE quality_profiles SET language = 'en' WHERE language = 'any';
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

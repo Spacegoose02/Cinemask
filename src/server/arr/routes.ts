@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, ne, or } from 'drizzle-orm';
 import { notify } from '../notify/service.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -310,9 +310,26 @@ export async function arrRoutes(app: FastifyInstance) {
     const { id } = parse(idParam, req.params);
     const f = parse(z.object({ season: z.number().int().min(0).optional(), episode: z.number().int().min(0).optional(), missingOnly: z.boolean().optional() }), req.body ?? {});
     const row = getMonitored(id);
-    const { grabbed, message } = await explainedSearch(ctx, { ...row, monitored: true }, f);
+    const { grabbed, message, errors } = await explainedSearch(ctx, { ...row, monitored: true }, f);
     audit(db(), req, 'monitored.searched', { target: row.title, details: { grabbed, ...f } });
-    return { grabbed, message };
+    return { grabbed, message, errors };
+  });
+
+  /**
+   * What's happening to a title's downloads, for the status shown next to its episodes: everything
+   * still in progress, and failures from the last week.
+   */
+  app.get('/api/monitored/:id/activity', { config: { access: 'manager' } }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    getMonitored(id);
+    const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const rows = db()
+      .select({ id: downloads.id, title: downloads.title, status: downloads.status, progress: downloads.progress, episodes: downloads.episodes, error: downloads.error, addedAt: downloads.addedAt })
+      .from(downloads)
+      .where(and(eq(downloads.monitoredId, id), or(inArray(downloads.status, ['held', 'queued', 'downloading', 'paused', 'completed', 'importing']), and(eq(downloads.status, 'failed'), gte(downloads.addedAt, since)))))
+      .orderBy(desc(downloads.addedAt))
+      .all();
+    return rows.map((d) => ({ ...d, episodes: d.episodes ? (JSON.parse(d.episodes) as { season: number; episodes: number[] }) : null, eta: liveStats.get(d.id)?.eta ?? null }));
   });
 
   /** Manual (interactive) search: every release found, with why each would or wouldn't be grabbed. */
@@ -321,9 +338,15 @@ export async function arrRoutes(app: FastifyInstance) {
     const f = parse(z.object({ season: z.coerce.number().int().min(0).optional(), episode: z.coerce.number().int().min(0).optional() }), req.query);
     const row = getMonitored(id);
     const { decisions, errors } = await searchMonitored(ctx, row, f);
+    // Releases already sent for this title, newest first, so the list can mark them where they are.
+    const sent = new Map<string, string>();
+    for (const d of db().select({ title: downloads.title, status: downloads.status }).from(downloads).where(eq(downloads.monitoredId, id)).orderBy(desc(downloads.addedAt)).all()) {
+      if (!sent.has(d.title)) sent.set(d.title, d.status);
+    }
     return {
       errors,
       releases: decisions.map((d) => ({
+        grabbed: sent.get(d.release.title) ?? null,
         guid: d.release.guid,
         title: d.release.title,
         indexer: d.release.indexer,
@@ -533,7 +556,7 @@ export async function arrRoutes(app: FastifyInstance) {
     qualities: z.array(z.enum(QUALITY_IDS)).min(1),
     cutoff: z.enum(QUALITY_IDS),
     upgradesAllowed: z.boolean().default(true),
-    language: z.string().trim().regex(/^(any|multi|[a-z]{2})$/).default('any'),
+    language: z.string().trim().regex(/^(any|multi|[a-z]{2})$/).default('en'),
   });
 
   app.get('/api/profiles', { config: { access: 'user' } }, async () => listProfiles(ctx));
