@@ -146,16 +146,17 @@ describe('file management, calendar and health', () => {
 
   it('calendar groups a show’s episodes on the same day and lists movie release types', async () => {
     await addShowWithFiles();
-    await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false });
+    const paddington = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
     const days = (await kid.req('GET', '/api/calendar?start=2018-09-01&end=2018-10-31')).json();
     expect(days).toHaveLength(1);
-    expect(days[0]).toMatchObject({ date: '2018-10-01', title: 'Bluey', hasFile: true });
+    // monitoredId lets a manager search for an episode or movie straight from the calendar.
+    expect(days[0]).toMatchObject({ date: '2018-10-01', title: 'Bluey', hasFile: true, monitoredId: expect.any(Number) });
     expect(days[0].episodes).toHaveLength(3);
     // Premieres and finales are marked for the calendar's badges and its premieres view.
     expect(days[0].episodes.map((e: { marker: string | null }) => e.marker)).toEqual(['series_premiere', null, 'season_finale']);
     const movie = (await kid.req('GET', '/api/calendar?start=2015-04-01&end=2015-04-30')).json();
     // The digital release came after the cinema one, so it isn't the premiere.
-    expect(movie).toEqual([expect.objectContaining({ title: 'Paddington', releaseType: 'digital', date: '2015-04-28', hasFile: false, premiere: false })]);
+    expect(movie).toEqual([expect.objectContaining({ monitoredId: paddington.id, title: 'Paddington', releaseType: 'digital', date: '2015-04-28', hasFile: false, premiere: false })]);
     expect((await kid.req('GET', '/api/calendar?start=2018-01-01&end=2018-12-31')).statusCode).toBe(400);
   });
 

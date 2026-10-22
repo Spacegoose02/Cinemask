@@ -4,6 +4,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-22
+
+### Added
+- Calendar: clicking an episode or movie shows Search and Manual search buttons (managers). Search grabs the best release for that episode; Manual search lists every release to pick from. A day with several episodes of one show has the buttons on each episode.
+- Calendar: a "Missing only" view shows just what has aired or been released, is monitored, and has no file (the red entries).
+
 ## [0.19.1] - 2026-10-21
 
 ### Fixed
