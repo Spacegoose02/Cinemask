@@ -572,6 +572,27 @@ describe('request → download → import', () => {
     expect(dl2.warning).toMatch(/Bigger than the 2\.0 GB limit: 8\.0 GB/);
   });
 
+  it('searches by air date even when the show has numbered releases, and tracks what was grabbed', async () => {
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'show', tmdbId: 82728, search: false })).json();
+    t.app.ctx.dbHandle.sqlite.prepare("UPDATE monitored_episodes SET air_date = '2024-05-06' WHERE monitored_id = ? AND episode = 2").run(m.id);
+    indexerReturns([{ title: 'Bluey.S01E05.1080p.WEB-DL-GRP' }]);
+    const prev = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: string | URL, init?: RequestInit) =>
+      new URL(String(input)).searchParams.get('season') === '2024' ? new Response(torznab([{ title: 'Bluey.2024.05.06.1080p.WEB-DL-GRP' }])) : prev(input, init),
+    );
+    expect((await owner.req('POST', `/api/monitored/${m.id}/search`, { season: 1, episode: 2 })).json().grabbed).toBe(1);
+    expect(grabbed()).toEqual(['Bluey.2024.05.06.1080p.WEB-DL-GRP']);
+
+    // Manual search marks the release that was sent, in its place in the list.
+    const releases = (await owner.req('GET', `/api/monitored/${m.id}/releases?season=1&episode=2`)).json().releases;
+    expect(releases.find((r: { title: string }) => r.title === 'Bluey.2024.05.06.1080p.WEB-DL-GRP').grabbed).toBe('queued');
+    expect(releases.find((r: { title: string }) => r.title === 'Bluey.S01E05.1080p.WEB-DL-GRP').grabbed).toBeNull();
+
+    // The show page follows the download per episode.
+    expect((await kid.req('GET', `/api/monitored/${m.id}/activity`)).statusCode).toBe(403);
+    expect((await owner.req('GET', `/api/monitored/${m.id}/activity`)).json()).toMatchObject([{ status: 'queued', episodes: { season: 1, episodes: [2] } }]);
+  });
+
   it('"allow larger files" doubles the default size limit for one title', async () => {
     indexerReturns([
       { title: 'Paddington.2014.1080p.BluRay.x264-SIX', size: 6 * 1024 ** 3 },

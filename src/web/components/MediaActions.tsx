@@ -46,7 +46,21 @@ interface ReleaseRow {
   rejections: string[];
   /** Size per movie or episode when over the size limit. */
   oversize: number | null;
+  /** The status of this release's download when it was already sent for this title. */
+  grabbed: string | null;
 }
+
+/** How a sent release is doing, in a few words. */
+const GRABBED_LABEL: Record<string, string> = {
+  held: 'Waiting for confirmation',
+  queued: 'Sent, queued',
+  downloading: 'Downloading',
+  paused: 'Paused',
+  completed: 'Downloaded, importing',
+  importing: 'Importing',
+  imported: 'Downloaded',
+  failed: 'Failed',
+};
 
 export interface RootFolder {
   id: string;
@@ -236,6 +250,15 @@ function SortHeader({ label, col, sort, onSort, first = 'asc' }: { label: string
   );
 }
 
+/** Marks a release that was sent for this title: just now from this list, or earlier. */
+function GrabbedNote({ now, before }: { now?: { status: string; error?: string }; before: string | null }) {
+  if (now?.status === 'error') return <div className="text-xs text-danger">Couldn't send it: {now.error}</div>;
+  if (now?.status === 'sending') return <div className="text-xs text-muted">Sending…</div>;
+  if (now?.status === 'queued') return <div className="text-xs font-medium text-success">✓ Sent to the download client. Follow it on Downloads.</div>;
+  if (!before) return null;
+  return <div className={`text-xs font-medium ${before === 'failed' ? 'text-danger' : 'text-success'}`}>{before === 'failed' ? '✕' : '✓'} Grabbed before: {GRABBED_LABEL[before] ?? before}</div>;
+}
+
 export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: { monitoredId: number; onClose: () => void; initialSeason?: number; episode?: number }) {
   const [season, setSeason] = useState<string>(initialSeason !== undefined ? String(initialSeason) : '');
   const params = new URLSearchParams();
@@ -243,16 +266,18 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
   if (season && episode !== undefined) params.set('episode', String(episode));
   const qs = params.size ? `?${params}` : '';
   const res = useQuery({ queryKey: ['releases', monitoredId, season, episode], queryFn: () => api<{ releases: ReleaseRow[]; errors: string[] }>(`/api/monitored/${monitoredId}/releases${qs}`) });
-  const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const [sort, setSort] = useState<{ by: ReleaseColumn; desc: boolean } | null>(null);
   const header = (label: string, col: ReleaseColumn, first?: 'asc' | 'desc') => <SortHeader label={label} col={col} sort={sort} onSort={setSort} first={first} />;
+  // Grabs made here are marked on their own row, not in a message at the top.
+  const [sentNow, setSentNow] = useState<Record<string, { status: string; error?: string }>>({});
   const grab = async (r: ReleaseRow) => {
     if (r.oversize !== null && !confirm(`"${r.title}" is ${formatBytes(r.size)}, over the size limit. Download it anyway?`)) return;
+    setSentNow((s) => ({ ...s, [r.guid]: { status: 'sending' } }));
     try {
       await api(`/api/monitored/${monitoredId}/grab`, { body: { guid: r.guid } });
-      setMsg({ kind: 'success', text: `Sent "${r.title}" to the download client.` });
+      setSentNow((s) => ({ ...s, [r.guid]: { status: 'queued' } }));
     } catch (e) {
-      setMsg({ kind: 'error', text: (e as Error).message });
+      setSentNow((s) => ({ ...s, [r.guid]: { status: 'error', error: (e as Error).message } }));
     }
   };
   return (
@@ -263,7 +288,6 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
           <input className="input inline-block w-20" type="number" min={0} value={season} onChange={(e) => setSeason(e.target.value)} placeholder="all" />
         </label>
       </div>
-      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       {res.isLoading && <p className="text-muted">Searching indexers…</p>}
       {res.data?.errors.map((e) => (
         <Alert key={e}>{e}</Alert>
@@ -290,6 +314,7 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
                   </div>
                   {!r.accepted && <div className="text-xs text-danger">{r.rejections.join('; ')}</div>}
                   {r.oversize !== null && <div className="text-xs text-warning">Over the size limit ({formatBytes(r.oversize)}{season ? ' per episode' : ''})</div>}
+                  <GrabbedNote now={sentNow[r.guid]} before={r.grabbed} />
                 </td>
                 <td className="whitespace-nowrap p-2">{r.quality}</td>
                 <td className="whitespace-nowrap p-2">{formatBytes(r.size)}</td>
@@ -305,8 +330,8 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
                 </td>
                 <td className="p-2">{r.seeders ?? '—'}</td>
                 <td className="p-2">
-                  <button className={r.accepted ? 'btn-primary' : 'btn-secondary'} onClick={() => grab(r)}>
-                    Grab
+                  <button className={r.accepted && !r.grabbed && !sentNow[r.guid] ? 'btn-primary' : 'btn-secondary'} disabled={sentNow[r.guid]?.status === 'sending' || sentNow[r.guid]?.status === 'queued'} onClick={() => grab(r)}>
+                    {sentNow[r.guid]?.status === 'queued' ? 'Sent' : r.grabbed && r.grabbed !== 'failed' ? 'Grab again' : 'Grab'}
                   </button>
                 </td>
               </tr>

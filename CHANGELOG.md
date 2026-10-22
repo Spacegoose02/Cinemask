@@ -4,6 +4,20 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-10-22
+
+### Fixed
+- Dateline, 20/20 and other news shows: releases named without the network ("Dateline" for "Dateline NBC") or with it ("ABC 20/20") now match, and when nothing numbered fits, the search also looks by air date even if some episodes do have SxxEyy names. Titles with a slash are searched as words ("20 20"), which indexers understand.
+- Foreign-language releases: quality profiles that allowed "any language" now want English (change it back per profile in Settings → Profiles), and more language tags are recognised (Hungarian, Czech, Turkish, Hebrew, Ukrainian, Greek, Nordic and others). A language word in a title ("The French Dispatch") no longer counts as the release's language.
+- New files showed on a show or movie page only after Rescan folder. The page now follows its downloads and refreshes the files as soon as one is imported.
+
+### Added
+- Each episode (and a movie) shows its download as it happens: queued, downloading with a progress bar and time left, importing, waiting for a size confirmation, or failed with the reason.
+- Manual search marks releases already sent for that title on their own row (downloading, downloaded, failed), and a grab made from the list is confirmed on its row instead of at the top.
+
+### Changed
+- A Search result lists indexer problems (such as rate limits) on their own lines under the result, instead of one long sentence.
+
 ## [0.23.0] - 2026-10-22
 
 ### Added

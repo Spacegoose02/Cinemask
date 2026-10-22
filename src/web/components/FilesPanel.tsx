@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, formatBytes, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -42,6 +42,36 @@ interface FileEntry {
 }
 
 type DeleteTarget = { scope: 'movie' | 'show'; label: string } | { scope: 'season'; season: number; label: string } | { scope: 'episode'; season: number; episode: number; label: string };
+
+interface Activity {
+  id: number;
+  title: string;
+  status: string;
+  progress: number;
+  episodes: { season: number; episodes: number[] } | null;
+  error: string | null;
+  eta: number | null;
+}
+
+const ACTIVE = (a: Activity) => a.status !== 'failed';
+
+/** How a download for this movie or episode is doing: queued, downloading with a bar, importing, or failed. */
+function DownloadStatus({ a }: { a: Activity }) {
+  if (a.status === 'failed') return <span className="text-danger" title={a.title}>Download failed{a.error ? `: ${a.error}` : ''}</span>;
+  if (a.status === 'held') return <span className="text-warning">Over the size limit; confirm it on Downloads</span>;
+  if (a.status === 'completed' || a.status === 'importing') return <span className="text-accent">Downloaded, importing…</span>;
+  if (a.status === 'queued') return <span className="text-accent">Queued in the download client</span>;
+  const pct = Math.round(a.progress * 100);
+  return (
+    <span className="flex items-center gap-2 text-accent" title={a.title}>
+      {a.status === 'paused' ? 'Paused' : 'Downloading'} {pct}%
+      <span className="inline-block h-1.5 w-24 overflow-hidden rounded bg-surface-2" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+        <span className="block h-full bg-accent" style={{ width: `${pct}%` }} />
+      </span>
+      {a.eta ? <span className="text-muted">{a.eta < 60 ? '<1 min' : `${Math.round(a.eta / 60)} min`} left</span> : null}
+    </span>
+  );
+}
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const today = () => new Date().toISOString().slice(0, 10);
@@ -200,8 +230,26 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
   const lookup = useQuery({ queryKey: ['lookup', m.kind, m.tmdbId], queryFn: () => api<{ monitored: MonitoredView | null; folder?: string | null }>(`/api/monitored/lookup/${m.kind}/${m.tmdbId}`), enabled: isManager });
   const mon = lookup.data?.monitored && 'episodes' in lookup.data.monitored ? lookup.data.monitored : null;
   const files = useQuery({ queryKey: ['files', mon?.id], queryFn: () => api<{ folder: string | null; files: FileEntry[]; totalSize: number }>(`/api/monitored/${mon!.id}/files`), enabled: Boolean(mon) });
+  // Downloads in progress refresh every few seconds; when one finishes, the files show without a rescan.
+  const activity = useQuery({
+    queryKey: ['activity', mon?.id],
+    queryFn: () => api<Activity[]>(`/api/monitored/${mon!.id}/activity`),
+    enabled: Boolean(mon),
+    refetchInterval: (q) => (q.state.data?.some(ACTIVE) ? 5000 : 30000),
+  });
+  const activeIds = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    if (!activity.data || !mon) return;
+    const now = new Set(activity.data.filter(ACTIVE).map((a) => a.id));
+    const finished = [...activeIds.current].some((id) => !now.has(id));
+    activeIds.current = now;
+    if (finished) {
+      void qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] });
+      void qc.invalidateQueries({ queryKey: ['files', mon.id] });
+    }
+  }, [activity.data, mon, m.kind, m.tmdbId, qc]);
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
-  const [rowMsg, setRowMsg] = useState<{ key: string; kind: 'error' | 'success' | 'info'; text: string } | null>(null);
+  const [rowMsg, setRowMsg] = useState<{ key: string; kind: 'error' | 'success' | 'info'; text: string; errors?: string[] } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [trailers, setTrailers] = useState(false);
@@ -213,7 +261,10 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
   if (!isManager) return null;
   if (!mon) return lookup.data && (m.availability.status === 'on_server' || m.availability.status === 'partial') ? <StartManaging m={m} folder={lookup.data.folder ?? null} /> : null;
 
-  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] }), qc.invalidateQueries({ queryKey: ['files', mon.id] })]);
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] }), qc.invalidateQueries({ queryKey: ['files', mon.id] }), qc.invalidateQueries({ queryKey: ['activity', mon.id] })]);
+  // The newest download for an episode (or the movie); a failure only matters while there's still no file.
+  const downloadFor = (season?: number, episode?: number) =>
+    activity.data?.find((a) => (season === undefined ? true : a.episodes?.season === season && a.episodes.episodes.includes(episode!)));
   const run = async (fn: () => Promise<unknown>, success: string | ((r: never) => string)) => {
     setMsg(null);
     try {
@@ -228,14 +279,27 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
   const search = async (key: string, body: { season: number; episode?: number }) => {
     setRowMsg({ key, kind: 'info', text: 'Searching…' });
     try {
-      const r = await api<{ grabbed: number; message: string }>(`/api/monitored/${mon.id}/search`, { body });
-      setRowMsg({ key, kind: r.grabbed ? 'success' : 'info', text: r.message });
+      const r = await api<{ grabbed: number; message: string; errors: string[] }>(`/api/monitored/${mon.id}/search`, { body });
+      setRowMsg({ key, kind: r.grabbed ? 'success' : 'info', text: r.message, errors: r.errors });
       await refresh();
     } catch (e) {
       setRowMsg({ key, kind: 'error', text: (e as Error).message });
     }
   };
-  const rowAlert = (key: string) => rowMsg?.key === key && <Alert kind={rowMsg.kind}>{rowMsg.text}</Alert>;
+  const rowAlert = (key: string) =>
+    rowMsg?.key === key && (
+      <Alert kind={rowMsg.kind}>
+        {rowMsg.text}
+        {/* Indexer problems (rate limits, timeouts) on their own lines, apart from the result. */}
+        {rowMsg.errors?.length ? (
+          <ul className="mt-1 list-disc pl-4 text-xs text-muted">
+            {rowMsg.errors.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        ) : null}
+      </Alert>
+    );
   const done = async (text: string) => {
     setRenaming(false);
     setDeleting(null);
@@ -303,6 +367,11 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
         ) : (
           <p className="text-sm text-muted">No file yet. If it's already on disk, use Rescan folder.</p>
         ))}
+      {m.kind === 'movie' && downloadFor() && (!mon.filePath || ACTIVE(downloadFor()!)) && (
+        <div className="text-sm">
+          <DownloadStatus a={downloadFor()!} />
+        </div>
+      )}
 
       {m.kind === 'show' && (
         <ul>
@@ -344,6 +413,7 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
                     {eps.map((e) => {
                       const f = fileFor(e.filePath);
                       const aired = e.airDate && e.airDate <= today();
+                      const dl = downloadFor(s, e.episode);
                       return (
                         <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 rounded px-2 py-1.5 hover:bg-surface-2">
                           <div className="flex min-w-0 items-center gap-2">
@@ -366,6 +436,11 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
                                   `Airs ${e.airDate ?? 'TBA'}`
                                 )}
                               </span>
+                              {dl && (!e.filePath || ACTIVE(dl)) && (
+                                <span className="block text-xs">
+                                  <DownloadStatus a={dl} />
+                                </span>
+                              )}
                             </span>
                           </div>
                           <div className="flex gap-1">

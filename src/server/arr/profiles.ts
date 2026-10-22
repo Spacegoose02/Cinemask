@@ -15,7 +15,7 @@ export interface Profile {
 export function seedProfiles(ctx: AppContext) {
   if (ctx.db.select({ n: count() }).from(qualityProfiles).get()!.n > 0) return;
   for (const p of DEFAULT_PROFILES) {
-    ctx.db.insert(qualityProfiles).values({ name: p.name, qualities: JSON.stringify(p.qualities), cutoff: p.cutoff, createdAt: Date.now() }).run();
+    ctx.db.insert(qualityProfiles).values({ name: p.name, qualities: JSON.stringify(p.qualities), cutoff: p.cutoff, language: 'en', createdAt: Date.now() }).run();
   }
 }
 
