@@ -196,6 +196,8 @@ export const monitored = sqliteTable(
     rootId: text('root_id'),
     /** Largest wanted release in MB, per movie or per episode. Null uses the default from settings; 0 means no limit. */
     maxSizeMb: integer('max_size_mb'),
+    /** Doubles the default size limit for this title (when maxSizeMb is null). */
+    largerFiles: integer('larger_files', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [uniqueIndex('monitored_kind_tmdb').on(t.kind, t.tmdbId)],
 );

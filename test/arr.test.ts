@@ -572,6 +572,23 @@ describe('request → download → import', () => {
     expect(dl2.warning).toMatch(/Bigger than the 2\.0 GB limit: 8\.0 GB/);
   });
 
+  it('"allow larger files" doubles the default size limit for one title', async () => {
+    indexerReturns([
+      { title: 'Paddington.2014.1080p.BluRay.x264-SIX', size: 6 * 1024 ** 3 },
+      { title: 'Paddington.2014.2160p.BluRay.x265-TEN', size: 10 * 1024 ** 3 },
+    ]);
+    await owner.req('PUT', '/api/settings/downloading', { maxMovieSizeGb: 4 });
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    const oversize = async () => Object.fromEntries((await owner.req('GET', `/api/monitored/${m.id}/releases`)).json().releases.map((r: { title: string; oversize: number | null }) => [r.title.split('-').pop(), r.oversize !== null]));
+    expect(await oversize()).toEqual({ SIX: true, TEN: true });
+    expect((await kid.req('PATCH', `/api/monitored/${m.id}`, { largerFiles: true })).statusCode).toBe(403);
+    expect((await owner.req('PATCH', `/api/monitored/${m.id}`, { largerFiles: true })).json()).toMatchObject({ largerFiles: true, defaultMaxSizeMb: 4096 });
+    expect(await oversize()).toEqual({ SIX: false, TEN: true });
+    // The title's own limit still wins over the doubled default.
+    await owner.req('PATCH', `/api/monitored/${m.id}`, { maxSizeMb: 2048 });
+    expect(await oversize()).toEqual({ SIX: true, TEN: true });
+  });
+
   it('holds an oversize pick until a manager confirms it, or skips it, as set', async () => {
     indexerReturns([{ title: 'Paddington.2014.1080p.BluRay.x264-BIG', size: 8 * 1024 ** 3, seeders: 90 }]);
     await owner.req('PUT', '/api/settings/downloading', { maxMovieSizeGb: 4, oversize: 'skip' });
