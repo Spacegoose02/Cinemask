@@ -21,6 +21,7 @@ import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats, refreshMediaServers } from './tracker.js';
 import { deleteImportable, importFolders, listImportable, manualImport } from './manual.js';
 import { assertRoot, linkDestinations, listRoots } from './roots.js';
+import { bulkSearchRunning, missingTitles, searchAllMissing } from './rss.js';
 import { sanitizeSegment } from './naming.js';
 import { moveToRoot, scanFolder, titleOnDisk } from '../files/service.js';
 import { monitoredOverview } from './overview.js';
@@ -291,9 +292,19 @@ export async function arrRoutes(app: FastifyInstance) {
     return monitoredView(getMonitored(id));
   });
 
+  /** Search all missing movies or shows: runs in the background, one title at a time. */
+  app.post('/api/monitored/search-missing', { config: { access: 'manager' } }, async (req) => {
+    const body = parse(z.object({ kind }), req.body);
+    if (bulkSearchRunning(body.kind)) throw conflict(`Already searching for missing ${body.kind === 'movie' ? 'movies' : 'episodes'}`);
+    const rows = missingTitles(ctx, body.kind);
+    audit(db(), req, 'monitored.searched_missing', { details: { kind: body.kind, titles: rows.length } });
+    if (rows.length) void searchAllMissing(ctx, body.kind, rows).catch((err) => app.log.warn({ err }, 'Search all missing failed'));
+    return { titles: rows.length };
+  });
+
   app.post('/api/monitored/:id/search', { config: { access: 'manager' } }, async (req) => {
     const { id } = parse(idParam, req.params);
-    const f = parse(z.object({ season: z.number().int().min(0).optional(), episode: z.number().int().min(0).optional() }), req.body ?? {});
+    const f = parse(z.object({ season: z.number().int().min(0).optional(), episode: z.number().int().min(0).optional(), missingOnly: z.boolean().optional() }), req.body ?? {});
     const row = getMonitored(id);
     const { grabbed, message } = await explainedSearch(ctx, { ...row, monitored: true }, f);
     audit(db(), req, 'monitored.searched', { target: row.title, details: { grabbed, ...f } });

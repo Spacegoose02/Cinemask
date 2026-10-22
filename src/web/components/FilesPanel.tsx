@@ -257,6 +257,11 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {m.kind === 'show' && (
+            <button className="btn-secondary" title="Searches every monitored episode that has aired and has no file" onClick={() => run(() => api<{ message: string }>(`/api/monitored/${mon.id}/search`, { body: { missingOnly: true } }), (r: { message: string }) => r.message)}>
+              Search missing
+            </button>
+          )}
           <button className="btn-secondary" onClick={() => run(() => api(`/api/monitored/${mon.id}/scan`, { body: {} }), (r: { found: number; missing: number }) => `Found ${r.found} new file(s)${r.missing ? `, ${r.missing} missing` : ''}.`)}>
             Rescan folder
           </button>

@@ -1,97 +1,50 @@
-import { and, eq, isNull } from "drizzle-orm";
-import type { AppContext } from "../context.js";
-import {
-  libraryEpisodes,
-  libraryItems,
-  media,
-  monitored,
-  monitoredEpisodes,
-  monitorExclusions,
-  type MediaKind,
-} from "../db/schema.js";
-import { bestResolution } from "../integrations/http.js";
-import { refreshMetadata, tmdbClient } from "../library/service.js";
-import type { Target } from "./decision.js";
-import { belowCutoff, defaultProfileId, searchProfile } from "./profiles.js";
-import { qualityFor } from "./quality.js";
-import { assertRoot } from "./roots.js";
+import { and, eq, isNull } from 'drizzle-orm';
+import type { AppContext } from '../context.js';
+import { libraryEpisodes, libraryItems, media, monitored, monitoredEpisodes, monitorExclusions, type MediaKind } from '../db/schema.js';
+import { bestResolution } from '../integrations/http.js';
+import { refreshMetadata, tmdbClient } from '../library/service.js';
+import type { Target } from './decision.js';
+import { belowCutoff, defaultProfileId, searchProfile } from './profiles.js';
+import { qualityFor } from './quality.js';
+import { assertRoot } from './roots.js';
 
 export type MonitoredRow = typeof monitored.$inferSelect;
+
+/** Narrows a search to a season or an episode, or to what has no file at all (no upgrades). */
+export interface SearchFilter {
+  season?: number;
+  episode?: number;
+  missingOnly?: boolean;
+}
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 /** Starts watching a title (or updates how it's watched). Shows get their episode list from TMDB. */
 export async function monitorTitle(
   ctx: AppContext,
-  input: {
-    kind: MediaKind;
-    tmdbId: number;
-    profileId: number;
-    seasons?: number[] | null;
-    addedBy?: number | null;
-    rootId?: string | null;
-    maxSizeMb?: number | null;
-  },
+  input: { kind: MediaKind; tmdbId: number; profileId: number; seasons?: number[] | null; addedBy?: number | null; rootId?: string | null; maxSizeMb?: number | null },
 ): Promise<MonitoredRow> {
   const meta = await refreshMetadata(ctx, input.kind, input.tmdbId);
-  if (!meta)
-    throw new Error(
-      "Could not look up this title. Check the TMDB key in Settings → Metadata.",
-    );
-  const existing = ctx.db
-    .select()
-    .from(monitored)
-    .where(
-      and(eq(monitored.kind, input.kind), eq(monitored.tmdbId, input.tmdbId)),
-    )
-    .get();
-  const seasons =
-    input.seasons === undefined
-      ? (existing?.seasons ?? null)
-      : input.seasons
-        ? JSON.stringify([...new Set(input.seasons)].sort((a, b) => a - b))
-        : null;
+  if (!meta) throw new Error('Could not look up this title. Check the TMDB key in Settings → Metadata.');
+  const existing = ctx.db.select().from(monitored).where(and(eq(monitored.kind, input.kind), eq(monitored.tmdbId, input.tmdbId))).get();
+  const seasons = input.seasons === undefined ? existing?.seasons ?? null : input.seasons ? JSON.stringify([...new Set(input.seasons)].sort((a, b) => a - b)) : null;
   assertRoot(ctx, input.kind, input.rootId);
-  const rootId =
-    input.rootId && input.rootId !== "default" ? input.rootId : null;
+  const rootId = input.rootId && input.rootId !== 'default' ? input.rootId : null;
   // A title already on disk keeps its folder; moving it is a separate step (files/service moveToRoot).
   const extra = {
     ...(input.rootId !== undefined && !existing?.path ? { rootId } : {}),
     ...(input.maxSizeMb !== undefined ? { maxSizeMb: input.maxSizeMb } : {}),
   };
   // Monitoring something by hand again undoes an earlier removal.
-  ctx.db
-    .delete(monitorExclusions)
-    .where(
-      and(
-        eq(monitorExclusions.kind, input.kind),
-        eq(monitorExclusions.tmdbId, input.tmdbId),
-      ),
-    )
-    .run();
+  ctx.db.delete(monitorExclusions).where(and(eq(monitorExclusions.kind, input.kind), eq(monitorExclusions.tmdbId, input.tmdbId))).run();
   const row = existing
-    ? ctx.db
-        .update(monitored)
-        .set({ profileId: input.profileId, monitored: true, seasons, ...extra })
-        .where(eq(monitored.id, existing.id))
-        .returning()
-        .get()
+    ? ctx.db.update(monitored).set({ profileId: input.profileId, monitored: true, seasons, ...extra }).where(eq(monitored.id, existing.id)).returning().get()
     : ctx.db
         .insert(monitored)
-        .values({
-          kind: input.kind,
-          tmdbId: input.tmdbId,
-          title: meta.title,
-          year: meta.year,
-          profileId: input.profileId,
-          seasons,
-          addedBy: input.addedBy ?? null,
-          addedAt: Date.now(),
-          ...extra,
-        })
+        .values({ kind: input.kind, tmdbId: input.tmdbId, title: meta.title, year: meta.year, profileId: input.profileId, seasons, addedBy: input.addedBy ?? null, addedAt: Date.now(), ...extra })
         .returning()
         .get();
-  if (row.kind === "show") await refreshEpisodes(ctx, row, true);
+  if (row.kind === 'show') await refreshEpisodes(ctx, row, true);
   return row;
 }
 
@@ -99,47 +52,23 @@ export async function monitorTitle(
  * Syncs a monitored show's episode list (titles, air dates) from TMDB. New episodes follow the
  * season choice; existing ones keep their own monitored flag unless resetMonitored is set.
  */
-export async function refreshEpisodes(
-  ctx: AppContext,
-  row: MonitoredRow,
-  resetMonitored = false,
-) {
+export async function refreshEpisodes(ctx: AppContext, row: MonitoredRow, resetMonitored = false) {
   const tmdb = tmdbClient(ctx);
   const show = await tmdb.show(row.tmdbId);
-  const wantedSeasons: number[] | null = row.seasons
-    ? (JSON.parse(row.seasons) as number[])
-    : null;
+  const wantedSeasons: number[] | null = row.seasons ? (JSON.parse(row.seasons) as number[]) : null;
   const runtimes: number[] = [];
   for (const s of show.seasons) {
     if (s.season_number === 0) continue; // specials are opt-in by searching manually
     const season = await tmdb.season(row.tmdbId, s.season_number);
     for (const e of season.episodes) {
       if (e.runtime) runtimes.push(e.runtime);
-      const isMonitored =
-        !wantedSeasons || wantedSeasons.includes(s.season_number);
+      const isMonitored = !wantedSeasons || wantedSeasons.includes(s.season_number);
       ctx.db
         .insert(monitoredEpisodes)
-        .values({
-          monitoredId: row.id,
-          season: s.season_number,
-          episode: e.episode_number,
-          title: e.name,
-          airDate: e.air_date,
-          episodeType: e.episode_type ?? null,
-          monitored: isMonitored,
-        })
+        .values({ monitoredId: row.id, season: s.season_number, episode: e.episode_number, title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, monitored: isMonitored })
         .onConflictDoUpdate({
-          target: [
-            monitoredEpisodes.monitoredId,
-            monitoredEpisodes.season,
-            monitoredEpisodes.episode,
-          ],
-          set: {
-            title: e.name,
-            airDate: e.air_date,
-            episodeType: e.episode_type ?? null,
-            ...(resetMonitored ? { monitored: isMonitored } : {}),
-          },
+          target: [monitoredEpisodes.monitoredId, monitoredEpisodes.season, monitoredEpisodes.episode],
+          set: { title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, ...(resetMonitored ? { monitored: isMonitored } : {}) },
         })
         .run();
     }
@@ -147,46 +76,22 @@ export async function refreshEpisodes(
   // TMDB often leaves a show's own episode length empty; the episodes' typical length stands in,
   // so size limits by runtime can apply.
   if (runtimes.length) {
-    const typical = runtimes.sort((a, b) => a - b)[
-      Math.floor(runtimes.length / 2)
-    ]!;
-    ctx.db
-      .update(media)
-      .set({ runtime: typical })
-      .where(
-        and(
-          eq(media.kind, "show"),
-          eq(media.tmdbId, row.tmdbId),
-          isNull(media.runtime),
-        ),
-      )
-      .run();
+    const typical = runtimes.sort((a, b) => a - b)[Math.floor(runtimes.length / 2)]!;
+    ctx.db.update(media).set({ runtime: typical }).where(and(eq(media.kind, 'show'), eq(media.tmdbId, row.tmdbId), isNull(media.runtime))).run();
   }
 }
 
 /** Quality of what's already on a media server, used when the app didn't import the file itself. */
-function serverQuality(
-  ctx: AppContext,
-  kind: MediaKind,
-  tmdbId: number,
-): Map<string, string> | string | null {
-  const items = ctx.db
-    .select()
-    .from(libraryItems)
-    .where(and(eq(libraryItems.kind, kind), eq(libraryItems.tmdbId, tmdbId)))
-    .all();
-  if (kind === "movie") {
+function serverQuality(ctx: AppContext, kind: MediaKind, tmdbId: number): Map<string, string> | string | null {
+  const items = ctx.db.select().from(libraryItems).where(and(eq(libraryItems.kind, kind), eq(libraryItems.tmdbId, tmdbId))).all();
+  if (kind === 'movie') {
     const res = bestResolution(items.map((i) => i.resolution));
-    return res ? qualityFor(res, "webdl") : null;
+    return res ? qualityFor(res, 'webdl') : null;
   }
   const map = new Map<string, string>();
   for (const item of items) {
-    for (const e of ctx.db
-      .select()
-      .from(libraryEpisodes)
-      .where(eq(libraryEpisodes.libraryItemId, item.id))
-      .all()) {
-      const q = e.resolution ? qualityFor(e.resolution, "webdl") : "Unknown";
+    for (const e of ctx.db.select().from(libraryEpisodes).where(eq(libraryEpisodes.libraryItemId, item.id)).all()) {
+      const q = e.resolution ? qualityFor(e.resolution, 'webdl') : 'Unknown';
       map.set(`${e.season}:${e.episode}`, q);
     }
   }
@@ -194,66 +99,35 @@ function serverQuality(
 }
 
 /** What still needs downloading (missing, or upgradable) for a monitored title. Null when nothing is wanted. */
-export function wantedTarget(
-  ctx: AppContext,
-  row: MonitoredRow,
-  filter?: { season?: number; episode?: number },
-): Target | null {
+export function wantedTarget(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter): Target | null {
   const profile = searchProfile(ctx, row.profileId);
   if (!profile || !row.monitored) return null;
-  if (row.kind === "movie") {
-    const current =
-      row.fileQuality ??
-      (serverQuality(ctx, "movie", row.tmdbId) as string | null);
-    if (current && !belowCutoff(profile, current)) return null;
-    return {
-      kind: "movie",
-      title: row.title,
-      year: row.year,
-      currentQuality: current,
-    };
+  if (row.kind === 'movie') {
+    const current = row.fileQuality ?? (serverQuality(ctx, 'movie', row.tmdbId) as string | null);
+    if (current && (filter?.missingOnly || !belowCutoff(profile, current))) return null;
+    return { kind: 'movie', title: row.title, year: row.year, currentQuality: current };
   }
-  const onServer = serverQuality(ctx, "show", row.tmdbId) as Map<
-    string,
-    string
-  >;
+  const onServer = serverQuality(ctx, 'show', row.tmdbId) as Map<string, string>;
   const eps = ctx.db
     .select()
     .from(monitoredEpisodes)
     .where(eq(monitoredEpisodes.monitoredId, row.id))
     .all()
-    // A single episode searched by hand is looked for even when TMDB has no air date or a later one.
-    .filter(
-      (e) =>
-        (filter ? true : e.monitored) &&
-        (filter?.episode !== undefined || (e.airDate && e.airDate <= today())),
-    )
+    // Searched by season or episode, unmonitored episodes count too; a single episode is looked for even
+    // when TMDB has no air date or a later one. "Missing only" leaves out upgrades of files already there.
+    .filter((e) => (filter?.season !== undefined || e.monitored) && (filter?.episode !== undefined || (e.airDate && e.airDate <= today())))
     .filter((e) => filter?.season === undefined || e.season === filter.season)
-    .filter(
-      (e) => filter?.episode === undefined || e.episode === filter.episode,
-    )
-    .map((e) => ({
-      season: e.season,
-      episode: e.episode,
-      airDate: e.airDate,
-      currentQuality:
-        e.fileQuality ?? onServer.get(`${e.season}:${e.episode}`) ?? null,
-    }))
-    .filter((e) => !e.currentQuality || belowCutoff(profile, e.currentQuality));
-  return eps.length
-    ? { kind: "show", title: row.title, year: row.year, episodes: eps }
-    : null;
+    .filter((e) => filter?.episode === undefined || e.episode === filter.episode)
+    .map((e) => ({ season: e.season, episode: e.episode, airDate: e.airDate, currentQuality: e.fileQuality ?? onServer.get(`${e.season}:${e.episode}`) ?? null }))
+    .filter((e) => !e.currentQuality || (!filter?.missingOnly && belowCutoff(profile, e.currentQuality)));
+  return eps.length ? { kind: 'show', title: row.title, year: row.year, episodes: eps } : null;
 }
 
 /** Number of items a profile change would make eligible for an upgrade search. */
 export function upgradeCandidates(ctx: AppContext, row: MonitoredRow): number {
   const t = wantedTarget(ctx, row);
   if (!t) return 0;
-  return t.kind === "movie"
-    ? t.currentQuality
-      ? 1
-      : 0
-    : (t.episodes ?? []).filter((e) => e.currentQuality).length;
+  return t.kind === 'movie' ? (t.currentQuality ? 1 : 0) : (t.episodes ?? []).filter((e) => e.currentQuality).length;
 }
 
 /** At most this many titles are added per run, so a huge first sync doesn't flood TMDB. The hourly run carries on. */
@@ -264,54 +138,25 @@ const AUTO_MONITOR_BATCH = 1000;
  * someone removed from monitoring by hand are left alone. Returns how many were added.
  */
 export async function monitorLibrary(ctx: AppContext): Promise<number> {
-  const mode = ctx.settings.get("library").autoMonitor;
-  if (mode === "off" || !tmdbClient(ctx).configured) return 0;
+  const mode = ctx.settings.get('library').autoMonitor;
+  if (mode === 'off' || !tmdbClient(ctx).configured) return 0;
   const seen = new Set<string>();
-  for (const r of ctx.db
-    .select({ kind: monitored.kind, tmdbId: monitored.tmdbId })
-    .from(monitored)
-    .all())
-    seen.add(`${r.kind}:${r.tmdbId}`);
-  for (const r of ctx.db.select().from(monitorExclusions).all())
-    seen.add(`${r.kind}:${r.tmdbId}`);
+  for (const r of ctx.db.select({ kind: monitored.kind, tmdbId: monitored.tmdbId }).from(monitored).all()) seen.add(`${r.kind}:${r.tmdbId}`);
+  for (const r of ctx.db.select().from(monitorExclusions).all()) seen.add(`${r.kind}:${r.tmdbId}`);
   const todo = new Map<string, { kind: MediaKind; tmdbId: number }>();
-  for (const i of ctx.db
-    .select({ kind: libraryItems.kind, tmdbId: libraryItems.tmdbId })
-    .from(libraryItems)
-    .all()) {
-    if (i.tmdbId && !seen.has(`${i.kind}:${i.tmdbId}`))
-      todo.set(`${i.kind}:${i.tmdbId}`, { kind: i.kind, tmdbId: i.tmdbId });
+  for (const i of ctx.db.select({ kind: libraryItems.kind, tmdbId: libraryItems.tmdbId }).from(libraryItems).all()) {
+    if (i.tmdbId && !seen.has(`${i.kind}:${i.tmdbId}`)) todo.set(`${i.kind}:${i.tmdbId}`, { kind: i.kind, tmdbId: i.tmdbId });
   }
   let added = 0;
   for (const t of [...todo.values()].slice(0, AUTO_MONITOR_BATCH)) {
     try {
-      const row = await monitorTitle(ctx, {
-        kind: t.kind,
-        tmdbId: t.tmdbId,
-        profileId: defaultProfileId(ctx, t.kind),
-        seasons: null,
-        addedBy: null,
-      });
-      if (mode === "new") {
+      const row = await monitorTitle(ctx, { kind: t.kind, tmdbId: t.tmdbId, profileId: defaultProfileId(ctx, t.kind), seasons: null, addedBy: null });
+      if (mode === 'new') {
         // Already out: leave it as it is on the server. Only what airs from now on is fetched.
-        if (row.kind === "movie")
-          ctx.db
-            .update(monitored)
-            .set({ monitored: false })
-            .where(eq(monitored.id, row.id))
-            .run();
+        if (row.kind === 'movie') ctx.db.update(monitored).set({ monitored: false }).where(eq(monitored.id, row.id)).run();
         else {
-          for (const e of ctx.db
-            .select()
-            .from(monitoredEpisodes)
-            .where(eq(monitoredEpisodes.monitoredId, row.id))
-            .all()) {
-            if (!e.airDate || e.airDate <= today())
-              ctx.db
-                .update(monitoredEpisodes)
-                .set({ monitored: false })
-                .where(eq(monitoredEpisodes.id, e.id))
-                .run();
+          for (const e of ctx.db.select().from(monitoredEpisodes).where(eq(monitoredEpisodes.monitoredId, row.id)).all()) {
+            if (!e.airDate || e.airDate <= today()) ctx.db.update(monitoredEpisodes).set({ monitored: false }).where(eq(monitoredEpisodes.id, e.id)).run();
           }
         }
       }
@@ -324,14 +169,6 @@ export async function monitorLibrary(ctx: AppContext): Promise<number> {
 }
 
 /** Remembers that a title was removed from monitoring by hand, so library sync doesn't add it back. */
-export function excludeFromAutoMonitor(
-  ctx: AppContext,
-  kind: MediaKind,
-  tmdbId: number,
-) {
-  ctx.db
-    .insert(monitorExclusions)
-    .values({ kind, tmdbId, createdAt: Date.now() })
-    .onConflictDoNothing()
-    .run();
+export function excludeFromAutoMonitor(ctx: AppContext, kind: MediaKind, tmdbId: number) {
+  ctx.db.insert(monitorExclusions).values({ kind, tmdbId, createdAt: Date.now() }).onConflictDoNothing().run();
 }

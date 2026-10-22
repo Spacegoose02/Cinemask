@@ -536,6 +536,22 @@ describe('request → download → import', () => {
     expect((await owner.req('POST', `/api/monitored/${m.id}/search`, { season: 1, episode: 3 })).json().grabbed).toBe(1);
   });
 
+  it('searches only what has no file, for one show or all of them', async () => {
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'show', tmdbId: 82728, search: false })).json();
+    // Episode 1 has a 720p file the profile would upgrade; "missing only" leaves it alone.
+    t.app.ctx.dbHandle.sqlite.prepare("UPDATE monitored_episodes SET file_path = '/x.mkv', file_quality = 'WEBDL-720p' WHERE monitored_id = ? AND episode = 1").run(m.id);
+    indexerReturns([{ title: 'Bluey.S01E01.1080p.WEB-DL-GRP' }, { title: 'Bluey.S01E02.1080p.WEB-DL-GRP' }]);
+    expect((await kid.req('POST', '/api/monitored/search-missing', { kind: 'show' })).statusCode).toBe(403);
+    expect((await owner.req('POST', `/api/monitored/${m.id}/search`, { missingOnly: true })).json().grabbed).toBe(1);
+    expect(grabbed()).toEqual(['Bluey.S01E02.1080p.WEB-DL-GRP']);
+
+    // Episode 3 is still missing: the library-wide search finds this show and grabs it in the background.
+    indexerReturns([{ title: 'Bluey.S01E03.1080p.WEB-DL-GRP' }]);
+    expect((await owner.req('POST', '/api/monitored/search-missing', { kind: 'movie' })).json()).toEqual({ titles: 0 });
+    expect((await owner.req('POST', '/api/monitored/search-missing', { kind: 'show' })).json()).toEqual({ titles: 1 });
+    await vi.waitFor(() => expect(grabbed()).toContain('Bluey.S01E03.1080p.WEB-DL-GRP'));
+  });
+
   it('prefers releases within the size limit, and warns when only bigger ones exist', async () => {
     indexerReturns([
       { title: 'Paddington.2014.1080p.BluRay.x264-BIG', size: 8 * 1024 ** 3, seeders: 90 },

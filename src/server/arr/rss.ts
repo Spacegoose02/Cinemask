@@ -1,9 +1,9 @@
 import { asc, eq, isNull, lt, or } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
-import { monitored } from '../db/schema.js';
+import { monitored, type MediaKind } from '../db/schema.js';
 import { decide, type Decision } from './decision.js';
 import { CATEGORIES, searchIndexer } from './indexers.js';
-import { wantedTarget } from './monitor.js';
+import { wantedTarget, type MonitoredRow } from './monitor.js';
 import { normalizeTitle, parseRelease } from './parser.js';
 import { getProfile } from './profiles.js';
 import { autoSearch, decideOptions, enabledIndexers, grabBest } from './search.js';
@@ -66,5 +66,38 @@ export async function searchMissing(ctx: AppContext, hours: number, batch = 10):
     .slice(0, batch);
   let grabbed = 0;
   for (const r of rows) grabbed += await autoSearch(ctx, r).catch(() => 0);
+  return grabbed;
+}
+
+/** Monitored movies or shows with something that has no file yet (aired, monitored episodes for shows). */
+export function missingTitles(ctx: AppContext, kind: MediaKind): MonitoredRow[] {
+  return ctx.db
+    .select()
+    .from(monitored)
+    .where(eq(monitored.kind, kind))
+    .orderBy(asc(monitored.title))
+    .all()
+    .filter((r) => r.monitored && wantedTarget(ctx, r, { missingOnly: true }));
+}
+
+const bulkRunning = new Set<MediaKind>();
+
+export const bulkSearchRunning = (kind: MediaKind) => bulkRunning.has(kind);
+
+/**
+ * "Search all missing": searches each title in turn, with a pause between them so indexers
+ * (Prowlarr's especially) aren't asked for hundreds of searches at once. Returns how many releases were grabbed.
+ */
+export async function searchAllMissing(ctx: AppContext, kind: MediaKind, rows: MonitoredRow[], pauseMs = 3000): Promise<number> {
+  bulkRunning.add(kind);
+  let grabbed = 0;
+  try {
+    for (const [i, r] of rows.entries()) {
+      if (i) await new Promise((resolve) => setTimeout(resolve, pauseMs));
+      grabbed += await autoSearch(ctx, r, { missingOnly: true }).catch(() => 0);
+    }
+  } finally {
+    bulkRunning.delete(kind);
+  }
   return grabbed;
 }

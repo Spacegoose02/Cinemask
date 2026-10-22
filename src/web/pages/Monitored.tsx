@@ -111,6 +111,13 @@ export function MonitoredPage() {
     }
   };
 
+  // Runs on the server one title at a time; grabs show up on Downloads as they're found.
+  const searchMissing = async (kind: MediaKind) => {
+    const { titles } = await api<{ titles: number }>('/api/monitored/search-missing', { body: { kind } });
+    const what = kind === 'movie' ? 'movie' : 'show';
+    return titles ? `Searching ${titles} ${what}${titles === 1 ? '' : 's'} with something missing, one at a time. What's found shows up on Downloads.` : `No monitored ${what}s are missing anything.`;
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -145,6 +152,14 @@ export function MonitoredPage() {
             <option value="next">Next airing</option>
           </select>
         </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button className="btn-secondary" onClick={() => void run(() => searchMissing('show'))}>
+          Search all missing episodes
+        </button>
+        <button className="btn-secondary" onClick={() => void run(() => searchMissing('movie'))}>
+          Search all missing movies
+        </button>
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm bg-success" /> Complete, still airing</span>

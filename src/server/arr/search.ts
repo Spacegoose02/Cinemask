@@ -5,7 +5,7 @@ import { media } from '../db/schema.js';
 import { bestDecision, byPreference, decide, type DecideOptions, type Decision, type Target } from './decision.js';
 import { createClient } from './clients.js';
 import { CATEGORIES, searchIndexer, type IndexerConfig, type Release, type SearchQuery } from './indexers.js';
-import { wantedTarget, type MonitoredRow } from './monitor.js';
+import { wantedTarget, type MonitoredRow, type SearchFilter } from './monitor.js';
 import { searchProfile } from './profiles.js';
 import { parseRelease, titlesMatch } from './parser.js';
 import { openSecret, sealSecret } from './secrets.js';
@@ -174,7 +174,7 @@ function seasonEpisodes(ctx: AppContext, monitoredId: number, season: number, ep
   return (eps.length ? eps : [{ episode: 1 }]).map((e) => ({ season, episode: e.episode, currentQuality: null }));
 }
 
-export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter?: { season?: number; episode?: number }): Promise<SearchResult> {
+export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter): Promise<SearchResult> {
   const profile = searchProfile(ctx, row.profileId);
   const target = wantedTarget(ctx, { ...row, monitored: true }, filter) ?? {
     kind: row.kind,
@@ -263,7 +263,7 @@ export async function grab(ctx: AppContext, release: Release, row: MonitoredRow 
 }
 
 /** Searches and grabs the best release(s) for everything wanted on a title. Returns how many were grabbed. */
-export async function autoSearch(ctx: AppContext, row: MonitoredRow, filter?: { season?: number; episode?: number }): Promise<number> {
+export async function autoSearch(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter): Promise<number> {
   return (await explainedSearch(ctx, row, filter)).grabbed;
 }
 
@@ -274,7 +274,7 @@ function keysOf(episodes: string): string[] {
 }
 
 /** What the episode label of a search is, such as "S06E01" or "season 6". */
-function scopeLabel(row: MonitoredRow, filter?: { season?: number; episode?: number }) {
+function scopeLabel(row: MonitoredRow, filter?: SearchFilter) {
   if (row.kind === 'movie' || filter?.season === undefined) return row.title;
   const pad = (n: number) => String(n).padStart(2, '0');
   return filter.episode !== undefined ? `S${pad(filter.season)}E${pad(filter.episode)}` : `season ${filter.season}`;
@@ -284,9 +284,10 @@ function scopeLabel(row: MonitoredRow, filter?: { season?: number; episode?: num
  * An automatic search that also says why nothing was grabbed (nothing wanted, nothing found, every
  * release rejected, already downloading, or the download client refused it), for the Search buttons.
  */
-export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter?: { season?: number; episode?: number }): Promise<{ grabbed: number; message: string }> {
+export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter): Promise<{ grabbed: number; message: string }> {
   const label = scopeLabel(row, filter);
   if (!wantedTarget(ctx, row, filter)) {
+    if (filter?.missingOnly) return { grabbed: 0, message: `Nothing missing for ${label}: ${row.kind === 'show' ? 'every monitored episode that has aired has a file' : 'it has a file'}.` };
     return { grabbed: 0, message: `Nothing to search for: ${label} already has a file at the profile's cutoff${row.kind === 'show' ? ", or hasn't aired yet" : ''}.` };
   }
   const { decisions, errors } = await searchMonitored(ctx, row, filter);

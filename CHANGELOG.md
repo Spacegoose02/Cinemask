@@ -4,6 +4,15 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-10-22
+
+### Added
+- "Search missing" on a show's Files section searches every monitored episode that has aired and has no file, without looking for upgrades of the ones already there.
+- Monitored page: "Search all missing episodes" and "Search all missing movies" search every monitored show or movie with something missing. They run in the background one title at a time, with a short pause between titles so the indexers aren't flooded, and anything found shows up on Downloads.
+
+### Changed
+- "Search now" on a show leaves out episodes that are unmonitored. The Search buttons on a season or an episode still search it either way.
+
 ## [0.21.1] - 2026-10-22
 
 ### Added
