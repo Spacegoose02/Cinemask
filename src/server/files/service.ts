@@ -26,14 +26,21 @@ export function rootFor(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'rootI
 /**
  * Moves a title's folder into another root folder (Kids Movies → Movies, say) and points every
  * tracked file at its new place. Renames on the same disk; copies then deletes across disks.
+ * A folder Cinemask hasn't recorded (a title imported from Plex, or not managed at all) is found
+ * by name first. A row with id 0 (from titleOnDisk) is only moved on disk.
  */
 export function moveToRoot(ctx: AppContext, row: MonitoredRow, rootId: string): MonitoredRow {
+  if (!row.path || !fs.existsSync(row.path)) {
+    const found = locateFolder(ctx, row);
+    if (found) row = { ...row, path: found.folder, rootId: found.rootId === 'default' ? null : found.rootId };
+  }
   const from = rootFor(ctx, row);
   const to = rootFor(ctx, { kind: row.kind, rootId });
   const next = rootId === 'default' ? null : rootId;
+  const save = (values: Partial<MonitoredRow>) => (row.id ? ctx.db.update(monitored).set(values).where(eq(monitored.id, row.id)).returning().get() : { ...row, ...values });
   if (!row.path || !fs.existsSync(row.path) || from === to) {
     // Nothing on disk yet (or same place): new downloads just go to the new folder.
-    return ctx.db.update(monitored).set({ rootId: next, path: row.path && from !== to ? null : row.path }).where(eq(monitored.id, row.id)).returning().get();
+    return save({ rootId: next, path: row.path && from !== to ? null : row.path });
   }
   assertInside(from, row.path);
   const dest = path.join(to, path.basename(row.path));
@@ -47,10 +54,12 @@ export function moveToRoot(ctx: AppContext, row: MonitoredRow, rootId: string): 
     fs.rmSync(row.path, { recursive: true });
   }
   const moved = (p: string | null) => (p && (p === row.path || p.startsWith(`${row.path}${path.sep}`)) ? path.join(dest, path.relative(row.path!, p)) : p);
-  for (const e of episodesOf(ctx, row.id)) {
-    if (e.filePath) ctx.db.update(monitoredEpisodes).set({ filePath: moved(e.filePath) }).where(eq(monitoredEpisodes.id, e.id)).run();
+  if (row.id) {
+    for (const e of episodesOf(ctx, row.id)) {
+      if (e.filePath) ctx.db.update(monitoredEpisodes).set({ filePath: moved(e.filePath) }).where(eq(monitoredEpisodes.id, e.id)).run();
+    }
   }
-  return ctx.db.update(monitored).set({ rootId: next, path: dest, filePath: moved(row.filePath) }).where(eq(monitored.id, row.id)).returning().get();
+  return save({ rootId: next, path: dest, filePath: moved(row.filePath) });
 }
 
 function assertInside(root: string, target: string) {

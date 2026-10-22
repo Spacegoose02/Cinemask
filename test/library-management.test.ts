@@ -122,6 +122,31 @@ describe('file management, calendar and health', () => {
     expect(fs.existsSync(path.join(movies, 'Paddington 2 (2017)', 'p2.mkv'))).toBe(true);
   });
 
+  it('moves a title to another root folder, managed by Cinemask or not', async () => {
+    const kids = path.join(t.dir, 'media', 'kids');
+    await owner.req('PUT', '/api/settings/media', { extraFolders: [{ id: 'kids', name: 'Kids Movies', kind: 'movie', path: kids, category: '' }] });
+    // Only on disk (from Plex, say): not monitored, so Cinemask has no row for it.
+    ensureMedia(t.app.ctx, 'movie', 116149, { title: 'Paddington', year: 2014 });
+    const folder = path.join(movies, 'Paddington (2014)');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'paddington.mkv'), 'movie');
+    expect((await owner.req('GET', '/api/monitored/lookup/movie/116149')).json()).toMatchObject({ folder, folderRoot: 'default' });
+    expect((await kid.req('POST', '/api/files/movie/116149/move', { rootId: 'kids' })).statusCode).toBe(403);
+    expect((await owner.req('POST', '/api/files/movie/116149/move', { rootId: 'nope' })).statusCode).toBe(400);
+    expect((await owner.req('POST', '/api/files/movie/116149/move', { rootId: 'kids' })).json()).toEqual({ path: path.join(kids, 'Paddington (2014)'), rootId: 'kids' });
+    expect(fs.existsSync(path.join(kids, 'Paddington (2014)', 'paddington.mkv'))).toBe(true);
+    expect(fs.existsSync(folder)).toBe(false);
+    expect((await owner.req('GET', '/api/monitored/lookup/movie/116149')).json().folderRoot).toBe('kids');
+
+    // Monitored without a recorded folder (as after an import): found by name, moved, and the file followed.
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    t.app.ctx.dbHandle.sqlite.prepare("UPDATE monitored SET path = NULL, root_id = NULL, file_path = ? WHERE id = ?").run(path.join(kids, 'Paddington (2014)', 'paddington.mkv'), m.id);
+    expect((await owner.req('POST', '/api/files/movie/116149/move', { rootId: 'default' })).json()).toEqual({ path: folder, rootId: 'default' });
+    expect(fs.existsSync(path.join(folder, 'paddington.mkv'))).toBe(true);
+    expect(t.app.ctx.dbHandle.sqlite.prepare('SELECT path, file_path AS f FROM monitored WHERE id = ?').get(m.id)).toEqual({ path: folder, f: path.join(folder, 'paddington.mkv') });
+    expect((await owner.req('POST', '/api/files/show/82728/move', { rootId: 'default' })).statusCode).toBe(404);
+  });
+
   it('prefers a folder tagged with the TMDB id', async () => {
     fs.mkdirSync(path.join(movies, 'Paddington (2014)-old'), { recursive: true });
     const folder = path.join(movies, 'Paddington {tmdb-116149}');

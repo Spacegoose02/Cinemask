@@ -187,8 +187,11 @@ export async function arrRoutes(app: FastifyInstance) {
     const request = db().select().from(requests).where(and(eq(requests.kind, p.kind), eq(requests.tmdbId, p.tmdbId), ne(requests.status, 'declined'))).orderBy(desc(requests.createdAt)).get();
     const manager = hasRole(req.user!.role, 'manager');
     // Where it is on disk, for managers: its folder, or one found in the media folders.
-    const folder = manager ? (titleOnDisk(ctx, p.kind, p.tmdbId)?.path ?? null) : undefined;
-    return { monitored: row && manager ? monitoredView(row) : row ? { id: row.id, monitored: row.monitored } : null, request: request ?? null, folder };
+    const disk = manager ? titleOnDisk(ctx, p.kind, p.tmdbId) : null;
+    const folder = manager ? (disk?.path ?? null) : undefined;
+    // The root folder it's in on disk, for the Move button.
+    const folderRoot = manager && disk ? (disk.rootId ?? 'default') : undefined;
+    return { monitored: row && manager ? monitoredView(row) : row ? { id: row.id, monitored: row.monitored } : null, request: request ?? null, folder, folderRoot };
   });
 
   app.post('/api/monitored', { config: { access: 'manager' } }, async (req) => {

@@ -8,6 +8,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 - Calendar: clicking an episode or movie shows Search and Manual search buttons (managers). Search grabs the best release for that episode; Manual search lists every release to pick from. A day with several episodes of one show has the buttons on each episode.
+- "Move to folder" on a movie or show page (managers): moves its folder to another root folder, such as Movies → Kids Movies or TV → Kids TV, and asks Plex/Jellyfin to rescan. It works for titles Cinemask doesn't manage too (ones that are only in Plex), finding their folder by name.
 - Calendar: a "Missing only" view shows just what has aired or been released, is monitored, and has no file (the red entries).
 
 ## [0.19.1] - 2026-10-21
