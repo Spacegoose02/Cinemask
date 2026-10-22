@@ -76,10 +76,16 @@ function episodeMinutes(ctx: AppContext, tmdbId: number): number | null {
 
 /**
  * Largest wanted release for a title in bytes (per movie or per episode), or null for no limit.
- * The title's own limit wins; then, for episodes, the runtime table; then the flat setting.
+ * The title's own limit wins; otherwise the default, doubled when the title allows larger files.
  */
-export function maxSizeFor(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'maxSizeMb' | 'tmdbId'>): number | null {
+export function maxSizeFor(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'maxSizeMb' | 'tmdbId'> & { largerFiles?: boolean }): number | null {
   if (row.maxSizeMb !== null && row.maxSizeMb !== undefined) return row.maxSizeMb ? row.maxSizeMb * MB : null;
+  const limit = defaultMaxSize(ctx, row);
+  return limit && row.largerFiles ? limit * 2 : limit;
+}
+
+/** The default limit for a title: for episodes, the runtime table; then the flat setting. */
+export function defaultMaxSize(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'tmdbId'>): number | null {
   const s = ctx.settings.get('downloading');
   if (row.kind === 'show' && s.episodeSizeByRuntime.length) {
     const minutes = episodeMinutes(ctx, row.tmdbId);
@@ -93,7 +99,7 @@ export function maxSizeFor(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'ma
 }
 
 /** How releases are judged for a title, from settings and the title's own size limit. */
-export function decideOptions(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'maxSizeMb' | 'tmdbId'>): DecideOptions {
+export function decideOptions(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'maxSizeMb' | 'tmdbId' | 'largerFiles'>): DecideOptions {
   return { skipCam: ctx.settings.get('downloading').skipCamReleases, maxSize: maxSizeFor(ctx, row) };
 }
 

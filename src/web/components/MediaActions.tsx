@@ -22,6 +22,8 @@ interface Lookup {
     seasons?: number[] | null;
     rootId?: string | null;
     maxSizeMb?: number | null;
+    largerFiles?: boolean;
+    defaultMaxSizeMb?: number | null;
     path?: string | null;
   } | null;
   request: { id: number; status: string; requestedByName: string | null; reason: string | null } | null;
@@ -79,15 +81,15 @@ export function RootPicker({ roots, value, onChange }: { roots: RootFolder[]; va
 /** Where a monitored title lives and how big a release may be. */
 function FolderAndSize({ mon, kind, roots, onClose, onSaved }: { mon: NonNullable<Lookup['monitored']>; kind: 'movie' | 'show'; roots: RootFolder[]; onClose: () => void; onSaved: () => void }) {
   const [rootId, setRootId] = useState(mon.rootId ?? 'default');
-  const [mode, setMode] = useState<'default' | 'none' | 'custom'>(mon.maxSizeMb === null || mon.maxSizeMb === undefined ? 'default' : mon.maxSizeMb === 0 ? 'none' : 'custom');
+  const [mode, setMode] = useState<'default' | 'double' | 'none' | 'custom'>(mon.maxSizeMb === null || mon.maxSizeMb === undefined ? (mon.largerFiles ? 'double' : 'default') : mon.maxSizeMb === 0 ? 'none' : 'custom');
   const [gb, setGb] = useState(mon.maxSizeMb ? String(Math.round((mon.maxSizeMb / 1024) * 10) / 10) : '');
   const [msg, setMsg] = useState<string | null>(null);
   const save = async () => {
     setMsg(null);
     try {
-      const maxSizeMb = mode === 'default' ? null : mode === 'none' ? 0 : Math.round(Number(gb) * 1024);
+      const maxSizeMb = mode === 'default' || mode === 'double' ? null : mode === 'none' ? 0 : Math.round(Number(gb) * 1024);
       if (mode === 'custom' && !(maxSizeMb && maxSizeMb > 0)) throw new Error('Enter a size in GB');
-      await api(`/api/monitored/${mon.id}`, { method: 'PATCH', body: { rootId, maxSizeMb } });
+      await api(`/api/monitored/${mon.id}`, { method: 'PATCH', body: { rootId, maxSizeMb, largerFiles: mode === 'double' } });
       onSaved();
       onClose();
     } catch (e) {
@@ -95,6 +97,8 @@ function FolderAndSize({ mon, kind, roots, onClose, onSaved }: { mon: NonNullabl
     }
   };
   const per = kind === 'show' ? 'per episode' : 'for the movie';
+  const limit = (mb: number) => `${Math.round((mb / 1024) * 10) / 10} GB`;
+  const def = mon.defaultMaxSizeMb;
   return (
     <Modal title="Folder and size" onClose={onClose}>
       <div className="space-y-4">
@@ -110,7 +114,8 @@ function FolderAndSize({ mon, kind, roots, onClose, onSaved }: { mon: NonNullabl
           <legend className="label">Largest release {per}</legend>
           {(
             [
-              ['default', 'Use the default (Settings → Media management)'],
+              ['default', def ? `Use the default, ${limit(def)} (Settings → Media management)` : 'Use the default (Settings → Media management)'],
+              ['double', def ? `Allow larger files: twice the default, ${limit(def * 2)}` : 'Allow larger files: twice the default'],
               ['none', 'No limit'],
               ['custom', 'Up to'],
             ] as const
@@ -431,6 +436,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           </button>
           <button className="btn-secondary" onClick={() => setFolderSize(true)}>
             {roots.length > 1 ? 'Folder and size' : 'Size limit'}
+            {'largerFiles' in mon && mon.largerFiles && !mon.maxSizeMb && mon.maxSizeMb !== 0 ? ' (2×)' : ''}
           </button>
         </>
       )}
