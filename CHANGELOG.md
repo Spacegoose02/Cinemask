@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-22
+
+### Added
+- "Allow larger files" on a movie or show (Size limit, or Folder and size): doubles the default size limit for that title only, so a 4 GB movie limit becomes 8 GB without opening the door to 30 GB remuxes. The Size limit button shows "(2×)" while it's on.
+
 ## [0.22.0] - 2026-10-22
 
 ### Added

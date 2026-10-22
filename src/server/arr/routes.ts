@@ -16,7 +16,7 @@ import { excludeFromAutoMonitor, monitorTitle, refreshEpisodes, upgradeCandidate
 import { defaultProfileId, getProfile, listProfiles } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
-import { autoSearch, confirmHeld, explainedSearch, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
+import { autoSearch, confirmHeld, defaultMaxSize, explainedSearch, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats, refreshMediaServers } from './tracker.js';
 import { deleteImportable, importFolders, listImportable, manualImport } from './manual.js';
@@ -158,6 +158,8 @@ export async function arrRoutes(app: FastifyInstance) {
       seasons: row.seasons ? (JSON.parse(row.seasons) as number[]) : null,
       profile: getProfile(ctx, row.profileId),
       wanted: target ? (target.kind === 'movie' ? 1 : target.episodes!.length) : 0,
+      // The size limit from settings, in MB, so the page can show what "larger files" doubles.
+      defaultMaxSizeMb: Math.round((defaultMaxSize(ctx, row) ?? 0) / 1024 ** 2) || null,
       episodes: eps,
     };
   };
@@ -230,6 +232,7 @@ export async function arrRoutes(app: FastifyInstance) {
         seasons: seasonsSchema,
         rootId: rootIdSchema.optional(),
         maxSizeMb: maxSizeSchema.optional(),
+        largerFiles: z.boolean().optional(),
       }),
       req.body,
     );
@@ -248,6 +251,7 @@ export async function arrRoutes(app: FastifyInstance) {
       ...(body.monitored !== undefined ? { monitored: body.monitored } : {}),
       ...(body.seasons !== undefined ? { seasons: body.seasons ? JSON.stringify(body.seasons) : null } : {}),
       ...(body.maxSizeMb !== undefined ? { maxSizeMb: body.maxSizeMb } : {}),
+      ...(body.largerFiles !== undefined ? { largerFiles: body.largerFiles } : {}),
     };
     if (Object.keys(changes).length) db().update(monitored).set(changes).where(eq(monitored.id, id)).run();
     if (body.seasons !== undefined && before.kind === 'show') {
