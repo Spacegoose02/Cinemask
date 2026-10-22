@@ -4,6 +4,16 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-22
+
+### Fixed
+- A Search button that grabbed nothing just said "Nothing found", even when Manual search listed good releases. It now says why: no releases at all, every release rejected (with the most common reason), the episode already downloading (naming the download, which Downloads can remove), the download client refusing the release (with its error), or nothing to search for. Indexer errors such as HTTP 429 are listed too.
+- Searching one episode by hand skipped episodes TMDB hadn't dated yet. They are searched now.
+
+### Changed
+- On a show page, a season's or episode's Search result appears under that row instead of at the top of Files.
+- With more than one library folder for movies or shows, Download and "Monitor only" ask which library to use (unless the title is already on disk in one), the show Download dialog needs a library picked, and approving a request has a library picker.
+
 ## [0.20.0] - 2026-10-22
 
 ### Fixed

@@ -121,7 +121,7 @@ function Details({ e, onClose }: { e: Entry; onClose: () => void }) {
   const { me } = useAuth();
   const canSearch = hasRole(me, 'manager');
   const [manual, setManual] = useState<{ season?: number; episode?: number } | null>(null);
-  const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ kind: 'error' | 'success' | 'info'; text: string } | null>(null);
   const [searching, setSearching] = useState(false);
   const img = poster(e.posterPath, 'w185');
   const eps = e.episodes ?? [];
@@ -131,8 +131,8 @@ function Details({ e, onClose }: { e: Entry; onClose: () => void }) {
     setMsg(null);
     setSearching(true);
     try {
-      const r = await api<{ grabbed: number }>(`/api/monitored/${e.monitoredId}/search`, { body: target });
-      setMsg(r.grabbed ? { kind: 'success', text: `Sent ${r.grabbed} release${r.grabbed === 1 ? '' : 's'} to the download client.` } : { kind: 'error', text: 'Nothing suitable found. Try Manual search to see every release.' });
+      const r = await api<{ grabbed: number; message: string }>(`/api/monitored/${e.monitoredId}/search`, { body: target });
+      setMsg({ kind: r.grabbed ? 'success' : 'info', text: r.message });
     } catch (err) {
       setMsg({ kind: 'error', text: (err as Error).message });
     } finally {

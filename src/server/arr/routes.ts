@@ -16,7 +16,7 @@ import { excludeFromAutoMonitor, monitorTitle, refreshEpisodes, upgradeCandidate
 import { defaultProfileId, getProfile, listProfiles } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
-import { autoSearch, confirmHeld, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
+import { autoSearch, confirmHeld, explainedSearch, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats, refreshMediaServers } from './tracker.js';
 import { deleteImportable, importFolders, listImportable, manualImport } from './manual.js';
@@ -295,9 +295,9 @@ export async function arrRoutes(app: FastifyInstance) {
     const { id } = parse(idParam, req.params);
     const f = parse(z.object({ season: z.number().int().min(0).optional(), episode: z.number().int().min(0).optional() }), req.body ?? {});
     const row = getMonitored(id);
-    const grabbed = await autoSearch(ctx, { ...row, monitored: true }, f);
-    audit(db(), req, 'monitored.searched', { target: row.title, details: { grabbed } });
-    return { grabbed };
+    const { grabbed, message } = await explainedSearch(ctx, { ...row, monitored: true }, f);
+    audit(db(), req, 'monitored.searched', { target: row.title, details: { grabbed, ...f } });
+    return { grabbed, message };
   });
 
   /** Manual (interactive) search: every release found, with why each would or wouldn't be grabbed. */
