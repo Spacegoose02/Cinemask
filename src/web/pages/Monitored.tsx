@@ -162,7 +162,7 @@ export function MonitoredPage() {
             key={r.id}
             r={r}
             onToggle={() => void run(async () => (await api(`/api/monitored/${r.id}`, { method: 'PATCH', body: { monitored: !r.monitored } }), `${r.title} is ${r.monitored ? 'no longer monitored' : 'monitored'}.`))}
-            onSearch={() => void run(async () => `${r.title}: ${(await api<{ grabbed: number }>(`/api/monitored/${r.id}/search`, { body: {} })).grabbed} release(s) sent to the download client.`)}
+            onSearch={() => void run(async () => (await api<{ message: string }>(`/api/monitored/${r.id}/search`, { body: {} })).message)}
           />
         ))}
       </div>

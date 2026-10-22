@@ -56,11 +56,16 @@ export function useRootFolders(enabled: boolean) {
   return useQuery({ queryKey: ['root-folders'], queryFn: () => api<{ roots: RootFolder[]; destinations: { key: string; name: string; path: string }[] }>('/api/root-folders'), enabled });
 }
 
-/** Picks a root folder; renders nothing when there is only the main one. */
-function RootPicker({ roots, value, onChange }: { roots: RootFolder[]; value: string; onChange: (id: string) => void }) {
+/** Picks a root folder; renders nothing when there is only the main one. An empty value asks for a choice. */
+export function RootPicker({ roots, value, onChange }: { roots: RootFolder[]; value: string; onChange: (id: string) => void }) {
   if (roots.length < 2) return null;
   return (
     <select className="input w-auto" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Folder">
+      {!value && (
+        <option value="" disabled>
+          Choose a library…
+        </option>
+      )}
       {roots.map((r) => (
         <option key={r.id} value={r.id}>
           {r.name}
@@ -257,6 +262,27 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
 }
 
 /** Request / monitor / search controls on a movie or show page. What shows depends on the user's level. */
+/** Asks which library folder a new title goes in, before it is downloaded or monitored. */
+function ChooseFolder({ title, action, roots, onClose, onChosen }: { title: string; action: string; roots: RootFolder[]; onClose: () => void; onChosen: (rootId: string) => void }) {
+  const [rootId, setRootId] = useState('');
+  return (
+    <Modal title={`Which library for ${title}?`} onClose={onClose}>
+      <div className="space-y-2">
+        {roots.map((r) => (
+          <label key={r.id} className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 hover:bg-surface-2">
+            <input type="radio" name="root" checked={rootId === r.id} onChange={() => setRootId(r.id)} />
+            <span className="font-medium">{r.name}</span>
+            <span className="truncate text-xs text-muted">{r.path}</span>
+          </label>
+        ))}
+      </div>
+      <button className="btn-primary mt-4" disabled={!rootId} onClick={() => onChosen(rootId)}>
+        {action}
+      </button>
+    </Modal>
+  );
+}
+
 export function MediaActions({ m }: { m: MediaDetail }) {
   const { me } = useAuth();
   const qc = useQueryClient();
@@ -271,7 +297,9 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   const [moving, setMoving] = useState(false);
   const rootQuery = useRootFolders(isManager);
   const roots = rootQuery.data?.roots.filter((r) => r.kind === m.kind) ?? [];
-  const [rootId, setRootId] = useState('default');
+  // Empty until chosen: with several library folders, a manager is asked which one (unless it's already on disk in one).
+  const [rootId, setRootId] = useState('');
+  const [asking, setAsking] = useState<'download' | 'monitor' | null>(null);
   const createSeries = useCreateSeriesCollection();
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] });
@@ -292,14 +320,17 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   const mon = lookup.data?.monitored;
   const req = lookup.data?.request;
   const fullyAvailable = m.availability.status === 'on_server';
+  const chosenRoot = rootId || lookup.data?.folderRoot || (roots.length > 1 ? '' : 'default');
+  const download = (root: string) => run(() => api('/api/requests', { body: { kind: m.kind, tmdbId: m.tmdbId, ...(isManager ? { rootId: root } : {}) } }), requested);
+  const monitorOnly = (root: string) =>
+    run(() => api('/api/monitored', { body: { kind: m.kind, tmdbId: m.tmdbId, search: false, rootId: root } }), fullyAvailable ? 'Monitoring. Better releases will replace the file when the profile allows an upgrade.' : 'Monitoring. Nothing was searched now; new releases and the regular missing search will download it.');
 
   return (
     <>
       {/* Users can ask for a title even when it's already monitored but not on the server yet. */}
       {(!mon || !isManager) && !req && !(m.kind === 'movie' && fullyAvailable) && (
         <>
-          {isManager && m.kind === 'movie' && <RootPicker roots={roots} value={rootId} onChange={setRootId} />}
-          <button className="btn-primary" onClick={() => (m.kind === 'show' ? setRequesting(true) : run(() => api('/api/requests', { body: { kind: m.kind, tmdbId: m.tmdbId, ...(isManager ? { rootId } : {}) } }), requested))}>
+          <button className="btn-primary" onClick={() => (m.kind === 'show' ? setRequesting(true) : isManager && !chosenRoot ? setAsking('download') : download(chosenRoot))}>
             {isManager ? 'Download' : 'Request'}
           </button>
         </>
@@ -308,7 +339,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
         <button
           className="btn-secondary"
           title="Adds it to monitoring without searching now. Search, upgrades and the missing-file search take it from there."
-          onClick={() => run(() => api('/api/monitored', { body: { kind: m.kind, tmdbId: m.tmdbId, search: false, rootId } }), fullyAvailable ? 'Monitoring. Better releases will replace the file when the profile allows an upgrade.' : 'Monitoring. Nothing was searched now; new releases and the regular missing search will download it.')}
+          onClick={() => (chosenRoot ? monitorOnly(chosenRoot) : setAsking('monitor'))}
         >
           {fullyAvailable ? 'Monitor for upgrades' : 'Monitor only'}
         </button>
@@ -336,7 +367,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
               </option>
             ))}
           </select>
-          <button className="btn-secondary" onClick={() => run(() => api(`/api/monitored/${mon.id}/search`, { body: {} }).then((r) => r), 'Search finished.')}>
+          <button className="btn-secondary" onClick={() => run(() => api<{ message: string }>(`/api/monitored/${mon.id}/search`, { body: {} }), (r) => (r as { message: string }).message)}>
             Search now
           </button>
           <button className="btn-secondary" onClick={() => setManual(true)}>
@@ -373,15 +404,15 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           <SeasonPicker seasons={m.seasons} value={seasons} onChange={setSeasons} />
           {isManager && roots.length > 1 && (
             <label className="mt-3 block">
-              <span className="label">Folder</span>
-              <RootPicker roots={roots} value={rootId} onChange={setRootId} />
+              <span className="label">Library</span>
+              <RootPicker roots={roots} value={chosenRoot} onChange={setRootId} />
             </label>
           )}
           <button
             className="btn-primary mt-4"
-            disabled={!seasons.length}
+            disabled={!seasons.length || (isManager && !chosenRoot)}
             onClick={async () => {
-              await run(() => api('/api/requests', { body: { kind: 'show', tmdbId: m.tmdbId, seasons, ...(isManager ? { rootId } : {}) } }), requested);
+              await run(() => api('/api/requests', { body: { kind: 'show', tmdbId: m.tmdbId, seasons, ...(isManager ? { rootId: chosenRoot } : {}) } }), requested);
               setRequesting(false);
             }}
           >
@@ -391,6 +422,19 @@ export function MediaActions({ m }: { m: MediaDetail }) {
       )}
       {moving && lookup.data?.folder && (
         <MoveFolder kind={m.kind} tmdbId={m.tmdbId} folder={lookup.data.folder} current={lookup.data.folderRoot ?? 'default'} roots={roots} onClose={() => setMoving(false)} onMoved={(to) => (refresh(), setMsg({ kind: 'success', text: `Moved to ${to}.` }))} />
+      )}
+      {asking && (
+        <ChooseFolder
+          title={m.title}
+          action={asking === 'download' ? 'Download' : 'Monitor'}
+          roots={roots}
+          onClose={() => setAsking(null)}
+          onChosen={(root) => {
+            setAsking(null);
+            setRootId(root);
+            void (asking === 'download' ? download(root) : monitorOnly(root));
+          }}
+        />
       )}
       {manual && mon && <ManualSearch monitoredId={mon.id} onClose={() => setManual(false)} />}
       {folderSize && mon && <FolderAndSize mon={mon} kind={m.kind} roots={roots} onClose={() => setFolderSize(false)} onSaved={() => (refresh(), setMsg({ kind: 'success', text: 'Saved.' }))} />}

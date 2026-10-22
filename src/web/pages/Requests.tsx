@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { RootPicker, useRootFolders } from '../components/MediaActions';
 import { Alert } from '../components/ui';
 import { api, formatDate, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -38,6 +39,11 @@ export function RequestsPage() {
   const list = useQuery({ queryKey: ['requests', status], queryFn: () => api<RequestRow[]>(`/api/requests?status=${status}`) });
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: () => api<{ id: number; name: string }[]>('/api/profiles'), enabled: isManager });
   const [profileFor, setProfileFor] = useState<Record<number, number>>({});
+  // With several library folders for a kind, the manager picks one before approving.
+  const roots = useRootFolders(isManager).data?.roots ?? [];
+  const [rootFor, setRootFor] = useState<Record<number, string>>({});
+  const rootsOf = (kind: MediaKind) => roots.filter((x) => x.kind === kind);
+  const needsRoot = (r: RequestRow) => rootsOf(r.kind).length > 1 && !rootFor[r.id];
 
   const act = async (fn: () => Promise<unknown>) => {
     setError('');
@@ -99,7 +105,13 @@ export function RequestsPage() {
                       </option>
                     ))}
                   </select>
-                  <button className="btn-primary" onClick={() => act(() => api(`/api/requests/${r.id}/approve`, { body: { profileId: profileFor[r.id] || undefined } }))}>
+                  <RootPicker roots={rootsOf(r.kind)} value={rootFor[r.id] ?? ''} onChange={(id) => setRootFor({ ...rootFor, [r.id]: id })} />
+                  <button
+                    className="btn-primary"
+                    disabled={needsRoot(r)}
+                    title={needsRoot(r) ? 'Choose a library first' : undefined}
+                    onClick={() => act(() => api(`/api/requests/${r.id}/approve`, { body: { profileId: profileFor[r.id] || undefined, rootId: rootFor[r.id] || undefined } }))}
+                  >
                     Approve
                   </button>
                   <button

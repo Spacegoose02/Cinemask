@@ -264,44 +264,91 @@ export async function grab(ctx: AppContext, release: Release, row: MonitoredRow 
 
 /** Searches and grabs the best release(s) for everything wanted on a title. Returns how many were grabbed. */
 export async function autoSearch(ctx: AppContext, row: MonitoredRow, filter?: { season?: number; episode?: number }): Promise<number> {
-  if (!wantedTarget(ctx, row, filter)) return 0;
-  const { decisions } = await searchMonitored(ctx, row, filter);
-  return grabBest(ctx, row, decisions);
+  return (await explainedSearch(ctx, row, filter)).grabbed;
 }
 
-/** Grabs the best accepted decisions without overlapping what's already downloading. */
-export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: Decision[]): Promise<number> {
+/** "season:episode" keys of a download's episodes column. */
+function keysOf(episodes: string): string[] {
+  const c = JSON.parse(episodes) as { season: number; episodes: number[] };
+  return c.episodes.map((e) => `${c.season}:${e}`);
+}
+
+/** What the episode label of a search is, such as "S06E01" or "season 6". */
+function scopeLabel(row: MonitoredRow, filter?: { season?: number; episode?: number }) {
+  if (row.kind === 'movie' || filter?.season === undefined) return row.title;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return filter.episode !== undefined ? `S${pad(filter.season)}E${pad(filter.episode)}` : `season ${filter.season}`;
+}
+
+/**
+ * An automatic search that also says why nothing was grabbed (nothing wanted, nothing found, every
+ * release rejected, already downloading, or the download client refused it), for the Search buttons.
+ */
+export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter?: { season?: number; episode?: number }): Promise<{ grabbed: number; message: string }> {
+  const label = scopeLabel(row, filter);
+  if (!wantedTarget(ctx, row, filter)) {
+    return { grabbed: 0, message: `Nothing to search for: ${label} already has a file at the profile's cutoff${row.kind === 'show' ? ", or hasn't aired yet" : ''}.` };
+  }
+  const { decisions, errors } = await searchMonitored(ctx, row, filter);
+  const notes: string[] = [];
+  const grabbed = await grabBest(ctx, row, decisions, notes);
+  const indexerNote = errors.length ? ` Indexer errors: ${errors.join('; ')}.` : '';
+  if (grabbed) return { grabbed, message: `Grabbed ${grabbed === 1 ? 'a release' : `${grabbed} releases`} for ${label}. It's on Downloads.` };
+  if (notes.length) return { grabbed, message: `Nothing grabbed for ${label}. ${[...new Set(notes)].join(' ')}${indexerNote}` };
+  if (!decisions.length) return { grabbed, message: `No releases found for ${label}.${indexerNote}` };
+  // Every release was rejected: name the most common reason, so it can be fixed or overridden with Manual.
+  const counts = new Map<string, number>();
+  for (const d of decisions) for (const r of new Set(d.rejections)) counts.set(r, (counts.get(r) ?? 0) + 1);
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  return { grabbed, message: `Found ${decisions.length} release(s) for ${label}, but none fit${top ? `: ${top[0]} (${top[1]})` : ''}. Manual shows each one and why.${indexerNote}` };
+}
+
+/**
+ * Grabs the best accepted decisions without overlapping what's already downloading. When notes is
+ * given, the reason each accepted release was not grabbed is added to it.
+ */
+export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: Decision[], notes?: string[]): Promise<number> {
   const active = activeDownloads(ctx, row.id);
   if (row.kind === 'movie') {
-    if (active.length) return 0;
+    if (active.length) {
+      notes?.push(`Already downloading ${active[0]!.title} (${active[0]!.status}). Remove it on Downloads to search again.`);
+      return 0;
+    }
     const best = bestDecision(decisions);
     if (!best) return 0;
     try {
       await grabWithWarning(ctx, row, best);
     } catch (err) {
-      if (best.oversize !== null && ctx.settings.get('downloading').oversize === 'skip') return 0;
+      if (best.oversize !== null && ctx.settings.get('downloading').oversize === 'skip') {
+        notes?.push('Only releases over the size limit were found, and Settings → Media management skips those.');
+        return 0;
+      }
       throw err;
     }
     return 1;
   }
   const taken = new Set<string>();
-  for (const a of active) {
-    const c = a.episodes ? (JSON.parse(a.episodes) as { season: number; episodes: number[] }) : null;
-    for (const e of c?.episodes ?? []) taken.add(`${c!.season}:${e}`);
-  }
+  for (const a of active) if (a.episodes) keysOf(a.episodes).forEach((k) => taken.add(k));
   let grabbed = 0;
   const ordered = decisions
     .filter((x) => x.accepted)
     .sort((a, b) => Number(a.oversize !== null) - Number(b.oversize !== null) || (b.covers?.episodes.length ?? 0) - (a.covers?.episodes.length ?? 0) || b.score - a.score);
   for (const d of ordered) {
     const keys = (d.covers?.episodes ?? []).map((e) => `${d.covers!.season}:${e}`);
-    if (!keys.length || keys.some((k) => taken.has(k))) continue;
+    if (!keys.length) continue;
+    const busy = keys.find((k) => taken.has(k));
+    if (busy) {
+      const by = active.find((a) => a.episodes && keysOf(a.episodes).includes(busy));
+      if (by) notes?.push(`Already downloading ${by.title} (${by.status}). Remove it on Downloads to search again.`);
+      continue;
+    }
     try {
       await grabWithWarning(ctx, row, d);
       keys.forEach((k) => taken.add(k));
       grabbed++;
-    } catch {
+    } catch (err) {
       // try the next candidate
+      notes?.push(`${d.release.title} couldn't be sent: ${(err as Error).message}.`);
     }
   }
   return grabbed;

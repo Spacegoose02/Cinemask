@@ -514,6 +514,28 @@ describe('request → download → import', () => {
       [`${QBIT}/api/v2/torrents/info`]: () => qbitTorrents,
     });
 
+  it('says why an episode search grabbed nothing', async () => {
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'show', tmdbId: 82728, search: false })).json();
+    const search = async () => (await owner.req('POST', `/api/monitored/${m.id}/search`, { season: 1, episode: 2 })).json();
+
+    indexerReturns([]);
+    expect(await search()).toMatchObject({ grabbed: 0, message: 'No releases found for S01E02.' });
+
+    indexerReturns([{ title: 'Bluey.S01E02.CAM.x264-GRP' }, { title: 'Some.Other.Show.S01E02.1080p.WEB-DL-GRP' }]);
+    await owner.req('PUT', '/api/settings/downloading', { skipCamReleases: true });
+    expect((await search()).message).toMatch(/^Found 2 release\(s\) for S01E02, but none fit: .+ \(1\)\. Manual shows each one and why\.$/);
+
+    indexerReturns([{ title: 'Bluey.S01E02.1080p.WEB-DL-GRP' }]);
+    expect(await search()).toMatchObject({ grabbed: 1, message: "Grabbed a release for S01E02. It's on Downloads." });
+    // Searching again while it downloads says so, instead of "nothing found".
+    expect(await search()).toMatchObject({ grabbed: 0, message: 'Nothing grabbed for S01E02. Already downloading Bluey.S01E02.1080p.WEB-DL-GRP (queued). Remove it on Downloads to search again.' });
+
+    // An episode TMDB hasn't dated is still searched when asked for by hand.
+    t.app.ctx.dbHandle.sqlite.prepare('UPDATE monitored_episodes SET air_date = NULL WHERE monitored_id = ? AND episode = 3').run(m.id);
+    indexerReturns([{ title: 'Bluey.S01E03.1080p.WEB-DL-GRP' }]);
+    expect((await owner.req('POST', `/api/monitored/${m.id}/search`, { season: 1, episode: 3 })).json().grabbed).toBe(1);
+  });
+
   it('prefers releases within the size limit, and warns when only bigger ones exist', async () => {
     indexerReturns([
       { title: 'Paddington.2014.1080p.BluRay.x264-BIG', size: 8 * 1024 ** 3, seeders: 90 },

@@ -201,6 +201,7 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
   const mon = lookup.data?.monitored && 'episodes' in lookup.data.monitored ? lookup.data.monitored : null;
   const files = useQuery({ queryKey: ['files', mon?.id], queryFn: () => api<{ folder: string | null; files: FileEntry[]; totalSize: number }>(`/api/monitored/${mon!.id}/files`), enabled: Boolean(mon) });
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const [rowMsg, setRowMsg] = useState<{ key: string; kind: 'error' | 'success' | 'info'; text: string } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [trailers, setTrailers] = useState(false);
@@ -223,6 +224,18 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
       setMsg({ kind: 'error', text: (e as Error).message });
     }
   };
+  // A Search button's result shows under the season or episode it was pressed on, not at the top.
+  const search = async (key: string, body: { season: number; episode?: number }) => {
+    setRowMsg({ key, kind: 'info', text: 'Searching…' });
+    try {
+      const r = await api<{ grabbed: number; message: string }>(`/api/monitored/${mon.id}/search`, { body });
+      setRowMsg({ key, kind: r.grabbed ? 'success' : 'info', text: r.message });
+      await refresh();
+    } catch (e) {
+      setRowMsg({ key, kind: 'error', text: (e as Error).message });
+    }
+  };
+  const rowAlert = (key: string) => rowMsg?.key === key && <Alert kind={rowMsg.kind}>{rowMsg.text}</Alert>;
   const done = async (text: string) => {
     setRenaming(false);
     setDeleting(null);
@@ -307,7 +320,7 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
                       <input type="checkbox" checked={allMonitored} onChange={(e) => run(() => api(`/api/monitored/${mon.id}/episodes`, { method: 'PATCH', body: { season: s, monitored: e.target.checked } }), e.target.checked ? `Monitoring season ${s}.` : `Stopped monitoring season ${s}.`)} />
                       Monitored
                     </label>
-                    <button className="btn-secondary" onClick={() => run(() => api<{ grabbed: number }>(`/api/monitored/${mon.id}/search`, { body: { season: s } }), (r: { grabbed: number }) => (r.grabbed ? `Grabbed ${r.grabbed} release(s).` : 'Nothing new found.'))}>
+                    <button className="btn-secondary" onClick={() => void search(`s${s}`, { season: s })}>
                       Search
                     </button>
                     <button className="btn-secondary" onClick={() => setManual({ season: s })}>
@@ -320,6 +333,7 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
                     )}
                   </div>
                 </div>
+                {rowMsg?.key === `s${s}` && <div className="pb-2">{rowAlert(`s${s}`)}</div>}
                 {isOpen && (
                   <ul className="space-y-1 pb-3 text-sm">
                     {eps.map((e) => {
@@ -350,7 +364,7 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
                             </span>
                           </div>
                           <div className="flex gap-1">
-                            <button className="btn-secondary px-2 py-1 text-xs" title="Search automatically" onClick={() => run(() => api<{ grabbed: number }>(`/api/monitored/${mon.id}/search`, { body: { season: s, episode: e.episode } }), (r: { grabbed: number }) => (r.grabbed ? 'Grabbed a release.' : 'Nothing found.'))}>
+                            <button className="btn-secondary px-2 py-1 text-xs" title="Search automatically" onClick={() => void search(`s${s}e${e.episode}`, { season: s, episode: e.episode })}>
                               Search
                             </button>
                             <button className="btn-secondary px-2 py-1 text-xs" onClick={() => setManual({ season: s, episode: e.episode })}>
@@ -362,6 +376,7 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
                               </button>
                             )}
                           </div>
+                          {rowMsg?.key === `s${s}e${e.episode}` && <div className="w-full">{rowAlert(`s${s}e${e.episode}`)}</div>}
                         </li>
                       );
                     })}
