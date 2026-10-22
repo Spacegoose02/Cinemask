@@ -60,6 +60,31 @@ describe('library sync', () => {
     expect((await owner.req('GET', '/api/library?kind=show')).json().total).toBe(1);
   });
 
+  it('recently added counts a show by its newest episode, and filters by kind and library', async () => {
+    const items = async (qs = '') => (await owner.req('GET', `/api/library/recent${qs}`)).json().items as { title: string; addedAt: number }[];
+    const recent = async (qs = '') => (await items(qs)).map((i) => i.title);
+    expect(await recent()).toEqual(['Bluey', 'Paddington', 'Old Agent Movie']);
+    // The show itself was added in March 2024; its newest episode in October.
+    expect((await items('?kind=show'))[0]!.addedAt).toBe(1730000000 * 1000);
+    expect(await recent('?kind=show')).toEqual(['Bluey']);
+    expect(await recent('?library=Movies')).toEqual(['Paddington', 'Old Agent Movie']);
+    expect(await recent('?library=Kids%20Movies')).toEqual([]);
+  });
+
+  it('syncs the library shortly after Cinemask changes media files', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const run = vi.spyOn(t.librarySync, 'run');
+      t.app.ctx.onMediaChanged!();
+      t.app.ctx.onMediaChanged!(); // a second import restarts the wait
+      expect(run).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(2 * 60 * 1000);
+      expect(run).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('lists the Plex libraries and filters by one', async () => {
     const u = await createUser(owner, 'viewer', 'user');
     const user = new Client(t.app);

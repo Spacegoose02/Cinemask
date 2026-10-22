@@ -19,6 +19,7 @@ export const liveStats = new Map<number, { speed: number | null; eta: number | n
 
 /** Asks Plex/Jellyfin to rescan after an import so new files show up quickly. Best effort. */
 export async function refreshMediaServers(ctx: AppContext) {
+  ctx.onMediaChanged?.();
   const plex = ctx.settings.get('plex');
   if (plex.enabled && plex.url && plex.token) {
     try {

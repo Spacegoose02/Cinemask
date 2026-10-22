@@ -7,7 +7,9 @@ import { monitored, monitoredEpisodes } from '../db/schema.js';
 import { refreshMediaServers } from '../arr/tracker.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
-import { applyRename, deleteFiles, deleteFolder, listFiles, renamePreview, scanFolder, type DeleteScope } from './service.js';
+import { applyRename, deleteFiles, deleteFolder, listFiles, moveToRoot, renamePreview, scanFolder, titleOnDisk, type DeleteScope } from './service.js';
+import { assertRoot } from '../arr/roots.js';
+import { MEDIA_KINDS } from '../db/schema.js';
 import { autoTrailer } from '../trailers/service.js';
 import { deleteDuplicate, findDuplicates } from './duplicates.js';
 
@@ -40,6 +42,22 @@ export async function fileRoutes(app: FastifyInstance) {
     audit(ctx.db, req, 'files.duplicate_deleted', { target: row.title, details: { path: body.path, freed: result.freed } });
     void refreshMediaServers(ctx);
     return result;
+  });
+
+  // Moves a title's folder to another root folder (Movies ↔ Kids Movies), whether or not Cinemask manages it.
+  app.post('/api/files/:kind/:tmdbId/move', { config: { access: 'manager' } }, async (req) => {
+    const p = parse(z.object({ kind: z.enum(MEDIA_KINDS), tmdbId: z.coerce.number().int().positive() }), req.params);
+    const { rootId } = parse(z.object({ rootId: z.string().regex(/^[a-z0-9-]{1,40}$/) }), req.body);
+    const row = ctx.db.select().from(monitored).where(and(eq(monitored.kind, p.kind), eq(monitored.tmdbId, p.tmdbId))).get() ?? titleOnDisk(ctx, p.kind, p.tmdbId);
+    if (!row) throw notFound('No folder for this title in the media folders');
+    const from = row.path;
+    const after = safely(() => {
+      assertRoot(ctx, p.kind, rootId);
+      return moveToRoot(ctx, row, rootId);
+    });
+    audit(ctx.db, req, 'files.moved', { target: row.title, details: { from, to: after.path, rootId } });
+    void refreshMediaServers(ctx);
+    return { path: after.path, rootId: after.rootId ?? 'default' };
   });
 
   app.get('/api/monitored/:id/files', { config: { access: 'manager' } }, async (req) => {

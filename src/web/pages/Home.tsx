@@ -11,7 +11,8 @@ import { useAuth } from '../lib/auth';
 import { mediaPath, poster, type MediaCardData } from '../lib/media';
 
 type HomeRow =
-  | { type: 'featured' | 'recent' | 'upcoming' | 'requests' | 'collections' | 'airing_next' | 'airing_recent' }
+  | { type: 'featured' | 'upcoming' | 'requests' | 'collections' | 'airing_next' | 'airing_recent' }
+  | { type: 'recent'; kind?: 'movie' | 'show'; library?: string }
   | { type: 'trending'; kind: 'all' | 'movie' | 'tv' }
   | { type: 'popular'; kind: 'movie' | 'tv' }
   | { type: 'list' | 'collection'; id: number };
@@ -22,8 +23,11 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 const KIND_NAME = { all: '', movie: 'movies', tv: 'shows' } as const;
 
 function rowKey(r: HomeRow) {
+  if (r.type === 'recent') return r.library ? `recent:lib:${r.library}` : `recent:${r.kind ?? 'all'}`;
   return 'id' in r ? `${r.type}:${r.id}` : 'kind' in r ? `${r.type}:${r.kind}` : r.type;
 }
+
+const recentQuery = (r: { kind?: string; library?: string }) => new URLSearchParams({ ...(r.kind && { kind: r.kind }), ...(r.library && { library: r.library }) }).toString();
 
 function useNames() {
   const lists = useQuery({ queryKey: ['lists'], queryFn: () => api<{ id: number; name: string }[]>('/api/lists') });
@@ -33,7 +37,7 @@ function useNames() {
       case 'featured':
         return 'Featured';
       case 'recent':
-        return 'Recently added';
+        return r.library ? `Recently added in ${r.library}` : r.kind ? `Recently added ${r.kind === 'movie' ? 'movies' : 'shows'}` : 'Recently added';
       case 'upcoming':
         return 'Coming up';
       case 'airing_next':
@@ -60,7 +64,7 @@ function useNames() {
 async function loadRow(r: HomeRow): Promise<Card[]> {
   switch (r.type) {
     case 'recent':
-      return (await api<{ items: Card[] }>('/api/library/recent')).items;
+      return (await api<{ items: Card[] }>(`/api/library/recent?${recentQuery(r)}`)).items;
     case 'trending':
     case 'featured':
       return (await api<{ results: Card[] }>(`/api/discover/trending?kind=${r.type === 'trending' ? r.kind : 'all'}`)).results;
@@ -161,11 +165,17 @@ function Row({ row, label, more }: { row: HomeRow; label: string; more?: string 
 function Customize({ rows, onClose }: { rows: HomeRow[]; onClose: () => void }) {
   const qc = useQueryClient();
   const { label, lists, collections } = useNames();
+  const sections = useQuery({ queryKey: ['library-sections'], queryFn: () => api<{ libraries: { name: string }[] }>('/api/library/sections') });
+  const libraryNames = [...new Set((sections.data?.libraries ?? []).map((l) => l.name))];
   const [draft, setDraft] = useState<HomeRow[]>(rows);
   const [error, setError] = useState<string | null>(null);
   const builtIn: HomeRow[] = [
     { type: 'featured' },
     { type: 'recent' },
+    { type: 'recent', kind: 'movie' },
+    { type: 'recent', kind: 'show' },
+    // One per Plex library, so Kids Movies and Kids TV get their own rows.
+    ...(libraryNames.length > 1 ? libraryNames.map((library): HomeRow => ({ type: 'recent', library })) : []),
     { type: 'airing_next' },
     { type: 'airing_recent' },
     { type: 'upcoming' },
@@ -259,7 +269,7 @@ export function HomePage() {
         ) : r.type === 'airing_next' || r.type === 'airing_recent' ? (
           <Airing key={r.type} which={r.type === 'airing_next' ? 'next' : 'recent'} label={label(r)} />
         ) : (
-          <Row key={rowKey(r)} row={r} label={label(r)} more={r.type === 'recent' ? '/library' : r.type === 'list' ? `/lists/${r.id}` : r.type === 'collection' ? `/collections/${r.id}` : r.type === 'upcoming' ? '/calendar' : r.type === 'requests' ? '/requests' : undefined} />
+          <Row key={rowKey(r)} row={r} label={label(r)} more={r.type === 'recent' ? `/library?${recentQuery(r)}` : r.type === 'list' ? `/lists/${r.id}` : r.type === 'collection' ? `/collections/${r.id}` : r.type === 'upcoming' ? '/calendar' : r.type === 'requests' ? '/requests' : undefined} />
         ),
       )}
       {layout.data && !rows.length && <div className="card text-sm text-muted">Your homepage is empty. Use Customize to add rows.</div>}

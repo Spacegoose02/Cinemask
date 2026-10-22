@@ -76,6 +76,8 @@ export class PlexClient implements MediaServerClient {
         for (const e of eps.Metadata ?? []) {
           const show = e.grandparentRatingKey ? byKey.get(e.grandparentRatingKey) : undefined;
           if (!show || e.parentIndex === undefined || e.index === undefined) continue;
+          // A show counts as added when its newest episode was, so new episodes reach Recently added.
+          if (e.addedAt) show.addedAt = Math.max(show.addedAt ?? 0, e.addedAt * 1000);
           show.episodes!.push({
             season: e.parentIndex,
             episode: e.index,

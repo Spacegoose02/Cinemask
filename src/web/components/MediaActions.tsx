@@ -25,6 +25,9 @@ interface Lookup {
     path?: string | null;
   } | null;
   request: { id: number; status: string; requestedByName: string | null; reason: string | null } | null;
+  /** Managers: the title's folder on disk and the root folder it's in. */
+  folder?: string | null;
+  folderRoot?: string;
 }
 
 interface ReleaseRow {
@@ -120,6 +123,45 @@ function FolderAndSize({ mon, kind, roots, onClose, onSaved }: { mon: NonNullabl
         </fieldset>
         <button className="btn-primary" onClick={save}>
           Save
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Moves a title's folder to another root folder, such as Movies → Kids Movies. */
+function MoveFolder({ kind, tmdbId, folder, current, roots, onClose, onMoved }: { kind: 'movie' | 'show'; tmdbId: number; folder: string; current: string; roots: RootFolder[]; onClose: () => void; onMoved: (to: string) => void }) {
+  const [rootId, setRootId] = useState(roots.find((r) => r.id !== current)?.id ?? current);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const move = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      await api(`/api/files/${kind}/${tmdbId}/move`, { body: { rootId } });
+      onMoved(roots.find((r) => r.id === rootId)?.name ?? rootId);
+      onClose();
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title="Move to another folder" onClose={onClose}>
+      <div className="space-y-4">
+        {msg && <Alert>{msg}</Alert>}
+        <p className="text-sm">
+          Now in <span className="font-medium">{roots.find((r) => r.id === current)?.name ?? 'its folder'}</span>
+          <span className="block break-all text-xs text-muted">{folder}</span>
+        </p>
+        <label className="block">
+          <span className="label">Move to</span>
+          <RootPicker roots={roots} value={rootId} onChange={setRootId} />
+        </label>
+        <p className="hint">The whole folder moves, and Plex/Jellyfin are asked to rescan. It shows up in the other library once they have.</p>
+        <button className="btn-primary" disabled={busy || rootId === current} onClick={move}>
+          {busy ? 'Moving…' : 'Move'}
         </button>
       </div>
     </Modal>
@@ -226,6 +268,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   const [manual, setManual] = useState(false);
   const [posters, setPosters] = useState(false);
   const [folderSize, setFolderSize] = useState(false);
+  const [moving, setMoving] = useState(false);
   const rootQuery = useRootFolders(isManager);
   const roots = rootQuery.data?.roots.filter((r) => r.kind === m.kind) ?? [];
   const [rootId, setRootId] = useState('default');
@@ -307,6 +350,11 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           </button>
         </>
       )}
+      {isManager && roots.length > 1 && lookup.data?.folder && (
+        <button className="btn-secondary" onClick={() => setMoving(true)}>
+          Move to folder
+        </button>
+      )}
       {isManager && (
         <button className="btn-secondary" onClick={() => setPosters(true)}>
           Change poster
@@ -340,6 +388,9 @@ export function MediaActions({ m }: { m: MediaDetail }) {
             {isManager ? 'Download' : 'Request'} {seasons.length} season{seasons.length === 1 ? '' : 's'}
           </button>
         </Modal>
+      )}
+      {moving && lookup.data?.folder && (
+        <MoveFolder kind={m.kind} tmdbId={m.tmdbId} folder={lookup.data.folder} current={lookup.data.folderRoot ?? 'default'} roots={roots} onClose={() => setMoving(false)} onMoved={(to) => (refresh(), setMsg({ kind: 'success', text: `Moved to ${to}.` }))} />
       )}
       {manual && mon && <ManualSearch monitoredId={mon.id} onClose={() => setManual(false)} />}
       {folderSize && mon && <FolderAndSize mon={mon} kind={m.kind} roots={roots} onClose={() => setFolderSize(false)} onSaved={() => (refresh(), setMsg({ kind: 'success', text: 'Saved.' }))} />}

@@ -2,7 +2,8 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, sql, type AnyColumn } f
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
-import { libraryItems, matchOverrides, media, MEDIA_KINDS, type MediaKind } from '../db/schema.js';
+import { downloads, libraryItems, matchOverrides, media, MEDIA_KINDS, monitored, type MediaKind } from '../db/schema.js';
+import { rootOf } from '../arr/roots.js';
 import { bestResolution, IntegrationError } from '../integrations/http.js';
 import { HttpError } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
@@ -230,16 +231,38 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
     return { results: cards(ctx, r.results, kind === 'movie' ? 'movie' : 'show'), totalPages: r.total_pages };
   });
 
-  app.get('/api/library/recent', { config: { access: 'user' } }, async () => {
+  app.get('/api/library/recent', { config: { access: 'user' } }, async (req) => {
+    const q = parse(z.object({ kind: kindParam.optional(), library: z.string().trim().min(1).max(200).optional() }), req.query);
     const rows = ctx.db
       .select({ kind: libraryItems.kind, tmdbId: libraryItems.tmdbId, title: sql<string>`coalesce(${media.title}, ${libraryItems.title})`, year: libraryItems.year, posterPath: sql<string | null>`coalesce(${media.posterOverride}, ${media.posterPath})`, addedAt: sql<number>`max(${libraryItems.addedAt})` })
       .from(libraryItems)
       .leftJoin(media, eq(media.id, libraryItems.mediaId))
+      .where(and(q.kind ? eq(libraryItems.kind, q.kind) : undefined, q.library ? eq(libraryItems.library, q.library) : undefined))
       .groupBy(sql`coalesce(${libraryItems.kind} || ':' || ${libraryItems.tmdbId}, ${libraryItems.id})`)
       .orderBy(desc(sql`max(${libraryItems.addedAt})`))
       .limit(20)
       .all();
-    return { items: rows };
+    // What Cinemask itself just imported shows straight away, before Plex/Jellyfin have scanned it. For one
+    // library, imports into the root folder of the same name ("Kids Movies") count.
+    const imported = ctx.db
+      .select({ rootId: monitored.rootId, kind: monitored.kind, tmdbId: monitored.tmdbId, title: sql<string>`coalesce(${media.title}, ${monitored.title})`, year: monitored.year, posterPath: sql<string | null>`coalesce(${media.posterOverride}, ${media.posterPath})`, addedAt: sql<number>`max(${downloads.importedAt})` })
+      .from(downloads)
+      .innerJoin(monitored, eq(monitored.id, downloads.monitoredId))
+      .leftJoin(media, and(eq(media.kind, monitored.kind), eq(media.tmdbId, monitored.tmdbId)))
+      .where(and(eq(downloads.status, 'imported'), isNotNull(downloads.importedAt), q.kind ? eq(monitored.kind, q.kind) : undefined))
+      .groupBy(monitored.id)
+      .orderBy(desc(sql`max(${downloads.importedAt})`))
+      .limit(20)
+      .all()
+      .filter((r) => !q.library || rootOf(ctx, r).name === q.library)
+      .map(({ rootId: _root, ...r }) => r);
+    const byKey = new Map<string, (typeof rows)[number]>();
+    for (const r of [...rows, ...imported]) {
+      const key = r.tmdbId ? `${r.kind}:${r.tmdbId}` : `${r.kind}:${r.title}`;
+      const seen = byKey.get(key);
+      if (!seen || (r.addedAt ?? 0) > (seen.addedAt ?? 0)) byKey.set(key, { ...(seen ?? r), addedAt: Math.max(r.addedAt ?? 0, seen?.addedAt ?? 0) });
+    }
+    return { items: [...byKey.values()].sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0)).slice(0, 20) };
   });
 
   app.get('/api/library/sync', { config: { access: 'manager' } }, async () => opts.sync.status);

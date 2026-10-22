@@ -213,7 +213,25 @@ export interface SyncStatus {
 export class LibrarySync {
   status: SyncStatus = { running: false, lastRunAt: null, results: {} };
 
+  private soon: NodeJS.Timeout | null = null;
+
   constructor(private readonly ctx: AppContext) {}
+
+  /** Syncs once, a little later: media servers take a moment to pick up new files. Repeated calls wait for the last. */
+  runSoon(delayMs = 2 * 60 * 1000) {
+    if (!this.ctx.settings.get('library').syncEnabled) return;
+    this.cancelSoon();
+    this.soon = setTimeout(() => {
+      this.soon = null;
+      void this.run().catch(() => undefined);
+    }, delayMs);
+    this.soon.unref();
+  }
+
+  cancelSoon() {
+    if (this.soon) clearTimeout(this.soon);
+    this.soon = null;
+  }
 
   async run(): Promise<SyncStatus> {
     if (this.status.running) return this.status;

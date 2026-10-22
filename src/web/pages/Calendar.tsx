@@ -1,14 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ManualSearch } from '../components/MediaActions';
 import { TrailerModal } from '../components/media';
 import { Modal } from '../components/Modal';
 import { Alert } from '../components/ui';
-import { api } from '../lib/api';
+import { api, hasRole } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { mediaPath, poster } from '../lib/media';
 
 interface Entry {
   date: string;
+  monitoredId: number;
   kind: 'movie' | 'show';
   tmdbId: number;
   title: string;
@@ -25,7 +28,7 @@ interface Entry {
 
 type Marker = 'series_premiere' | 'season_premiere' | 'season_finale' | 'series_finale';
 type View = 'month' | 'week' | 'agenda';
-type Only = 'all' | 'premieres' | 'premieres_finales';
+type Only = 'all' | 'missing' | 'premieres' | 'premieres_finales';
 type KindFilter = 'all' | 'movie' | 'show';
 
 const MARKER_LABEL: Record<Marker, string> = { series_premiere: 'Series premiere', season_premiere: 'Season premiere', season_finale: 'Season finale', series_finale: 'Series finale' };
@@ -38,6 +41,13 @@ function filterEntries(entries: Entry[], only: Only, kind: KindFilter): Entry[] 
     .filter((e) => kind === 'all' || e.kind === kind)
     .map((e) => {
       if (only === 'all') return e;
+      // Missing: aired or released, monitored, and no file (the red ones); a show keeps only its missing episodes.
+      if (only === 'missing') {
+        if (!e.monitored || e.date >= todayIso() || e.releaseType === 'cinema') return null;
+        if (e.kind === 'movie') return e.hasFile ? null : e;
+        const missing = (e.episodes ?? []).filter((ep) => !ep.hasFile);
+        return missing.length ? { ...e, episodes: missing, hasFile: false } : null;
+      }
       if (e.kind === 'movie') return e.premiere ? e : null;
       const eps = (e.episodes ?? []).filter((ep) => (only === 'premieres' ? isPremiere(ep.marker) : ep.marker !== null));
       return eps.length ? { ...e, episodes: eps, hasFile: eps.every((ep) => ep.hasFile) } : null;
@@ -108,7 +118,27 @@ function Chip({ e, onClick }: { e: Entry; onClick: () => void }) {
 
 function Details({ e, onClose }: { e: Entry; onClose: () => void }) {
   const [trailer, setTrailer] = useState(false);
+  const { me } = useAuth();
+  const canSearch = hasRole(me, 'manager');
+  const [manual, setManual] = useState<{ season?: number; episode?: number } | null>(null);
+  const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const [searching, setSearching] = useState(false);
   const img = poster(e.posterPath, 'w185');
+  const eps = e.episodes ?? [];
+  // One episode (or a movie): the buttons sit with Trailer and Details. Several: each episode gets its own.
+  const single = e.kind === 'movie' ? {} : eps.length === 1 ? { season: eps[0]!.season, episode: eps[0]!.episode } : null;
+  const search = async (target: { season?: number; episode?: number }) => {
+    setMsg(null);
+    setSearching(true);
+    try {
+      const r = await api<{ grabbed: number }>(`/api/monitored/${e.monitoredId}/search`, { body: target });
+      setMsg(r.grabbed ? { kind: 'success', text: `Sent ${r.grabbed} release${r.grabbed === 1 ? '' : 's'} to the download client.` } : { kind: 'error', text: 'Nothing suitable found. Try Manual search to see every release.' });
+    } catch (err) {
+      setMsg({ kind: 'error', text: (err as Error).message });
+    } finally {
+      setSearching(false);
+    }
+  };
   return (
     <Modal title={e.title} onClose={onClose}>
       <div className="flex gap-4">
@@ -126,18 +156,41 @@ function Details({ e, onClose }: { e: Entry; onClose: () => void }) {
                     <span className="text-muted">{epCode(ep)}</span> {ep.title}
                     {ep.marker && <span className={`ml-2 rounded px-1 text-[10px] font-bold ${isPremiere(ep.marker) ? 'bg-accent text-accent-fg' : 'bg-warning text-black'}`}>{MARKER_LABEL[ep.marker]}</span>}
                   </span>
-                  <span className={ep.hasFile ? 'text-success' : 'text-muted'}>{ep.hasFile ? 'Downloaded' : e.date > todayIso() ? 'Upcoming' : 'Missing'}</span>
+                  <span className="flex shrink-0 gap-2">
+                    {canSearch && !single && (
+                      <>
+                        <button className="text-muted hover:text-accent" disabled={searching} onClick={() => void search({ season: ep.season, episode: ep.episode })} title={`Search for ${epCode(ep)}`}>
+                          Search
+                        </button>
+                        <button className="text-muted hover:text-accent" onClick={() => setManual({ season: ep.season, episode: ep.episode })} title={`Manual search for ${epCode(ep)}`}>
+                          Manual
+                        </button>
+                      </>
+                    )}
+                    <span className={ep.hasFile ? 'text-success' : 'text-muted'}>{ep.hasFile ? 'Downloaded' : e.date > todayIso() ? 'Upcoming' : 'Missing'}</span>
+                  </span>
                 </li>
               ))}
             </ul>
           )}
           {e.kind === 'movie' && <div className={e.hasFile ? 'text-success' : 'text-muted'}>{e.hasFile ? 'Downloaded' : e.monitored ? 'Monitored' : 'Not monitored'}</div>}
           {e.overview && <p className="line-clamp-5 text-muted">{e.overview}</p>}
+          {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
           <div className="flex flex-wrap gap-2 pt-1">
             {e.trailerKey && (
               <button className="btn-secondary" onClick={() => setTrailer(true)}>
                 ▶ Trailer
               </button>
+            )}
+            {canSearch && single && (
+              <>
+                <button className="btn-secondary" disabled={searching} onClick={() => void search(single)}>
+                  {searching ? 'Searching…' : 'Search'}
+                </button>
+                <button className="btn-secondary" onClick={() => setManual(single)}>
+                  Manual search
+                </button>
+              </>
             )}
             <Link className="btn-primary" to={mediaPath(e.kind, e.tmdbId)} onClick={onClose}>
               Details
@@ -146,6 +199,7 @@ function Details({ e, onClose }: { e: Entry; onClose: () => void }) {
         </div>
       </div>
       {trailer && e.trailerKey && <TrailerModal videoKey={e.trailerKey} onClose={() => setTrailer(false)} />}
+      {manual && <ManualSearch monitoredId={e.monitoredId} initialSeason={manual.season} episode={manual.episode} onClose={() => setManual(null)} />}
     </Modal>
   );
 }
@@ -202,6 +256,7 @@ export function CalendarPage() {
           </div>
           <select className="input w-auto" value={only} onChange={(e) => pickOnly(e.target.value as Only)} aria-label="Show">
             <option value="all">Everything</option>
+            <option value="missing">Missing only</option>
             <option value="premieres">Premieres only</option>
             <option value="premieres_finales">Premieres and finales</option>
           </select>
@@ -238,7 +293,7 @@ export function CalendarPage() {
                 </div>
               </section>
             ))}
-          {q.data && !shown.length && <p className="text-muted">{only === 'all' ? 'Nothing monitored is coming out in the next 30 days.' : 'No premieres in the next 30 days.'}</p>}
+          {q.data && !shown.length && <p className="text-muted">{only === 'all' ? 'Nothing monitored is coming out in the next 30 days.' : only === 'missing' ? 'Nothing missing in these 30 days.' : 'No premieres in the next 30 days.'}</p>}
         </div>
       ) : (
         <div className="overflow-x-auto">

@@ -20,6 +20,8 @@ export interface CalendarEpisode {
 
 export interface CalendarEntry {
   date: string;
+  /** The monitored title, for searching from the calendar. */
+  monitoredId: number;
   kind: 'movie' | 'show';
   tmdbId: number;
   title: string;
@@ -62,7 +64,7 @@ export function calendar(ctx: AppContext, start: string, end: string): CalendarE
     const first = dates.map(([, d]) => d).filter((d): d is string => Boolean(d)).sort()[0];
     for (const [releaseType, date] of dates) {
       if (!date || date < start || date > end) continue;
-      entries.push({ date, kind: 'movie', tmdbId: m.tmdbId, title: m.title, year: m.year, posterPath: meta.posterPath, overview: meta.overview, trailerKey: meta.trailerKey, monitored: m.monitored, releaseType, premiere: date === first, hasFile: Boolean(m.filePath) });
+      entries.push({ date, monitoredId: m.id, kind: 'movie', tmdbId: m.tmdbId, title: m.title, year: m.year, posterPath: meta.posterPath, overview: meta.overview, trailerKey: meta.trailerKey, monitored: m.monitored, releaseType, premiere: date === first, hasFile: Boolean(m.filePath) });
     }
   }
 
@@ -101,7 +103,7 @@ export function calendar(ctx: AppContext, start: string, end: string): CalendarE
     let entry = grouped.get(key);
     if (!entry) {
       const meta = metaFor('show', m.tmdbId);
-      entry = { date: e.airDate!, kind: 'show', tmdbId: m.tmdbId, title: m.title, year: m.year, posterPath: meta?.posterPath ?? null, overview: meta?.overview ?? null, trailerKey: meta?.trailerKey ?? null, monitored: m.monitored && e.monitored, hasFile: true, episodes: [] };
+      entry = { date: e.airDate!, monitoredId: m.id, kind: 'show', tmdbId: m.tmdbId, title: m.title, year: m.year, posterPath: meta?.posterPath ?? null, overview: meta?.overview ?? null, trailerKey: meta?.trailerKey ?? null, monitored: m.monitored && e.monitored, hasFile: true, episodes: [] };
       grouped.set(key, entry);
     }
     entry.episodes!.push({ season: e.season, episode: e.episode, title: e.title, hasFile, marker: markerFor(m, e) });
