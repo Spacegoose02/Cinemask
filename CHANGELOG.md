@@ -6,9 +6,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [0.20.0] - 2026-10-22
 
+### Fixed
+- Recently added missed shows: a show counted as added when it first appeared in Plex/Jellyfin, so new episodes never moved it up. It now counts its newest episode.
+- Recently added waited for the next library sync (every 6 hours by default). What Cinemask imports shows up at once, and the library is synced again a couple of minutes after each import, move or delete, once Plex/Jellyfin have rescanned.
+
 ### Added
 - Calendar: clicking an episode or movie shows Search and Manual search buttons (managers). Search grabs the best release for that episode; Manual search lists every release to pick from. A day with several episodes of one show has the buttons on each episode.
 - "Move to folder" on a movie or show page (managers): moves its folder to another root folder, such as Movies → Kids Movies or TV → Kids TV, and asks Plex/Jellyfin to rescan. It works for titles Cinemask doesn't manage too (ones that are only in Plex), finding their folder by name.
+- Recently added on Home is split into movies and shows by default, and Customize can add a row per Plex library (Recently added in Kids Movies, Kids TV and so on).
 - Calendar: a "Missing only" view shows just what has aired or been released, is monitored, and has no file (the red entries).
 
 ## [0.19.1] - 2026-10-21

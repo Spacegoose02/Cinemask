@@ -38,7 +38,7 @@ export const plexRoutes = {
           MediaContainer: {
             Metadata: [
               { ratingKey: '201', grandparentRatingKey: '20', parentIndex: 1, index: 1, title: 'Pilot', Media: [{ videoResolution: '4k' }], viewCount: 1, lastViewedAt: 1715000000 },
-              { ratingKey: '202', grandparentRatingKey: '20', parentIndex: 1, index: 2, title: 'Two', Media: [{ videoResolution: '1080' }] },
+              { ratingKey: '202', grandparentRatingKey: '20', parentIndex: 1, index: 2, title: 'Two', addedAt: 1730000000, Media: [{ videoResolution: '1080' }] },
             ],
           },
         }

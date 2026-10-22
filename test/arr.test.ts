@@ -210,6 +210,8 @@ describe('request → download → import', () => {
     const downloads = (await owner.req('GET', '/api/downloads?history=true')).json();
     expect(downloads[0]).toMatchObject({ status: 'imported', quality: 'Bluray-1080p' });
     expect((await kid.req('GET', '/api/requests')).json()[0].status).toBe('available');
+    // In Recently added straight away, before Plex has scanned it.
+    expect((await kid.req('GET', '/api/library/recent?kind=movie')).json().items).toEqual([expect.objectContaining({ kind: 'movie', tmdbId: 116149, title: 'Paddington' })]);
   });
 
   it('unpacks a download that arrived as an archive, and a manager can retry a failed import', async () => {

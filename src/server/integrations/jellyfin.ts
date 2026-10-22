@@ -81,10 +81,12 @@ export class JellyfinClient implements MediaServerClient {
       byId.set(i.Id, item);
       return item;
     });
-    const eps = await this.get<{ Items: JfItem[] }>(`/Items?Recursive=true&IncludeItemTypes=Episode&Fields=MediaStreams${asUser}`);
+    const eps = await this.get<{ Items: JfItem[] }>(`/Items?Recursive=true&IncludeItemTypes=Episode&Fields=MediaStreams,DateCreated${asUser}`);
     for (const e of eps.Items) {
       const show = e.SeriesId ? byId.get(e.SeriesId) : undefined;
       if (!show || e.ParentIndexNumber === undefined || e.IndexNumber === undefined) continue;
+      // A show counts as added when its newest episode was, so new episodes reach Recently added.
+      if (e.DateCreated) show.addedAt = Math.max(show.addedAt ?? 0, Date.parse(e.DateCreated));
       show.episodes!.push({ season: e.ParentIndexNumber, episode: e.IndexNumber, title: e.Name, resolution: normalizeResolution(height(e)), ...plays(e) });
     }
     for (const item of items) rollUpViews(item);

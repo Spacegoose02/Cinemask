@@ -6,7 +6,8 @@ import { parse } from '../lib/validate.js';
 
 export const homeRow = z.discriminatedUnion('type', [
   z.object({ type: z.literal('featured') }),
-  z.object({ type: z.literal('recent') }),
+  // Optionally only movies or shows, or one Plex library ("Kids Movies").
+  z.object({ type: z.literal('recent'), kind: z.enum(['movie', 'show']).optional(), library: z.string().trim().min(1).max(200).optional() }),
   z.object({ type: z.literal('upcoming') }),
   z.object({ type: z.literal('airing_next') }),
   z.object({ type: z.literal('airing_recent') }),
@@ -21,7 +22,8 @@ export type HomeRow = z.infer<typeof homeRow>;
 
 export const DEFAULT_HOME: HomeRow[] = [
   { type: 'featured' },
-  { type: 'recent' },
+  { type: 'recent', kind: 'movie' },
+  { type: 'recent', kind: 'show' },
   { type: 'airing_next' },
   { type: 'airing_recent' },
   { type: 'upcoming' },

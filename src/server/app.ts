@@ -81,6 +81,9 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
 
   const backups = new BackupService(ctx);
   const librarySync = new LibrarySync(ctx);
+  // Plex/Jellyfin are told to rescan after an import; the library is read again once they've had time to.
+  ctx.onMediaChanged = () => librarySync.runSoon();
+  app.addHook('onClose', async () => librarySync.cancelSoon());
   const scheduler = new Scheduler(app, backups, librarySync);
 
   app.setErrorHandler((err, req, reply) => {

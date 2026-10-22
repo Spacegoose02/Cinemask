@@ -10,6 +10,8 @@ export interface AppContext {
   readonly db: Orm;
   secretKey: Buffer;
   settings: SettingsStore;
+  /** Called after Cinemask changes media files (imports, moves, deletes); syncs the library shortly after. */
+  onMediaChanged?: () => void;
 }
 
 declare module 'fastify' {
