@@ -72,6 +72,16 @@ export function formatDate(ms: number | null | undefined): string {
   return ms ? new Date(ms).toLocaleString() : 'Never';
 }
 
+/** How long ago, as indexers show a release's age: "45 min", "6 hours", "12 days". */
+export function formatAge(ms: number, now = Date.now()): string {
+  const min = Math.max(0, Math.round((now - ms) / 60000));
+  if (min < 60) return `${min} min`;
+  const hours = Math.round(min / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? '' : 's'}`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
+
 export function formatBytes(n: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let i = 0;

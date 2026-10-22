@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api, formatBytes, hasRole } from '../lib/api';
+import { api, formatAge, formatBytes, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import type { MediaDetail } from '../pages/MediaDetail';
 import { PosterPicker, useCreateSeriesCollection } from './Extras';
@@ -37,6 +37,7 @@ interface ReleaseRow {
   protocol: string;
   size: number;
   seeders: number | null;
+  publishedAt: number | null;
   quality: string;
   languages: string[];
   accepted: boolean;
@@ -191,6 +192,45 @@ function SeasonPicker({ seasons, value, onChange }: { seasons: MediaDetail['seas
   );
 }
 
+type ReleaseColumn = 'title' | 'quality' | 'size' | 'age' | 'peers';
+
+/** Column sort for manual search. Null keeps the server's order (best first). Undated or peerless releases go last either way. */
+function sortRows(rows: ReleaseRow[], sort: { by: ReleaseColumn; desc: boolean } | null): ReleaseRow[] {
+  if (!sort) return rows;
+  const value = (r: ReleaseRow): string | number | null =>
+    sort.by === 'title' ? r.title.toLowerCase() : sort.by === 'quality' ? qualityOrder(r.quality) : sort.by === 'size' ? r.size : sort.by === 'age' ? (r.publishedAt === null ? null : -r.publishedAt) : r.seeders;
+  return [...rows].sort((a, b) => {
+    const x = value(a);
+    const y = value(b);
+    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+    const c = x < y ? -1 : x > y ? 1 : 0;
+    return sort.desc ? -c : c;
+  });
+}
+
+/** Rough rank of a quality name ("WEBDL-1080p") by its resolution, for sorting. */
+function qualityOrder(q: string): number {
+  const res = /(\d{3,4})p/.exec(q)?.[1];
+  return (res ? Number(res) : 0) + (/remux/i.test(q) ? 2 : /bluray/i.test(q) ? 1 : 0);
+}
+
+/** A column header that sorts the table: first click sorts one way, the second the other, the third goes back to best first. */
+function SortHeader({ label, col, sort, onSort, first = 'asc' }: { label: string; col: ReleaseColumn; sort: { by: ReleaseColumn; desc: boolean } | null; onSort: (s: { by: ReleaseColumn; desc: boolean } | null) => void; first?: 'asc' | 'desc' }) {
+  const active = sort?.by === col;
+  const startDesc = first === 'desc';
+  const next = () => onSort(!active ? { by: col, desc: startDesc } : sort.desc === startDesc ? { by: col, desc: !startDesc } : null);
+  return (
+    <th className="p-2" aria-sort={active ? (sort.desc ? 'descending' : 'ascending') : 'none'}>
+      <button className={`flex items-center gap-1 hover:text-text ${active ? 'text-text' : ''}`} onClick={next}>
+        {label}
+        <span aria-hidden className={active ? '' : 'opacity-40'}>
+          {active ? (sort.desc ? '▼' : '▲') : '↕'}
+        </span>
+      </button>
+    </th>
+  );
+}
+
 export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: { monitoredId: number; onClose: () => void; initialSeason?: number; episode?: number }) {
   const [season, setSeason] = useState<string>(initialSeason !== undefined ? String(initialSeason) : '');
   const params = new URLSearchParams();
@@ -199,6 +239,8 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
   const qs = params.size ? `?${params}` : '';
   const res = useQuery({ queryKey: ['releases', monitoredId, season, episode], queryFn: () => api<{ releases: ReleaseRow[]; errors: string[] }>(`/api/monitored/${monitoredId}/releases${qs}`) });
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const [sort, setSort] = useState<{ by: ReleaseColumn; desc: boolean } | null>(null);
+  const header = (label: string, col: ReleaseColumn, first?: 'asc' | 'desc') => <SortHeader label={label} col={col} sort={sort} onSort={setSort} first={first} />;
   const grab = async (r: ReleaseRow) => {
     if (r.oversize !== null && !confirm(`"${r.title}" is ${formatBytes(r.size)}, over the size limit. Download it anyway?`)) return;
     try {
@@ -225,15 +267,16 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface text-left text-muted">
             <tr>
-              <th className="p-2">Release</th>
-              <th className="p-2">Quality</th>
-              <th className="p-2">Size</th>
-              <th className="p-2">Peers</th>
+              {header('Release', 'title')}
+              {header('Quality', 'quality', 'desc')}
+              {header('Size', 'size', 'desc')}
+              {header('Age', 'age')}
+              {header('Peers', 'peers', 'desc')}
               <th className="p-2" />
             </tr>
           </thead>
           <tbody>
-            {res.data?.releases.map((r) => (
+            {sortRows(res.data?.releases ?? [], sort).map((r) => (
               <tr key={r.guid} className="border-t border-border align-top">
                 <td className="p-2">
                   <div className="break-all">{r.title}</div>
@@ -245,6 +288,16 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
                 </td>
                 <td className="whitespace-nowrap p-2">{r.quality}</td>
                 <td className="whitespace-nowrap p-2">{formatBytes(r.size)}</td>
+                <td className="whitespace-nowrap p-2" title={r.publishedAt ? new Date(r.publishedAt).toLocaleString() : undefined}>
+                  {r.publishedAt ? (
+                    <>
+                      {formatAge(r.publishedAt)}
+                      <div className="text-xs text-muted">{new Date(r.publishedAt).toLocaleDateString()}</div>
+                    </>
+                  ) : (
+                    '—'
+                  )}
+                </td>
                 <td className="p-2">{r.seeders ?? '—'}</td>
                 <td className="p-2">
                   <button className={r.accepted ? 'btn-primary' : 'btn-secondary'} onClick={() => grab(r)}>

@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-10-22
+
+### Added
+- Manual search shows each release's age and upload date, and its column headers sort the list: click Release, Quality, Size, Age or Peers once to sort, again to reverse, and a third time to go back to best first.
+
 ## [0.21.0] - 2026-10-22
 
 ### Fixed
