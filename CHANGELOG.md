@@ -9,6 +9,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Added
 - BingeBandit as a media server (Settings → Media servers), alongside or instead of Plex and Jellyfin. Library sync reads its movies and shows with episodes, quality, plays, labels and which library each is in; imports ask it to scan; poster changes are pushed to it; and Settings → Health checks the connection. Use an admin's API key (BingeBandit Settings → API keys) so scans and posters work.
 
+## [0.25.0] - 2026-10-26
+
+### Added
+- Cast on every movie and show page, in library titles and new ones alike: up to 20 people in billing order with their photo and character, and for shows how many episodes each one is in.
+
 ## [0.24.0] - 2026-10-22
 
 ### Fixed

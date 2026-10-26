@@ -130,6 +130,12 @@ describe('library sync', () => {
     expect((await owner.req('GET', '/api/library?watched=unwatched')).json().total).toBe(2);
     const m = (await owner.req('GET', '/api/media/movie/116149')).json();
     expect(m.watch).toEqual({ viewCount: 3, lastViewedAt: 1720000000000 });
+    // The cast comes in billing order; a show's lists each person's episodes.
+    expect(m.cast).toEqual([
+      { id: 1, name: 'Ben Whishaw', character: 'Paddington (voice)', profilePath: '/ben.jpg' },
+      { id: 2, name: 'Hugh Bonneville', character: 'Henry Brown', profilePath: null },
+    ]);
+    expect((await owner.req('GET', '/api/media/show/82728')).json().cast).toEqual([{ id: 5, name: 'Dave McCormack', character: 'Bandit (voice)', profilePath: '/dave.jpg', episodes: 150 }]);
     const season = (await owner.req('GET', '/api/media/show/82728/season/1')).json();
     expect(season.episodes.map((e: { viewCount: number | null }) => e.viewCount)).toEqual([1, 0, null]);
   });
