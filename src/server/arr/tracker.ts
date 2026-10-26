@@ -2,6 +2,7 @@ import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { notify } from '../notify/service.js';
 import type { AppContext } from '../context.js';
 import { blocklist, downloadClients, downloads, monitored, type DownloadClientType } from '../db/schema.js';
+import { BingeBanditClient } from '../integrations/bingebandit.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import { createClient, type ClientItem } from './clients.js';
 import { importDownload, locateDownload, mapRemotePath } from './importer.js';
@@ -17,7 +18,7 @@ const ACTIVE = ['queued', 'downloading', 'paused', 'completed', 'importing'] as 
 /** Speed and time left from the last poll, by download id. Only kept in memory; it changes every poll. */
 export const liveStats = new Map<number, { speed: number | null; eta: number | null }>();
 
-/** Asks Plex/Jellyfin to rescan after an import so new files show up quickly. Best effort. */
+/** Asks Plex/Jellyfin/BingeBandit to rescan after an import so new files show up quickly. Best effort. */
 export async function refreshMediaServers(ctx: AppContext) {
   ctx.onMediaChanged?.();
   const plex = ctx.settings.get('plex');
@@ -38,6 +39,10 @@ export async function refreshMediaServers(ctx: AppContext) {
   const jf = ctx.settings.get('jellyfin');
   if (jf.enabled && jf.url && jf.apiKey) {
     await new JellyfinClient(jf.url, jf.apiKey).refresh().catch(() => undefined);
+  }
+  const bb = ctx.settings.get('bingebandit');
+  if (bb.enabled && bb.url && bb.apiKey) {
+    await new BingeBanditClient(bb.url, bb.apiKey).refresh().catch(() => undefined);
   }
 }
 

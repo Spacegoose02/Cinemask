@@ -7,6 +7,9 @@ export interface AvailabilityInfo {
   servers: string[];
 }
 
+/** A media server's name as people know it. */
+export const serverName = (s: string) => ({ plex: 'Plex', jellyfin: 'Jellyfin', bingebandit: 'BingeBandit' })[s] ?? s;
+
 export interface MediaCardData {
   kind: MediaKind;
   tmdbId: number | null;

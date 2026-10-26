@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { collectionItems, collections, libraryItems, listItems, media, monitored, SERVERS, type MediaKind, type ServerType } from '../db/schema.js';
+import { BingeBanditClient } from '../integrations/bingebandit.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import { PlexClient } from '../integrations/plex.js';
 import { TMDB_IMAGE } from '../integrations/tmdb.js';
@@ -20,6 +21,11 @@ export function plexClient(ctx: AppContext): PlexClient | null {
 export function jellyfinClient(ctx: AppContext): JellyfinClient | null {
   const s = ctx.settings.get('jellyfin');
   return s.enabled && s.url && s.apiKey ? new JellyfinClient(s.url, s.apiKey) : null;
+}
+
+export function bingeBanditClient(ctx: AppContext): BingeBanditClient | null {
+  const s = ctx.settings.get('bingebandit');
+  return s.enabled && s.url && s.apiKey ? new BingeBanditClient(s.url, s.apiKey) : null;
 }
 
 /** A poster a media server can download: TMDB paths become full URLs; server-local images can't be pushed. */
@@ -55,7 +61,8 @@ export function setItems(ctx: AppContext, id: number, items: ListItem[]) {
  */
 function serverKeys(ctx: AppContext, server: ServerType, items: ListItem[], library: string | null = null): Map<string, MediaKind> {
   const out = new Map<string, MediaKind>();
-  const only = server === 'plex' ? library : null;
+  // Jellyfin doesn't say which library an item is in.
+  const only = server === 'jellyfin' ? null : library;
   for (const kind of ['movie', 'show'] as const) {
     const ids = items.filter((i) => i.kind === kind).map((i) => i.tmdbId);
     if (!ids.length) continue;
@@ -207,7 +214,7 @@ export function libraryLabels(ctx: AppContext): string[] {
 }
 
 /** Copies the collections that already exist on Plex or Jellyfin into the app (matching items by TMDB id). */
-export async function importServerCollections(ctx: AppContext, server: ServerType, userId: number | null): Promise<{ imported: number; updated: number }> {
+export async function importServerCollections(ctx: AppContext, server: 'plex' | 'jellyfin', userId: number | null): Promise<{ imported: number; updated: number }> {
   const byKey = (key: string) => ctx.db.select().from(libraryItems).where(and(eq(libraryItems.server, server), eq(libraryItems.externalKey, key))).get();
   const toItems = (keys: string[]) =>
     keys

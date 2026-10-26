@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureMedia } from '../src/server/library/service.js';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
-import { fakeFetch, JELLYFIN, jellyfinRoutes, PLEX, plexRoutes, tmdbRoutes } from './fakes.js';
+import { refreshMediaServers } from '../src/server/arr/tracker.js';
+import { BINGEBANDIT, bingeBanditRoutes, fakeFetch, JELLYFIN, jellyfinRoutes, PLEX, plexRoutes, tmdbRoutes } from './fakes.js';
 
 let t: Awaited<ReturnType<typeof makeApp>>;
 let owner: Client;
@@ -217,6 +218,60 @@ describe('Plex and Jellyfin together', () => {
     expect(show.availability.status).toBe('on_server');
     const jfCall = fn.mock.calls.find(([u]) => String(u).startsWith(JELLYFIN));
     expect(String(jfCall![0])).not.toContain('jf-key');
+  });
+});
+
+describe('BingeBandit', () => {
+  beforeEach(async () => {
+    await owner.req('PUT', '/api/settings/plex', { enabled: false });
+    await owner.req('PUT', '/api/settings/bingebandit', { enabled: true, url: BINGEBANDIT, apiKey: 'bb_secret' });
+  });
+
+  it('tests the connection with the key in a header', async () => {
+    const { fn } = fakeFetch(bingeBanditRoutes);
+    expect((await owner.req('POST', '/api/integrations/bingebandit/test')).json()).toEqual({ ok: true, message: 'Connected to Den (BingeBandit 1.8.0)' });
+    expect(t.app.ctx.settings.get('bingebandit').name).toBe('Den');
+    const me = fn.mock.calls.find(([u]) => String(u).endsWith('/api/me'))!;
+    expect(String(me[0])).not.toContain('bb_secret');
+    expect((me[1] as RequestInit).headers).toMatchObject({ Authorization: 'Bearer bb_secret' });
+  });
+
+  it("warns when the key isn't an admin's", async () => {
+    fakeFetch({ ...bingeBanditRoutes, [`${BINGEBANDIT}/api/me`]: () => ({ id: 2, username: 'kid', isAdmin: false }) });
+    const r = (await owner.req('POST', '/api/integrations/bingebandit/test')).json();
+    expect(r.ok).toBe(true);
+    expect(r.message).toContain("kid isn't an admin there");
+  });
+
+  it('syncs movies and shows with episodes, quality, plays, labels and library', async () => {
+    fakeFetch({ ...bingeBanditRoutes, ...tmdbRoutes });
+    await t.librarySync.run();
+    expect(t.librarySync.status.results.bingebandit).toEqual({ ok: true, movies: 1, shows: 1, episodes: 2 });
+    const movie = (await owner.req('GET', '/api/media/movie/116149')).json();
+    expect(movie.availability).toMatchObject({ status: 'on_server', resolution: '1080p', servers: ['bingebandit'] });
+    expect(movie.watch).toMatchObject({ viewCount: 1, lastViewedAt: 1720000000 * 1000 });
+    const rows = t.app.ctx.dbHandle.sqlite.prepare("select external_key, library, labels, added_at from library_items where server = 'bingebandit' order by external_key").all();
+    expect(rows).toEqual([
+      { external_key: '100', library: 'Movies', labels: '["Kids"]', added_at: 1700000000 * 1000 },
+      // The newest episode's date, so new episodes reach Recently added.
+      { external_key: '200', library: 'Kids TV', labels: null, added_at: 1730000000 * 1000 },
+    ]);
+    const eps = t.app.ctx.dbHandle.sqlite.prepare('select season, episode, resolution, view_count from library_episodes order by episode').all();
+    expect(eps).toEqual([
+      { season: 1, episode: 1, resolution: '2160p', view_count: 1 },
+      { season: 1, episode: 2, resolution: '720p', view_count: 0 },
+    ]);
+  });
+
+  it('asks for a scan after an import and pushes posters', async () => {
+    const { fn } = fakeFetch({ ...bingeBanditRoutes, ...tmdbRoutes });
+    await t.librarySync.run();
+    await refreshMediaServers(t.app.ctx);
+    expect(fn.mock.calls.some(([u, init]) => String(u) === `${BINGEBANDIT}/api/admin/scan` && init?.method === 'POST')).toBe(true);
+    const r = (await owner.req('POST', '/api/posters/movie/116149', { value: '/new.jpg' })).json();
+    expect(r.servers).toEqual([{ server: 'bingebandit', ok: true }]);
+    const put = fn.mock.calls.find(([u]) => String(u) === `${BINGEBANDIT}/api/admin/items/100/artwork`)!;
+    expect(JSON.parse(String(put[1]!.body))).toEqual({ type: 'poster', url: 'https://image.tmdb.org/t/p/original/new.jpg' });
   });
 });
 

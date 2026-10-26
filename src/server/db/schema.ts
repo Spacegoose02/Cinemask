@@ -70,7 +70,7 @@ export const auditLog = sqliteTable(
 
 export const MEDIA_KINDS = ['movie', 'show'] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
-export const SERVERS = ['plex', 'jellyfin'] as const;
+export const SERVERS = ['plex', 'jellyfin', 'bingebandit'] as const;
 export type ServerType = (typeof SERVERS)[number];
 
 /** Metadata for a movie or show, keyed by TMDB id. Filled from TMDB and cached. */
@@ -122,9 +122,9 @@ export const libraryItems = sqliteTable(
     /** Times played by the server's own account, and when last. Null when the server doesn't say. */
     viewCount: integer('view_count'),
     lastViewedAt: integer('last_viewed_at'),
-    /** Plex labels or Jellyfin tags. JSON string[]. */
+    /** Plex labels, Jellyfin tags or BingeBandit labels. JSON string[]. */
     labels: text('labels'),
-    /** The Plex library section the item is in ("Movies", "Kids Movies"); null for Jellyfin. */
+    /** The Plex or BingeBandit library the item is in ("Movies", "Kids Movies"); null for Jellyfin. */
     library: text('library'),
   },
   (t) => [uniqueIndex('library_server_key').on(t.server, t.externalKey), index('library_items_media_idx').on(t.mediaId)],

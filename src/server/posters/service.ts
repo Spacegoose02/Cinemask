@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext } from '../context.js';
 import { libraryItems, media, type MediaKind } from '../db/schema.js';
-import { jellyfinClient, plexClient, pushablePosterUrl } from '../collections/service.js';
+import { bingeBanditClient, jellyfinClient, plexClient, pushablePosterUrl } from '../collections/service.js';
 import { TMDB_IMAGE } from '../integrations/tmdb.js';
 import { tmdbClient } from '../library/service.js';
 import { randomToken } from '../security/crypto.js';
@@ -100,6 +100,7 @@ export async function applyPoster(ctx: AppContext, kind: MediaKind, tmdbId: numb
   const result: ApplyResult = { servers: [] };
   const plex = plexClient(ctx);
   const jf = jellyfinClient(ctx);
+  const bb = bingeBanditClient(ctx);
   for (const r of rows) {
     try {
       if (r.server === 'plex' && plex) {
@@ -108,6 +109,9 @@ export async function applyPoster(ctx: AppContext, kind: MediaKind, tmdbId: numb
       } else if (r.server === 'jellyfin' && jf) {
         if (upload) await jf.uploadPoster(r.externalKey, upload.data, upload.type);
         else if (url) await jf.setPosterUrl(r.externalKey, url);
+      } else if (r.server === 'bingebandit' && bb) {
+        if (upload) await bb.uploadPoster(r.externalKey, upload.data, upload.type);
+        else if (url) await bb.setPosterUrl(r.externalKey, url);
       } else continue;
       result.servers.push({ server: r.server, ok: true });
     } catch (err) {

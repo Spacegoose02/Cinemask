@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-10-26
+
+### Added
+- BingeBandit as a media server (Settings → Media servers), alongside or instead of Plex and Jellyfin. Library sync reads its movies and shows with episodes, quality, plays, labels and which library each is in; imports ask it to scan; poster changes are pushed to it; and Settings → Health checks the connection. Use an admin's API key (BingeBandit Settings → API keys) so scans and posters work.
+
 ## [0.24.0] - 2026-10-22
 
 ### Fixed

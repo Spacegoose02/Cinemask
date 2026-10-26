@@ -7,7 +7,7 @@ import { Alert, Field, Toggle } from '../components/ui';
 import { api, formatDate, hasRole } from '../lib/api';
 import { collectionLibraries, inLibrary } from '../lib/collections';
 import { useAuth } from '../lib/auth';
-import { poster, type MediaCardData } from '../lib/media';
+import { poster, serverName, type MediaCardData } from '../lib/media';
 import type { ListRow } from './Lists';
 
 interface Collection {
@@ -375,7 +375,7 @@ export function CollectionDetailPage() {
   const pushSummary = (r: Record<string, { added: number; removed: number; notOnServer: number } | null>) =>
     Object.entries(r)
       .filter(([k, v]) => v && k !== 'lastError')
-      .map(([k, v]) => `${k === 'plex' ? 'Plex' : 'Jellyfin'}: ${v!.added} added, ${v!.removed} removed${v!.notOnServer ? `, ${v!.notOnServer} not on the server` : ''}`)
+      .map(([k, v]) => `${serverName(k)}: ${v!.added} added, ${v!.removed} removed${v!.notOnServer ? `, ${v!.notOnServer} not on the server` : ''}`)
       .join('. ');
 
   return (

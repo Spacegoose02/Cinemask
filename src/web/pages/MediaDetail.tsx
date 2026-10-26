@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import { StatusBadge, TrailerModal } from '../components/media';
 import { Alert } from '../components/ui';
 import { api } from '../lib/api';
-import { poster, type AvailabilityInfo, type MediaKind } from '../lib/media';
+import { poster, serverName, type AvailabilityInfo, type MediaKind } from '../lib/media';
 
 export interface MediaDetail {
   kind: MediaKind;
@@ -143,7 +143,7 @@ export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; ac
                 </Fact>
               ))}
               {m.watch && <Fact label="Watched">{watchText(m.kind, m.watch)}</Fact>}
-              <Fact label="On">{m.availability.servers.map((s) => (s === 'plex' ? 'Plex' : 'Jellyfin')).join(', ')}</Fact>
+              <Fact label="On">{m.availability.servers.map(serverName).join(', ')}</Fact>
             </dl>
           </div>
         </div>

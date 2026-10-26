@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { absClient } from '../books/service.js';
 import { audit } from '../audit/log.js';
 import { assertSafeUrl } from '../arr/direct.js';
-import { collectionItems, collections, lists, MEDIA_KINDS, SERVERS } from '../db/schema.js';
+import { collectionItems, collections, lists, MEDIA_KINDS } from '../db/schema.js';
 import { refreshMetadata, tmdbClient } from '../library/service.js';
 import { upstream } from '../library/routes.js';
 import { badRequest, HttpError, notFound } from '../lib/errors.js';
@@ -256,7 +256,7 @@ export async function collectionRoutes(app: FastifyInstance) {
   });
 
   app.post('/api/collections/import', { config: { access: 'manager' } }, async (req) => {
-    const { server } = parse(z.object({ server: z.enum(SERVERS) }), req.body);
+    const { server } = parse(z.object({ server: z.enum(['plex', 'jellyfin']) }), req.body);
     try {
       const r = await importServerCollections(ctx, server, req.user!.id);
       audit(ctx.db, req, 'collection.imported', { target: server, details: r });
