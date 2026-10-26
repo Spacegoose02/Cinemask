@@ -7,6 +7,7 @@ import type { BackupService } from '../backup/service.js';
 import { createClient } from '../arr/clients.js';
 import { testIndexer } from '../arr/indexers.js';
 import { openSecret } from '../arr/secrets.js';
+import { BingeBanditClient } from '../integrations/bingebandit.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import { PlexClient } from '../integrations/plex.js';
 import { tmdbClient, type LibrarySync } from '../library/service.js';
@@ -90,6 +91,17 @@ export async function runHealthChecks(ctx: AppContext, deps: { backups: BackupSe
       const i = await new JellyfinClient(jf.url, jf.apiKey!).test();
       return `Connected to ${i.name} (Jellyfin ${i.version})`;
     }));
+  }
+  const bb = ctx.settings.get('bingebandit');
+  if (bb.enabled && bb.url && bb.apiKey) {
+    let admin = true;
+    const check = connection('bingebandit', `BingeBandit${bb.name ? ` (${bb.name})` : ''}`, 'media-servers', async () => {
+      const i = await new BingeBanditClient(bb.url, bb.apiKey!).test();
+      admin = i.admin;
+      return admin ? `Connected to ${i.name} (BingeBandit ${i.version})` : `Connected, but ${i.user} isn't an admin there, so scans after imports and posters won't work`;
+    });
+    // Reading the library works with anyone's key, so a non-admin key is a warning rather than a failure.
+    pending.push(check.then((c) => (c.level === 'ok' && !admin ? { ...c, level: 'warning' } : c)));
   }
   const abs = absClient(ctx);
   if (abs) pending.push(connection('audiobookshelf', 'Audiobookshelf', 'books', () => abs.test()));

@@ -8,6 +8,7 @@ import { plexHeaders } from '../auth/plex.js';
 import { HttpError } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { mdblistClient, tmdbClient } from '../library/service.js';
+import { BingeBanditClient } from './bingebandit.js';
 import { JellyfinClient } from './jellyfin.js';
 import { PlexClient } from './plex.js';
 import * as plextv from './plextv.js';
@@ -24,7 +25,7 @@ export async function integrationRoutes(app: FastifyInstance) {
   };
 
   app.post('/api/integrations/:service/test', { config: { access: 'admin' } }, async (req) => {
-    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'tmdb', 'mdblist', 'audiobookshelf', 'shelfmark', 'readmeabook']) }), req.params);
+    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'bingebandit', 'tmdb', 'mdblist', 'audiobookshelf', 'shelfmark', 'readmeabook']) }), req.params);
     const result = await run(async () => {
       switch (service) {
         case 'plex': {
@@ -42,6 +43,15 @@ export async function integrationRoutes(app: FastifyInstance) {
           const info = await new JellyfinClient(s.url, s.apiKey).test();
           ctx.settings.update('jellyfin', { name: s.name || info.name });
           return `Connected to ${info.name} (Jellyfin ${info.version})`;
+        }
+        case 'bingebandit': {
+          const s = ctx.settings.get('bingebandit');
+          if (!s.url || !s.apiKey) throw new Error('Enter the BingeBandit URL and API key first');
+          const info = await new BingeBanditClient(s.url, s.apiKey).test();
+          ctx.settings.update('bingebandit', { name: s.name || info.name });
+          const connected = `Connected to ${info.name} (BingeBandit ${info.version})`;
+          // Reading the library works with anyone's key; scans after imports and posters need an admin's.
+          return info.admin ? connected : `${connected}, but ${info.user} isn't an admin there, so Cinemask can't ask for scans or set posters. Use an admin's key.`;
         }
         case 'tmdb':
           await tmdbClient(ctx).test();

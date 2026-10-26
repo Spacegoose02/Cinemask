@@ -5,7 +5,7 @@ const SUMMARIES: Record<string, string> = {
   'GET /api/auth/me': 'The signed-in user (or the API key owner).',
   'GET /api/stats': 'Counts for dashboards and Home Assistant sensors: library size, requests, downloads, books, health.',
   'GET /api/search': 'Search TMDB and the library. Query: q.',
-  'GET /api/library': 'Movies and shows on Plex or Jellyfin.',
+  'GET /api/library': 'Movies and shows on BingeBandit, Plex or Jellyfin.',
   'GET /api/discover': 'Browse TMDB with filters (kind, genres, providers, years, rating, language, sort).',
   'GET /api/requests': 'Movie and show requests. Users see their own; managers see everyone\'s. Query: status.',
   'POST /api/requests': 'Request a movie or show. Body: {"kind":"movie"|"show","tmdbId":123,"seasons":[1,2]?}.',

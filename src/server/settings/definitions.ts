@@ -104,6 +104,16 @@ export const SETTINGS = {
     }),
     secrets: ['apiKey'],
   },
+  bingebandit: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      name: z.string().trim().max(100).default(''),
+      url: httpUrl.default(''),
+      /** An admin's key (BingeBandit Settings → API keys), so Cinemask can ask for scans and set posters. */
+      apiKey: z.string().max(500).default(''),
+    }),
+    secrets: ['apiKey'],
+  },
   metadata: {
     schema: z.object({
       /** TMDB v3 API key or v4 read access token. */
@@ -116,7 +126,7 @@ export const SETTINGS = {
   },
   library: {
     schema: z.object({
-      /** Periodically scan Plex/Jellyfin to learn what is on the server. */
+      /** Periodically scan Plex/Jellyfin/BingeBandit to learn what is on the server. */
       syncEnabled: z.boolean().default(true),
       syncIntervalHours: z.number().int().min(1).max(24).default(6),
       /**

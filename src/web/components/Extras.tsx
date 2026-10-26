@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, formatBytes } from '../lib/api';
-import type { MediaKind } from '../lib/media';
+import { serverName, type MediaKind } from '../lib/media';
 import { Modal } from './Modal';
 import { Alert } from './ui';
 import { embedUrl } from './media';
@@ -18,8 +18,8 @@ interface PosterOption {
 type Msg = { kind: 'error' | 'success'; text: string } | null;
 
 function serversText(r: { servers: { server: string; ok: boolean; error?: string }[] }) {
-  if (!r.servers.length) return 'Poster changed in Cinemask. This title isn’t on Plex or Jellyfin yet.';
-  return r.servers.map((s) => `${s.server === 'plex' ? 'Plex' : 'Jellyfin'}: ${s.ok ? 'updated' : s.error}`).join(' · ');
+  if (!r.servers.length) return 'Poster changed in Cinemask. This title isn’t on a media server yet.';
+  return r.servers.map((s) => `${serverName(s.server)}: ${s.ok ? 'updated' : s.error}`).join(' · ');
 }
 
 /** Pick a poster from TMDB (or ThePosterDB), paste a link or upload one, and push it to Plex/Jellyfin. */

@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatBytes } from '../lib/api';
-import { mediaPath, type MediaKind } from '../lib/media';
+import { mediaPath, serverName, type MediaKind } from '../lib/media';
 import { Modal } from './Modal';
 import { Alert } from './ui';
 
@@ -82,7 +82,7 @@ export function DuplicatesDialog({ onClose }: { onClose: () => void }) {
                   </Link>
                   <span className="text-muted">
                     {' '}
-                    · {s.count} times on {s.server === 'plex' ? 'Plex' : 'Jellyfin'}
+                    · {s.count} times on {serverName(s.server)}
                   </span>
                 </li>
               ))}

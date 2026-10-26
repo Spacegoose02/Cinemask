@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Alert, Field, SecretInput, Toggle } from '../../components/ui';
 import { api, formatDate } from '../../lib/api';
+import { serverName } from '../../lib/media';
 import { useSettingsSection } from '../../lib/settings';
 import { SaveBar } from './SaveBar';
 import { TestButton } from './TestButton';
@@ -97,6 +98,24 @@ function JellyfinSettings() {
   );
 }
 
+function BingeBanditSettings() {
+  const s = useSettingsSection('bingebandit');
+  if (s.loading) return null;
+  return (
+    <section className="card space-y-4">
+      <h2 className="font-semibold">BingeBandit</h2>
+      <Toggle label="Use BingeBandit" checked={s.values.enabled} onChange={(v) => s.set('enabled', v)} />
+      <Field label="Server URL" hint="e.g. http://192.168.1.10:8080">
+        <input className="input" value={s.values.url} onChange={(e) => s.set('url', e.target.value)} />
+      </Field>
+      <Field label="API key" hint="BingeBandit Settings → API keys, signed in as an admin so Cinemask can ask for scans and set posters.">
+        <SecretInput isSet={s.secretsSet['apiKey']!} value={s.secrets['apiKey']} onChange={(v) => s.setSecret('apiKey', v)} />
+      </Field>
+      <TestButton service="bingebandit" beforeTest={s.save} />
+    </section>
+  );
+}
+
 function SyncSettings() {
   const qc = useQueryClient();
   const s = useSettingsSection('library');
@@ -140,7 +159,7 @@ function SyncSettings() {
       </div>
       {Object.entries(status.data?.results ?? {}).map(([server, r]) => (
         <Alert key={server} kind={r.ok ? 'success' : 'error'}>
-          {server === 'plex' ? 'Plex' : 'Jellyfin'}: {r.ok ? `${r.movies} movies, ${r.shows} shows, ${r.episodes} episodes` : r.error}
+          {serverName(server)}: {r.ok ? `${r.movies} movies, ${r.shows} shows, ${r.episodes} episodes` : r.error}
         </Alert>
       ))}
     </section>
@@ -150,6 +169,7 @@ function SyncSettings() {
 export function MediaServerSettings() {
   return (
     <div className="max-w-2xl space-y-6">
+      <BingeBanditSettings />
       <PlexSettings />
       <JellyfinSettings />
       <SyncSettings />

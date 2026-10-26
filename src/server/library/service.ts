@@ -3,6 +3,7 @@ import { requestAvailable } from '../notify/events.js';
 import type { AppContext } from '../context.js';
 import { libraryEpisodes, libraryItems, matchOverrides, media, requests, type MediaKind, type ServerType } from '../db/schema.js';
 import { bestResolution } from '../integrations/http.js';
+import { BingeBanditClient } from '../integrations/bingebandit.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import type { MediaServerClient, ServerItem } from '../integrations/mediaserver.js';
 import { MdblistClient } from '../integrations/mdblist.js';
@@ -29,6 +30,8 @@ export function mediaServers(ctx: AppContext): { server: ServerType; client: Med
   if (plex.enabled && plex.url && plex.token) out.push({ server: 'plex', client: new PlexClient(plex.url, plex.token) });
   const jf = ctx.settings.get('jellyfin');
   if (jf.enabled && jf.url && jf.apiKey) out.push({ server: 'jellyfin', client: new JellyfinClient(jf.url, jf.apiKey) });
+  const bb = ctx.settings.get('bingebandit');
+  if (bb.enabled && bb.url && bb.apiKey) out.push({ server: 'bingebandit', client: new BingeBanditClient(bb.url, bb.apiKey) });
   return out;
 }
 

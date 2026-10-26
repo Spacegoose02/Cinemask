@@ -483,6 +483,53 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       UPDATE quality_profiles SET language = 'en' WHERE language = 'any';
     `,
   },
+  {
+    id: 18,
+    name: 'bingebandit server',
+    // SQLite can't change a CHECK, so both tables are rebuilt. Dropping library_items cascades to its
+    // episodes (foreign keys stay on inside a migration), so those are set aside and put back.
+    sql: `
+      CREATE TABLE library_episodes_keep AS SELECT * FROM library_episodes;
+      CREATE TABLE library_items_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        server TEXT NOT NULL CHECK (server IN ('plex','jellyfin','bingebandit')),
+        external_key TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        title TEXT NOT NULL,
+        year INTEGER,
+        tmdb_id INTEGER,
+        tvdb_id INTEGER,
+        imdb_id TEXT,
+        resolution TEXT,
+        added_at INTEGER,
+        media_id INTEGER REFERENCES media(id) ON DELETE SET NULL,
+        view_count INTEGER,
+        last_viewed_at INTEGER,
+        labels TEXT,
+        library TEXT,
+        UNIQUE (server, external_key)
+      );
+      INSERT INTO library_items_new (id, server, external_key, kind, title, year, tmdb_id, tvdb_id, imdb_id, resolution, added_at, media_id, view_count, last_viewed_at, labels, library)
+        SELECT id, server, external_key, kind, title, year, tmdb_id, tvdb_id, imdb_id, resolution, added_at, media_id, view_count, last_viewed_at, labels, library FROM library_items;
+      DROP TABLE library_items;
+      ALTER TABLE library_items_new RENAME TO library_items;
+      CREATE INDEX library_items_media_idx ON library_items(media_id);
+      CREATE INDEX library_items_tmdb_idx ON library_items(kind, tmdb_id);
+      INSERT INTO library_episodes (id, library_item_id, season, episode, title, resolution, view_count, last_viewed_at)
+        SELECT id, library_item_id, season, episode, title, resolution, view_count, last_viewed_at FROM library_episodes_keep;
+      DROP TABLE library_episodes_keep;
+      CREATE TABLE match_overrides_new (
+        server TEXT NOT NULL CHECK (server IN ('plex','jellyfin','bingebandit')),
+        external_key TEXT NOT NULL,
+        tmdb_id INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (server, external_key)
+      );
+      INSERT INTO match_overrides_new SELECT server, external_key, tmdb_id, created_at FROM match_overrides;
+      DROP TABLE match_overrides;
+      ALTER TABLE match_overrides_new RENAME TO match_overrides;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

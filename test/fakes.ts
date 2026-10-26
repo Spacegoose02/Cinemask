@@ -135,6 +135,36 @@ export const jellyfinRoutes = {
         },
 };
 
+export const BINGEBANDIT = 'http://bingebandit.local:8080';
+
+const bbItems: Record<number, unknown> = {
+  100: { item: { id: 100, kind: 'movie', title: 'Paddington', year: 2014, tmdbId: 116149, addedAt: 1700000000, labels: ['Kids'], watch: { watched: true, updatedAt: 1720000000 } }, files: [{ height: 1080 }] },
+  200: { item: { id: 200, kind: 'show', title: 'Bluey' }, children: [{ id: 201, kind: 'season', title: 'Season 1', seasonNumber: 1, addedAt: 1710000000 }] },
+  201: {
+    item: { id: 201, kind: 'season' },
+    children: [
+      { id: 202, kind: 'episode', title: 'Magic Xylophone', seasonNumber: 1, episodeNumber: 1, addedAt: 1710000000, watch: { watched: true, updatedAt: 1715000000 } },
+      { id: 203, kind: 'episode', title: 'Hospital', seasonNumber: 1, episodeNumber: 2, addedAt: 1730000000, watch: { watched: false, updatedAt: 0 } },
+    ],
+  },
+  202: { item: { id: 202, kind: 'episode' }, files: [{ height: 2160 }] },
+  203: { item: { id: 203, kind: 'episode' }, files: [{ height: 720 }] },
+};
+
+export const bingeBanditRoutes = {
+  [`${BINGEBANDIT}/api/health`]: () => ({ status: 'ok', version: '1.8.0', product: 'BingeBandit', name: 'Den' }),
+  [`${BINGEBANDIT}/api/me`]: () => ({ id: 1, username: 'goose', isAdmin: true }),
+  [`${BINGEBANDIT}/api/libraries`]: () => [
+    { id: 1, name: 'Movies', kind: 'movies' },
+    { id: 2, name: 'Kids TV', kind: 'shows' },
+    { id: 3, name: 'Music', kind: 'music' },
+  ],
+  [`${BINGEBANDIT}/api/libraries/1/items`]: () => ({ items: [{ id: 100, kind: 'movie', title: 'Paddington', year: 2014, tmdbId: 116149, addedAt: 1700000000, labels: ['Kids'], watch: { watched: true, updatedAt: 1720000000 } }], total: 1 }),
+  [`${BINGEBANDIT}/api/libraries/2/items`]: () => ({ items: [{ id: 200, kind: 'show', title: 'Bluey', year: 2018, tmdbId: 82728, tvdbId: 353546, addedAt: 1710000000, watch: { watched: false, updatedAt: 0 } }], total: 1 }),
+  [`${BINGEBANDIT}/api/items/`]: (url: URL) => bbItems[Number(url.pathname.split('/').pop())] ?? new Response('not found', { status: 404 }),
+  [`${BINGEBANDIT}/api/admin/`]: () => new Response(null, { status: 202 }),
+};
+
 /** A request body as text; form uploads read like a query string, with files shown by name. */
 export function bodyText(body: unknown): string {
   if (!(body instanceof FormData)) return String(body);
