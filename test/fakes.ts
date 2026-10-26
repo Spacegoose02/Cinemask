@@ -61,6 +61,12 @@ export const tmdbRoutes = {
     vote_average: 7.2,
     genres: [{ id: 1, name: 'Family' }],
     imdb_id: 'tt1109624',
+    credits: {
+      cast: [
+        { id: 2, name: 'Hugh Bonneville', character: 'Henry Brown', profile_path: null, order: 1 },
+        { id: 1, name: 'Ben Whishaw', character: 'Paddington (voice)', profile_path: '/ben.jpg', order: 0 },
+      ],
+    },
     videos: { results: [{ key: 'teaser12345', site: 'YouTube', type: 'Teaser' }, { key: 'trailer1234', site: 'YouTube', type: 'Trailer', official: true }] },
     release_dates: { results: [{ iso_3166_1: 'US', release_dates: [{ type: 3, release_date: '2015-01-16T00:00:00Z' }, { type: 4, release_date: '2015-04-28T00:00:00Z' }] }] },
     belongs_to_collection: { id: 1, name: 'Paddington Collection', poster_path: null },
@@ -96,6 +102,7 @@ export const tmdbRoutes = {
     vote_average: 8.6,
     genres: [{ id: 2, name: 'Kids' }],
     networks: [{ id: 3, name: 'ABC Kids' }],
+    aggregate_credits: { cast: [{ id: 5, name: 'Dave McCormack', roles: [{ character: 'Bandit (voice)', episode_count: 150 }], total_episode_count: 150, profile_path: '/dave.jpg', order: 0 }] },
     episode_run_time: [7],
     next_episode_to_air: null,
     seasons: [{ season_number: 1, name: 'Season 1', episode_count: 3, air_date: '2018-10-01', poster_path: null }],

@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-10-26
+
+### Added
+- Cast on every movie and show page, in library titles and new ones alike: up to 20 people in billing order with their photo and character, and for shows how many episodes each one is in.
+
 ## [0.24.0] - 2026-10-22
 
 ### Fixed

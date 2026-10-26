@@ -143,6 +143,9 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
     return { library: local, results, totalPages, error };
   });
 
+  /** How many cast members a title page shows. */
+  const CAST_SIZE = 20;
+
   app.get('/api/media/:kind/:tmdbId', { config: { access: 'user' } }, async (req) => {
     const { kind, tmdbId } = parse(z.object({ kind: kindParam, tmdbId: z.coerce.number().int().positive() }), req.params);
     const row = await upstream(() => refreshMetadata(ctx, kind, tmdbId));
@@ -150,6 +153,8 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
     const availability = availabilityFor(ctx, kind, [{ tmdbId, releaseDate: row.releaseDate }]).get(tmdbId)!;
     let seasons: { seasonNumber: number; name: string; episodeCount: number; airDate: string | null; onServer: number }[] = [];
     let collection: { id: number; name: string } | null = null;
+    // The main cast, for the row of faces on the page.
+    let cast: { id: number; name: string; character: string; profilePath: string | null; episodes?: number }[] = [];
     const tmdb = tmdbClient(ctx);
     if (kind === 'show' && tmdb.configured) {
       const show = await upstream(() => tmdb.show(tmdbId));
@@ -162,12 +167,20 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
         onServer: [...eps.keys()].filter((k) => k.startsWith(`${s.season_number}:`)).length,
       }));
       const airedTotal = show.seasons.filter((s) => s.season_number > 0 && s.air_date && s.air_date <= new Date().toISOString().slice(0, 10)).reduce((n, s) => n + s.episode_count, 0);
+      cast = (show.aggregate_credits?.cast ?? [])
+        .sort((a, b) => a.order - b.order)
+        .slice(0, CAST_SIZE)
+        .map((c) => ({ id: c.id, name: c.name, character: c.roles.map((r) => r.character).filter(Boolean).slice(0, 2).join(' / '), profilePath: c.profile_path, episodes: c.total_episode_count }));
       const have = [...eps.keys()].filter((k) => !k.startsWith('0:')).length;
       if (availability.status === 'on_server' && have < airedTotal) availability.status = 'partial';
     }
     if (kind === 'movie' && tmdb.configured) {
       const m = await upstream(() => tmdb.movie(tmdbId));
       collection = m.belongs_to_collection ? { id: m.belongs_to_collection.id, name: m.belongs_to_collection.name } : null;
+      cast = (m.credits?.cast ?? [])
+        .sort((a, b) => a.order - b.order)
+        .slice(0, CAST_SIZE)
+        .map((c) => ({ id: c.id, name: c.name, character: c.character, profilePath: c.profile_path }));
     }
     let ratings: { source: string; value: number | null; score: number | null }[] = [];
     const mdb = mdblistClient(ctx);
@@ -186,6 +199,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
       availability,
       seasons,
       collection,
+      cast,
       ratings,
       watch: watchInfo(ctx, kind, tmdbId),
     };

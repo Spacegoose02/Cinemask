@@ -48,6 +48,7 @@ export interface TmdbMovie {
   videos?: { results: TmdbVideo[] };
   release_dates?: { results: { iso_3166_1: string; release_dates: { type: number; release_date: string }[] }[] };
   belongs_to_collection?: { id: number; name: string; poster_path: string | null } | null;
+  credits?: { cast: { id: number; name: string; character: string; profile_path: string | null; order: number }[] };
 }
 
 export interface TmdbShow {
@@ -66,6 +67,8 @@ export interface TmdbShow {
   seasons: { season_number: number; name: string; episode_count: number; air_date: string | null; poster_path: string | null }[];
   external_ids?: { imdb_id: string | null; tvdb_id: number | null };
   videos?: { results: TmdbVideo[] };
+  /** Cast across every season, with the episodes each person is in. */
+  aggregate_credits?: { cast: { id: number; name: string; roles: { character: string; episode_count: number }[]; total_episode_count: number; profile_path: string | null; order: number }[] };
 }
 
 export interface TmdbSeason {
@@ -151,11 +154,11 @@ export class TmdbClient {
   }
 
   movie(id: number) {
-    return this.get<TmdbMovie>(`/movie/${id}`, { append_to_response: 'videos,release_dates' });
+    return this.get<TmdbMovie>(`/movie/${id}`, { append_to_response: 'videos,release_dates,credits' });
   }
 
   show(id: number) {
-    return this.get<TmdbShow>(`/tv/${id}`, { append_to_response: 'videos,external_ids' });
+    return this.get<TmdbShow>(`/tv/${id}`, { append_to_response: 'videos,external_ids,aggregate_credits' });
   }
 
   season(id: number, season: number) {
