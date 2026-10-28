@@ -7,7 +7,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ## [0.27.1] - 2026-10-28
 
 ### Fixed
-- The build: TypeScript is back on 5.9, since 7.0 can't be installed alongside the linter (typescript-eslint supports up to 6.0). Nothing changes in the app itself; 0.27.0's Docker image wasn't built because of this.
+- The build: TypeScript is back on 5.9, since 7.0 can't be installed alongside the linter (typescript-eslint supports up to 6.0). Nothing changes in the app itself.
 
 ## [0.27.0] - 2026-10-28
 
