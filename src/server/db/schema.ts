@@ -369,13 +369,13 @@ export const listItems = sqliteTable(
   (t) => [primaryKey({ columns: [t.listId, t.kind, t.tmdbId] })],
 );
 
-export const COLLECTION_SOURCES = ['manual', 'tmdb', 'list', 'plex', 'jellyfin'] as const;
+export const COLLECTION_SOURCES = ['manual', 'tmdb', 'list', 'plex', 'jellyfin', 'bingebandit'] as const;
 
 export const collections = sqliteTable('collections', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   description: text('description'),
-  poster: text('poster'), // TMDB path, https URL, or plex:/jellyfin: image path
+  poster: text('poster'), // TMDB path, https URL, or plex:/jellyfin:/bingebandit: image path
   source: text('source', { enum: COLLECTION_SOURCES }).notNull(),
   sourceId: text('source_id'),
   syncPlex: integer('sync_plex', { mode: 'boolean' }).notNull().default(false),
@@ -392,6 +392,9 @@ export const collections = sqliteTable('collections', {
   fromLabel: text('from_label'),
   /** The Plex library a collection came from ("Movies", "Kids Movies"); null for collections not tied to one. */
   library: text('library'),
+  syncBingebandit: integer('sync_bingebandit', { mode: 'boolean' }).notNull().default(false),
+  /** The BingeBandit collections this one is pushed to or came from, one per library. JSON number[]. */
+  bingebanditIds: text('bingebandit_ids'),
 });
 
 export const collectionItems = sqliteTable(

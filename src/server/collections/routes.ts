@@ -6,14 +6,14 @@ import { z } from 'zod';
 import { absClient } from '../books/service.js';
 import { audit } from '../audit/log.js';
 import { assertSafeUrl } from '../arr/direct.js';
-import { collectionItems, collections, lists, MEDIA_KINDS } from '../db/schema.js';
+import { collectionItems, collections, lists, MEDIA_KINDS, SERVERS } from '../db/schema.js';
 import { refreshMetadata, tmdbClient } from '../library/service.js';
 import { upstream } from '../library/routes.js';
 import { badRequest, HttpError, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { withAvailability } from '../lists/routes.js';
 import { postersDir } from '../posters/service.js';
-import { clearPlexLabel, downloadMissing, importServerCollections, itemsOf, libraryLabels, jellyfinClient, plexClient, plexLibraries, pushCollection, refreshCollectionItems, setItems } from './service.js';
+import { bingeBanditClient, clearPlexLabel, downloadMissing, importServerCollections, itemsOf, libraryLabels, jellyfinClient, plexClient, pushCollection, refreshCollectionItems, serverLibraries, setItems } from './service.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const itemRef = z.object({ kind: z.enum(MEDIA_KINDS), tmdbId: z.coerce.number().int().positive() });
@@ -75,10 +75,10 @@ export async function collectionRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/library/labels', { config: { access: 'manager' } }, async () => ({ labels: libraryLabels(ctx) }));
-  app.get('/api/library/plex-libraries', { config: { access: 'manager' } }, async () => ({ libraries: plexLibraries(ctx) }));
+  app.get('/api/library/plex-libraries', { config: { access: 'manager' } }, async () => ({ libraries: serverLibraries(ctx) }));
 
   const checkLibrary = (library: string | null | undefined) => {
-    if (library && !plexLibraries(ctx).includes(library)) throw badRequest(`There is no Plex library called "${library}"`);
+    if (library && !serverLibraries(ctx).includes(library)) throw badRequest(`There is no Plex or BingeBandit library called "${library}"`);
   };
 
   app.get('/api/collections/:id', { config: { access: 'user' } }, async (req) => {
@@ -96,12 +96,13 @@ export async function collectionRoutes(app: FastifyInstance) {
         sourceId: z.coerce.number().int().positive().optional(),
         syncPlex: z.boolean().default(false),
         syncJellyfin: z.boolean().default(false),
+        syncBingebandit: z.boolean().default(false),
         /** A Plex label to put on every item, for smart filters and sharing restrictions. */
         plexLabel: labelValue.nullable().default(null),
         /** Fill the collection from everything carrying this Plex label or Jellyfin tag. */
         fromLabel: labelValue.nullable().default(null),
         library: libraryValue.default(null),
-        /** Sync to whichever of Plex and Jellyfin are connected, and push straight away. */
+        /** Sync to whichever of Plex, Jellyfin and BingeBandit are connected, and push straight away. */
         toServers: z.boolean().default(false),
         items: z.array(itemRef).max(500).default([]),
       }),
@@ -110,14 +111,19 @@ export async function collectionRoutes(app: FastifyInstance) {
     if (body.toServers) {
       body.syncPlex = ctx.settings.get('plex').enabled;
       body.syncJellyfin = ctx.settings.get('jellyfin').enabled;
-      if (!body.syncPlex && !body.syncJellyfin) throw badRequest('Connect Plex or Jellyfin first (Settings → Media servers)');
+      body.syncBingebandit = ctx.settings.get('bingebandit').enabled;
+      if (!body.syncPlex && !body.syncJellyfin && !body.syncBingebandit) throw badRequest('Connect a media server first (Settings → Media servers)');
       // The same TMDB series again: push the collection that already exists instead of making a copy.
       const same =
         body.source === 'tmdb' && body.sourceId
           ? ctx.db.select().from(collections).where(and(eq(collections.source, 'tmdb'), eq(collections.sourceId, String(body.sourceId)))).get()
           : undefined;
       if (same) {
-        ctx.db.update(collections).set({ syncPlex: same.syncPlex || body.syncPlex, syncJellyfin: same.syncJellyfin || body.syncJellyfin }).where(eq(collections.id, same.id)).run();
+        ctx.db
+          .update(collections)
+          .set({ syncPlex: same.syncPlex || body.syncPlex, syncJellyfin: same.syncJellyfin || body.syncJellyfin, syncBingebandit: same.syncBingebandit || body.syncBingebandit })
+          .where(eq(collections.id, same.id))
+          .run();
         await pushCollection(ctx, same.id).catch(() => undefined);
         audit(ctx.db, req, 'collection.pushed', { target: same.name });
         return { ...getCol(same.id), items: withAvailability(ctx, itemsOf(ctx, same.id)) };
@@ -163,6 +169,7 @@ export async function collectionRoutes(app: FastifyInstance) {
         poster: posterValue.nullable(),
         syncPlex: z.boolean(),
         syncJellyfin: z.boolean(),
+        syncBingebandit: z.boolean(),
         plexLabel: labelValue.nullable(),
         fromLabel: labelValue.nullable(),
         library: libraryValue,
@@ -175,7 +182,7 @@ export async function collectionRoutes(app: FastifyInstance) {
     if (body.fromLabel && before.source !== 'manual') throw badRequest('Only a hand-made collection can follow a label');
     // Moved to another library: the next push finds or makes the collection there.
     const moved = body.library !== undefined && body.library !== before.library;
-    ctx.db.update(collections).set({ ...body, ...(moved ? { plexKey: null } : {}) }).where(eq(collections.id, id)).run();
+    ctx.db.update(collections).set({ ...body, ...(moved ? { plexKey: null, bingebanditIds: null } : {}) }).where(eq(collections.id, id)).run();
     if ((body.fromLabel && body.fromLabel !== before.fromLabel) || (moved && before.fromLabel)) await refreshCollectionItems(ctx, id);
     if (before.plexLabel && body.plexLabel !== undefined && body.plexLabel !== before.plexLabel) await clearPlexLabel(ctx, before.plexLabel).catch(() => undefined);
     audit(ctx.db, req, 'collection.updated', { target: before.name, details: body });
@@ -227,7 +234,7 @@ export async function collectionRoutes(app: FastifyInstance) {
   app.post('/api/collections/:id/push', { config: { access: 'manager' } }, async (req) => {
     const { id } = parse(idParam, req.params);
     const c = getCol(id);
-    if (!c.syncPlex && !c.syncJellyfin) throw badRequest('Turn on Plex or Jellyfin sync for this collection first');
+    if (!c.syncPlex && !c.syncJellyfin && !c.syncBingebandit) throw badRequest('Turn on Plex, Jellyfin or BingeBandit sync for this collection first');
     try {
       const result = await pushCollection(ctx, id);
       audit(ctx.db, req, 'collection.pushed', { target: c.name, details: result });
@@ -256,7 +263,7 @@ export async function collectionRoutes(app: FastifyInstance) {
   });
 
   app.post('/api/collections/import', { config: { access: 'manager' } }, async (req) => {
-    const { server } = parse(z.object({ server: z.enum(['plex', 'jellyfin']) }), req.body);
+    const { server } = parse(z.object({ server: z.enum(SERVERS) }), req.body);
     try {
       const r = await importServerCollections(ctx, server, req.user!.id);
       audit(ctx.db, req, 'collection.imported', { target: server, details: r });
@@ -273,7 +280,7 @@ export async function collectionRoutes(app: FastifyInstance) {
   });
 
   /**
-   * Images that live on Plex/Jellyfin (collection covers) or were uploaded here. The browser
+   * Images that live on Plex/Jellyfin/BingeBandit (collection covers) or were uploaded here. The browser
    * never gets a server token; only image paths of the expected shape are proxied.
    */
   app.get('/api/images', { config: { access: 'user' } }, async (req, reply) => {
@@ -282,6 +289,7 @@ export async function collectionRoutes(app: FastifyInstance) {
     try {
       if (/^plex:\/library\/(metadata|collections)\/\d+\/(thumb|composite|art)(\/\d+)?$/.test(src)) img = (await plexClient(ctx)?.image(src.slice(5))) ?? null;
       else if (/^jellyfin:\/Items\/[0-9a-f-]{32,36}\/Images\/Primary$/i.test(src)) img = (await jellyfinClient(ctx)?.image(src.slice(9))) ?? null;
+      else if (/^bingebandit:\/api\/images\/(tmdb|local|poster)\/(?!.*\.\.)[\w.-]{1,200}$/.test(src)) img = (await bingeBanditClient(ctx)?.image(src.slice(12))) ?? null;
       else if (/^abs:\/api\/items\/[\w-]{1,64}\/cover$/.test(src)) img = (await absClient(ctx)?.image(src.slice(4))) ?? null;
       else if (/^local:[\w.-]+\.(jpg|png|webp)$/.test(src)) {
         const file = path.join(postersDir(ctx), path.basename(src.slice(6)));

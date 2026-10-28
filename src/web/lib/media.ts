@@ -22,12 +22,12 @@ export interface MediaCardData {
   viewCount?: number | null;
 }
 
-/** Image URL for a poster value: a TMDB path, an https link, or an image held by Plex/Jellyfin/the app (proxied). */
+/** Image URL for a poster value: a TMDB path, an https link, or an image held by Plex/Jellyfin/BingeBandit/the app (proxied). */
 export const poster = (path: string | null | undefined, size: 'w185' | 'w342' | 'w500' | 'w780' | 'original' = 'w342') => {
   if (!path) return null;
   if (path.startsWith('/')) return `https://image.tmdb.org/t/p/${size}${path}`;
   if (path.startsWith('https://')) return path;
-  if (/^(plex|jellyfin|local|abs):/.test(path)) return `/api/images?src=${encodeURIComponent(path)}`;
+  if (/^(plex|jellyfin|bingebandit|local|abs):/.test(path)) return `/api/images?src=${encodeURIComponent(path)}`;
   return null;
 };
 

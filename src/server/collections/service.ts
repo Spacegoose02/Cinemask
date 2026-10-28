@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { collectionItems, collections, libraryItems, listItems, media, monitored, SERVERS, type MediaKind, type ServerType } from '../db/schema.js';
-import { BingeBanditClient } from '../integrations/bingebandit.js';
+import { BingeBanditClient, handPicked, type BbCollection } from '../integrations/bingebandit.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import { PlexClient } from '../integrations/plex.js';
 import { TMDB_IMAGE } from '../integrations/tmdb.js';
@@ -88,6 +88,11 @@ export function plexLibraries(ctx: AppContext): string[] {
     .sort((a, b) => a.localeCompare(b));
 }
 
+/** Libraries Plex or BingeBandit named in the last library sync (Jellyfin doesn't say), for the collection library picker. */
+export function serverLibraries(ctx: AppContext): string[] {
+  return [...new Set(ctx.db.selectDistinct({ library: libraryItems.library }).from(libraryItems).where(isNotNull(libraryItems.library)).all().map((r) => r.library!))].sort((a, b) => a.localeCompare(b));
+}
+
 export interface PushResult {
   added: number;
   removed: number;
@@ -98,11 +103,11 @@ export interface PushResult {
  * Makes the Plex and/or Jellyfin collection match this one: adds missing items, removes
  * extras, renames it and sets its poster. Items not on a server are counted, not created.
  */
-export async function pushCollection(ctx: AppContext, id: number): Promise<{ plex?: PushResult; jellyfin?: PushResult }> {
+export async function pushCollection(ctx: AppContext, id: number): Promise<{ plex?: PushResult; jellyfin?: PushResult; bingebandit?: PushResult }> {
   const col = ctx.db.select().from(collections).where(eq(collections.id, id)).get();
   if (!col) throw new Error('Collection not found');
   const items = itemsOf(ctx, id);
-  const result: { plex?: PushResult; jellyfin?: PushResult } = {};
+  const result: { plex?: PushResult; jellyfin?: PushResult; bingebandit?: PushResult } = {};
   const errors: string[] = [];
   const poster = pushablePosterUrl(col.poster);
 
@@ -174,15 +179,81 @@ export async function pushCollection(ctx: AppContext, id: number): Promise<{ ple
     }
   }
 
+  if (col.syncBingebandit) {
+    try {
+      const bb = bingeBanditClient(ctx);
+      if (!bb) throw new Error('BingeBandit is not connected');
+      result.bingebandit = await pushToBingeBandit(ctx, bb, col, items, poster);
+    } catch (err) {
+      errors.push(`BingeBandit: ${(err as Error).message}`);
+    }
+  }
+
   ctx.db.update(collections).set({ lastPushAt: Date.now(), lastError: errors.length ? errors.join('; ') : null }).where(eq(collections.id, id)).run();
-  if (errors.length && !result.plex && !result.jellyfin) throw new Error(errors.join('; '));
+  if (errors.length && !result.plex && !result.jellyfin && !result.bingebandit) throw new Error(errors.join('; '));
   return result;
+}
+
+const bbIds = (col: CollectionRow): number[] => (col.bingebanditIds ? (JSON.parse(col.bingebanditIds) as number[]) : []);
+
+/**
+ * BingeBandit keeps a collection per library, so a collection here becomes one in each library
+ * holding its titles (or only its own library, when it has one). Members are set title by title;
+ * the cover replaces BingeBandit's.
+ */
+async function pushToBingeBandit(ctx: AppContext, bb: BingeBanditClient, col: CollectionRow, items: ListItem[], poster: string | null): Promise<PushResult> {
+  const wanted = serverKeys(ctx, 'bingebandit', items, col.library);
+  const libraryOf = new Map(
+    ctx.db
+      .select({ key: libraryItems.externalKey, library: libraryItems.library })
+      .from(libraryItems)
+      .where(and(eq(libraryItems.server, 'bingebandit'), inArray(libraryItems.externalKey, [...wanted.keys()])))
+      .all()
+      .map((r) => [r.key, r.library]),
+  );
+  const libs = await bb.libraries();
+  // The ones pushed before, renamed (or re-described) to match; ones deleted on the server are forgotten.
+  const known: BbCollection[] = [];
+  for (const id of bbIds(col)) {
+    const c = await bb.collection(id);
+    if (!c) continue;
+    if (c.name !== col.name || (c.overview ?? '') !== (col.description ?? '')) await bb.updateCollection(c, col.name, col.description ?? '');
+    known.push({ ...c, name: col.name });
+  }
+  const r: PushResult = { added: 0, removed: 0, notOnServer: items.length - wanted.size };
+  const ids: number[] = [];
+  for (const lib of libs) {
+    const keys = [...wanted.keys()].filter((k) => libraryOf.get(k) === lib.name);
+    let existing = known.find((c) => c.libraryId === lib.id) ?? (keys.length ? (await bb.collections(lib.id)).find((c) => c.name.toLowerCase() === col.name.toLowerCase()) : undefined);
+    if (!existing && !keys.length) continue;
+    if (existing && !handPicked(existing)) throw new Error(`"${existing.name}" in ${lib.name} picks its titles by rules or a list there, so Cinemask leaves it alone`);
+    const current = new Set(existing ? await bb.collectionItems(existing.id) : []);
+    const name = existing?.name ?? col.name;
+    for (const key of keys) {
+      if (current.has(key)) continue;
+      await bb.setInCollection(key, name, true);
+      r.added++;
+    }
+    for (const key of current) {
+      if (keys.includes(key)) continue;
+      await bb.setInCollection(key, name, false);
+      r.removed++;
+    }
+    // A collection made by the first title added has an id only now.
+    existing ??= (await bb.collections(lib.id)).find((c) => c.name.toLowerCase() === name.toLowerCase());
+    if (!existing) continue;
+    ids.push(existing.id);
+    if (poster) await bb.setCollectionPosterUrl(existing.id, poster);
+  }
+  if (!ids.length && !wanted.size) throw new Error('None of the items are on BingeBandit yet');
+  ctx.db.update(collections).set({ bingebanditIds: JSON.stringify(ids) }).where(eq(collections.id, col.id)).run();
+  return r;
 }
 
 /** Libraries' labels as last synced, by server item key. */
 function labelled(ctx: AppContext, server: ServerType, label: string, library: string | null = null) {
   const want = label.toLowerCase();
-  const only = server === 'plex' ? library : null;
+  const only = server === 'jellyfin' ? null : library;
   return ctx.db
     .select({ key: libraryItems.externalKey, kind: libraryItems.kind, tmdbId: libraryItems.tmdbId, title: libraryItems.title, year: libraryItems.year, labels: libraryItems.labels })
     .from(libraryItems)
@@ -213,8 +284,8 @@ export function libraryLabels(ctx: AppContext): string[] {
   return [...all.values()].sort((a, b) => a.localeCompare(b));
 }
 
-/** Copies the collections that already exist on Plex or Jellyfin into the app (matching items by TMDB id). */
-export async function importServerCollections(ctx: AppContext, server: 'plex' | 'jellyfin', userId: number | null): Promise<{ imported: number; updated: number }> {
+/** Copies the collections that already exist on Plex, Jellyfin or BingeBandit into the app (matching items by TMDB id). */
+export async function importServerCollections(ctx: AppContext, server: ServerType, userId: number | null): Promise<{ imported: number; updated: number }> {
   const byKey = (key: string) => ctx.db.select().from(libraryItems).where(and(eq(libraryItems.server, server), eq(libraryItems.externalKey, key))).get();
   const toItems = (keys: string[]) =>
     keys
@@ -223,9 +294,15 @@ export async function importServerCollections(ctx: AppContext, server: 'plex' | 
       .map((r) => ({ kind: r.kind, tmdbId: r.tmdbId!, title: r.title, year: r.year, posterPath: null }));
   let imported = 0;
   let updated = 0;
-  const upsert = (sourceId: string, name: string, description: string | null, poster: string | null, items: ListItem[], library: string | null = null) => {
+  const upsert = (sourceId: string, name: string, description: string | null, poster: string | null, items: ListItem[], library: string | null = null, sync = true) => {
     const existing = ctx.db.select().from(collections).where(and(eq(collections.source, server), eq(collections.sourceId, sourceId))).get();
-    const values = { name, description, poster, library, ...(server === 'plex' ? { plexKey: sourceId, syncPlex: true } : { jellyfinId: sourceId, syncJellyfin: true }) };
+    const values = {
+      name,
+      description,
+      poster,
+      library,
+      ...(server === 'plex' ? { plexKey: sourceId, syncPlex: true } : server === 'jellyfin' ? { jellyfinId: sourceId, syncJellyfin: true } : { bingebanditIds: JSON.stringify([Number(sourceId)]), syncBingebandit: sync }),
+    };
     const id = existing
       ? ctx.db.update(collections).set(values).where(eq(collections.id, existing.id)).returning().get().id
       : ctx.db.insert(collections).values({ ...values, source: server, sourceId, createdBy: userId, createdAt: Date.now() }).returning().get().id;
@@ -237,6 +314,17 @@ export async function importServerCollections(ctx: AppContext, server: 'plex' | 
     const plex = plexClient(ctx);
     if (!plex) throw new Error('Plex is not connected');
     for (const c of await plex.collections()) upsert(c.ratingKey, c.title, c.summary ?? null, c.thumb ? `plex:${c.thumb}` : null, toItems(await plex.collectionChildren(c.ratingKey)), c.sectionTitle ?? null);
+  } else if (server === 'bingebandit') {
+    const bb = bingeBanditClient(ctx);
+    if (!bb) throw new Error('BingeBandit is not connected');
+    for (const lib of await bb.libraries()) {
+      for (const c of await bb.collections(lib.id)) {
+        if (!c.itemCount) continue;
+        const cover = c.poster?.startsWith('/api/images/') ? `bingebandit:${c.poster.split('?')[0]}` : null;
+        // Smart and list collections stay BingeBandit's own: copied here, never pushed back.
+        upsert(String(c.id), c.name, c.overview || null, cover, toItems(await bb.collectionItems(c.id)), lib.name, handPicked(c));
+      }
+    }
   } else {
     const jf = jellyfinClient(ctx);
     if (!jf) throw new Error('Jellyfin is not connected');
@@ -277,7 +365,7 @@ export async function syncCollections(ctx: AppContext): Promise<void> {
   for (const c of ctx.db.select().from(collections).all()) {
     try {
       if (c.source === 'tmdb' || c.source === 'list' || c.fromLabel) await refreshCollectionItems(ctx, c.id);
-      if (c.syncPlex || c.syncJellyfin) await pushCollection(ctx, c.id);
+      if (c.syncPlex || c.syncJellyfin || c.syncBingebandit) await pushCollection(ctx, c.id);
     } catch {
       // recorded in last_error by pushCollection; try again tomorrow
     }

@@ -477,7 +477,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
       )}
       {isManager && m.collection && (
         <button className="btn-secondary" onClick={() => run(() => createSeries(m.collection!), '')}>
-          Add {m.collection.name} to Plex/Jellyfin
+          Add {m.collection.name} to your media servers
         </button>
       )}
       {msg && msg.text && <Alert kind={msg.kind}>{msg.text}</Alert>}

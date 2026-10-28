@@ -163,7 +163,77 @@ export const bingeBanditRoutes = {
   [`${BINGEBANDIT}/api/libraries/2/items`]: () => ({ items: [{ id: 200, kind: 'show', title: 'Bluey', year: 2018, tmdbId: 82728, tvdbId: 353546, addedAt: 1710000000, watch: { watched: false, updatedAt: 0 } }], total: 1 }),
   [`${BINGEBANDIT}/api/items/`]: (url: URL) => bbItems[Number(url.pathname.split('/').pop())] ?? new Response('not found', { status: 404 }),
   [`${BINGEBANDIT}/api/admin/`]: () => new Response(null, { status: 202 }),
+  // Older BingeBandit: no file list, so quality comes from each title's page.
+  [`${BINGEBANDIT}/api/admin/files`]: () => new Response('404 page not found', { status: 404 }),
 };
+
+/** BingeBandit's file list (GET /api/admin/files), the same quality as bbItems in one request. */
+export const bingeBanditFiles = {
+  [`${BINGEBANDIT}/api/admin/files`]: () => ({
+    files: [
+      { fileId: 1, itemId: 100, kind: 'movie', height: 1080 },
+      { fileId: 2, itemId: 202, kind: 'episode', height: 2160 },
+      { fileId: 3, itemId: 203, kind: 'episode', height: 720 },
+    ],
+    total: 3,
+  }),
+};
+
+interface FakeCollection {
+  id: number;
+  libraryId: number;
+  name: string;
+  overview: string;
+  mode: string;
+  poster?: string;
+  labelRule?: string;
+  members: Set<number>;
+}
+
+/**
+ * BingeBandit's collections, kept like the server does: a title's collections are set as a list of
+ * names, which makes a missing collection in the title's library.
+ */
+export function bingeBanditCollections(initial: Omit<FakeCollection, 'members'>[] = [], members: Record<number, number[]> = {}) {
+  const libraryOf: Record<number, number> = { 100: 1, 200: 2 };
+  const cols: FakeCollection[] = initial.map((c) => ({ ...c, members: new Set(members[c.id] ?? []) }));
+  let next = 50;
+  const view = ({ members, ...c }: FakeCollection) => ({ ...c, itemCount: members.size });
+  const json = (init?: RequestInit) => JSON.parse(String(init?.body)) as Record<string, unknown>;
+  const routes = {
+    [`${BINGEBANDIT}/api/libraries/1/collections`]: () => cols.filter((c) => c.libraryId === 1).map(view),
+    [`${BINGEBANDIT}/api/libraries/2/collections`]: () => cols.filter((c) => c.libraryId === 2).map(view),
+    [`${BINGEBANDIT}/api/collections/`]: (url: URL) => {
+      const c = cols.find((x) => x.id === Number(url.pathname.split('/').pop()));
+      return c ? { collection: view(c), items: [...c.members].map((id) => ({ id })), total: c.members.size } : new Response('not found', { status: 404 });
+    },
+    [`${BINGEBANDIT}/api/admin/items/`]: (url: URL, init?: RequestInit) => {
+      const [, , , , id, what] = url.pathname.split('/');
+      const item = Number(id);
+      if (what !== 'collections') return new Response(null, { status: 204 });
+      if (init?.method === 'PUT') {
+        const names = json(init).collections as string[];
+        for (const c of cols) if (c.libraryId === libraryOf[item]) c.members.delete(item);
+        for (const n of names) {
+          let c = cols.find((x) => x.libraryId === libraryOf[item] && x.name.toLowerCase() === n.toLowerCase());
+          if (!c) cols.push((c = { id: next++, libraryId: libraryOf[item]!, name: n, overview: '', mode: '', members: new Set() }));
+          c.members.add(item);
+        }
+        return new Response(null, { status: 204 });
+      }
+      return { collections: cols.filter((c) => c.members.has(item)).map((c) => c.name) };
+    },
+    [`${BINGEBANDIT}/api/admin/collections/`]: (url: URL, init?: RequestInit) => {
+      const [, , , , id, what] = url.pathname.split('/');
+      const c = cols.find((x) => x.id === Number(id))!;
+      if (what === 'artwork') c.poster = String(json(init).url);
+      else Object.assign(c, { name: json(init).name, overview: json(init).overview });
+      return view(c);
+    },
+    [`${BINGEBANDIT}/api/images/`]: () => new Response(new Uint8Array([0xff, 0xd8, 0xff]), { headers: { 'content-type': 'image/jpeg' } }),
+  };
+  return { routes, cols };
+}
 
 /** A request body as text; form uploads read like a query string, with files shown by name. */
 export function bodyText(body: unknown): string {
