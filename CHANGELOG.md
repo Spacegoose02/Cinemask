@@ -4,6 +4,15 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-28
+
+### Added
+- BingeBandit collections. Collections → Import from BingeBandit copies its collections (with their covers) into Cinemask; hand-picked ones stay in sync both ways, while smart and list collections come over as copies BingeBandit keeps managing. A collection set to "Sync to BingeBandit" is made in each BingeBandit library that has its titles (or just its own library), titles join and leave it as they do here, renames and descriptions follow, and its cover replaces BingeBandit's.
+- Library sync reads BingeBandit's quality from its file list in a few requests, when BingeBandit has it (`GET /api/admin/files`, BingeBandit PR #120), instead of opening every movie and episode.
+
+### Changed
+- The collection library picker lists BingeBandit libraries too.
+
 ## [0.26.0] - 2026-10-26
 
 ### Added

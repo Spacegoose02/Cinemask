@@ -530,6 +530,42 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE match_overrides_new RENAME TO match_overrides;
     `,
   },
+  {
+    id: 19,
+    name: 'bingebandit collections',
+    // Rebuilt for the source CHECK, like migration 18; collection_items would cascade away, so they're set aside.
+    sql: `
+      CREATE TABLE collection_items_keep AS SELECT * FROM collection_items;
+      CREATE TABLE collections_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        poster TEXT,
+        source TEXT NOT NULL CHECK (source IN ('manual','tmdb','list','plex','jellyfin','bingebandit')),
+        source_id TEXT,
+        sync_plex INTEGER NOT NULL DEFAULT 0,
+        sync_jellyfin INTEGER NOT NULL DEFAULT 0,
+        plex_key TEXT,
+        jellyfin_id TEXT,
+        last_push_at INTEGER,
+        last_error TEXT,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL,
+        plex_label TEXT,
+        from_label TEXT,
+        library TEXT,
+        sync_bingebandit INTEGER NOT NULL DEFAULT 0,
+        bingebandit_ids TEXT
+      );
+      INSERT INTO collections_new (id, name, description, poster, source, source_id, sync_plex, sync_jellyfin, plex_key, jellyfin_id, last_push_at, last_error, created_by, created_at, plex_label, from_label, library)
+        SELECT id, name, description, poster, source, source_id, sync_plex, sync_jellyfin, plex_key, jellyfin_id, last_push_at, last_error, created_by, created_at, plex_label, from_label, library FROM collections;
+      DROP TABLE collections;
+      ALTER TABLE collections_new RENAME TO collections;
+      INSERT INTO collection_items (collection_id, kind, tmdb_id, title, year, poster_path, position)
+        SELECT collection_id, kind, tmdb_id, title, year, poster_path, position FROM collection_items_keep;
+      DROP TABLE collection_items_keep;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

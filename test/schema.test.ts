@@ -50,6 +50,27 @@ describe('migration 18 (BingeBandit)', () => {
   });
 });
 
+describe('migration 19 (BingeBandit collections)', () => {
+  it('keeps collections and their items while allowing BingeBandit as a source', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    db.exec('CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL)');
+    for (const m of MIGRATIONS.filter((m) => m.id < 19)) {
+      db.exec(m.sql);
+      db.prepare('INSERT INTO schema_migrations VALUES (?, ?, ?)').run(m.id, m.name, 0);
+    }
+    db.exec("INSERT INTO collections (id, name, source, sync_plex, plex_key, library, created_at) VALUES (3, 'Bears', 'plex', 1, '77', 'Movies', 1)");
+    db.exec("INSERT INTO collection_items VALUES (3, 'movie', 116149, 'Paddington', 2014, NULL, 0)");
+    migrate(db);
+    expect(db.prepare('SELECT id, name, sync_plex, plex_key, library, sync_bingebandit FROM collections').all()).toEqual([{ id: 3, name: 'Bears', sync_plex: 1, plex_key: '77', library: 'Movies', sync_bingebandit: 0 }]);
+    expect(db.prepare('SELECT collection_id, tmdb_id FROM collection_items').all()).toEqual([{ collection_id: 3, tmdb_id: 116149 }]);
+    db.exec("INSERT INTO collections (name, source, created_at) VALUES ('From BB', 'bingebandit', 1)");
+    db.exec('DELETE FROM collections WHERE id = 3');
+    expect(db.prepare('SELECT count(*) AS n FROM collection_items').get()).toEqual({ n: 0 });
+    db.close();
+  });
+});
+
 describe('OIDC group mapping', () => {
   const base = SETTINGS.auth.schema.parse({}).oidc;
   it('leaves roles alone when no groups are configured', () => {
