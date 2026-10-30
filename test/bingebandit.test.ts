@@ -1,5 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Client, makeApp, setupOwner } from './helpers.js';
+import { Client, createUser, makeApp, setupOwner } from './helpers.js';
 import { BINGEBANDIT, bingeBanditCollections, bingeBanditFiles, bingeBanditRoutes, fakeFetch, tmdbRoutes } from './fakes.js';
 
 let t: Awaited<ReturnType<typeof makeApp>>;
@@ -101,5 +103,62 @@ describe('BingeBandit collections', () => {
     const res = await owner.req('POST', `/api/collections/${col.id}/push`, {});
     expect(res.statusCode).toBe(502);
     expect(res.json().error).toContain('picks its titles by rules or a list');
+  });
+});
+
+describe('BingeBandit library folders', () => {
+  it("finds BingeBandit's libraries on Cinemask's side to add as folders", async () => {
+    // Cinemask sees the share at <dir>/media; BingeBandit at /media.
+    const media = path.join(t.dir, 'media');
+    for (const d of ['Movies', 'Kids Movies', 'TV', 'Kids TV']) fs.mkdirSync(path.join(media, d), { recursive: true });
+    await owner.req('PUT', '/api/settings/media', { moviesPath: path.join(media, 'Movies'), tvPath: path.join(media, 'TV') });
+    fakeFetch({
+      ...bingeBanditRoutes,
+      [`${BINGEBANDIT}/api/libraries`]: () => [
+        { id: 1, name: 'Movies', kind: 'movies', paths: ['/media/Movies'] },
+        { id: 2, name: 'Kids Movies', kind: 'movies', paths: ['/media/Kids Movies'] },
+        { id: 3, name: 'Kids TV', kind: 'shows', paths: ['/media/Kids TV'] },
+        { id: 4, name: '4K', kind: 'movies', paths: ['/mnt/4k'] },
+        { id: 5, name: 'Music', kind: 'music', paths: ['/media/Music'] },
+      ],
+    });
+    const user = await createUser(owner, 'mgr', 'manager');
+    const mgr = new Client(t.app);
+    await mgr.login('mgr', user.password);
+    expect((await mgr.req('GET', '/api/root-folders/bingebandit')).statusCode).toBe(403);
+    const { folders } = (await owner.req('GET', '/api/root-folders/bingebandit')).json();
+    expect(folders).toEqual([
+      { id: '', name: 'Movies', kind: 'movie', bingePath: '/media/Movies', path: path.join(media, 'Movies'), existing: 'Movies' },
+      { id: 'kids-movies', name: 'Kids Movies', kind: 'movie', bingePath: '/media/Kids Movies', path: path.join(media, 'Kids Movies'), existing: null },
+      { id: 'kids-tv', name: 'Kids TV', kind: 'show', bingePath: '/media/Kids TV', path: path.join(media, 'Kids TV'), existing: null },
+      { id: '4k', name: '4K', kind: 'movie', bingePath: '/mnt/4k', path: null, existing: null },
+    ]);
+  });
+
+  it("says when the key can't see BingeBandit's folders", async () => {
+    fakeFetch(bingeBanditRoutes);
+    const res = await owner.req('GET', '/api/root-folders/bingebandit');
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/admin/);
+  });
+
+  it('follows a title BingeBandit moved to another library, and upgrades land there', async () => {
+    const media = path.join(t.dir, 'media');
+    const movies = path.join(media, 'Movies');
+    const kids = path.join(media, 'Kids Movies');
+    fs.mkdirSync(movies, { recursive: true });
+    fs.mkdirSync(kids, { recursive: true });
+    await owner.req('PUT', '/api/settings/media', { moviesPath: movies, extraFolders: [{ id: 'kids-movies', name: 'Kids Movies', kind: 'movie', path: kids, category: '' }] });
+    fakeFetch({ ...bingeBanditRoutes, ...bingeBanditFiles, ...tmdbRoutes });
+    const old = path.join(movies, 'Paddington (2014)');
+    fs.mkdirSync(old);
+    fs.writeFileSync(path.join(old, 'paddington.mkv'), 'movie');
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false })).json();
+    await owner.req('POST', `/api/monitored/${m.id}/scan`);
+    // BingeBandit's Move to library puts the folder under Kids Movies.
+    fs.renameSync(old, path.join(kids, 'Paddington (2014)'));
+    await t.librarySync.run();
+    const row = t.app.ctx.dbHandle.sqlite.prepare('SELECT root_id AS root, path, file_path AS file FROM monitored WHERE id = ?').get(m.id);
+    expect(row).toEqual({ root: 'kids-movies', path: path.join(kids, 'Paddington (2014)'), file: path.join(kids, 'Paddington (2014)', 'paddington.mkv') });
   });
 });

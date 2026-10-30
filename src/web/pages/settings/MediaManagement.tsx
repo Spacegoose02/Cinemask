@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Field, Toggle } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useSettingsSection } from '../../lib/settings';
@@ -17,6 +18,59 @@ function preview(template: string, v: Record<string, string>) {
 
 const SAMPLE = { 'movie title': 'Paddington', 'series title': 'Expedition Unknown', year: '2014', season: '1', episode: '1', 'episode title': 'Tigers fighting', quality: 'Bluray-1080p', resolution: '1080p', 'air date': '2015-01-08', 'tmdb id': '116149' };
 
+type ExtraFolder = { id: string; name: string; kind: 'movie' | 'show'; path: string; category: string };
+
+interface LibraryFolder {
+  id: string;
+  name: string;
+  kind: 'movie' | 'show';
+  bingePath: string;
+  path: string | null;
+  existing: string | null;
+}
+
+/**
+ * Adds BingeBandit's libraries (Kids Movies, 4K, …) as folders, so adding a title here can put it
+ * in the same library it will show up in there. Nothing is saved until Save.
+ */
+function FromBingeBandit({ extra, onAdd }: { extra: ExtraFolder[]; onAdd: (add: ExtraFolder[]) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string; missing?: LibraryFolder[] } | null>(null);
+  const run = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const { folders } = await api<{ folders: LibraryFolder[] }>('/api/root-folders/bingebandit');
+      const fresh = folders.filter((f) => f.path && !f.existing && !extra.some((e) => e.path === f.path));
+      const missing = folders.filter((f) => !f.path);
+      onAdd(fresh.map((f) => ({ id: f.id, name: f.name, kind: f.kind, path: f.path!, category: '' })));
+      const text = fresh.length ? `Added ${fresh.map((f) => f.name).join(', ')}. Save to keep them.` : 'Every BingeBandit library Cinemask can see is already a folder here.';
+      setMsg({ kind: 'success', text, missing });
+    } catch (e) {
+      setMsg({ kind: 'error', text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <button className="btn-secondary" disabled={busy} onClick={run} title="Adds each BingeBandit movie and show library as a folder here">
+        {busy ? 'Asking BingeBandit…' : 'Add BingeBandit libraries'}
+      </button>
+      {msg && (
+        <div className={`basis-full text-sm ${msg.kind === 'error' ? 'text-danger' : 'text-muted'}`}>
+          {msg.text}
+          {!!msg.missing?.length && (
+            <span className="block">
+              Not found in this container: {msg.missing.map((f) => `${f.name} (${f.bingePath} in BingeBandit)`).join(', ')}. Map that share into Cinemask, or add the folder by hand.
+            </span>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function MediaManagementSettings() {
   const m = useSettingsSection('media');
   const n = useSettingsSection('naming');
@@ -25,7 +79,7 @@ export function MediaManagementSettings() {
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: () => api<{ id: number; name: string }[]>('/api/profiles') });
   if (m.loading || n.loading || d.loading || x.loading) return null;
   const maps = m.values.remotePathMappings as { remote: string; local: string }[];
-  const extra = m.values.extraFolders as { id: string; name: string; kind: 'movie' | 'show'; path: string; category: string }[];
+  const extra = m.values.extraFolders as ExtraFolder[];
   const setExtra = (i: number, patch: Partial<(typeof extra)[number]>) => m.set('extraFolders', extra.map((f, j) => (j === i ? { ...f, ...patch } : f)));
   const tiers = d.values.episodeSizeByRuntime as { minutes: number; gb: number }[];
   const setTier = (i: number, patch: Partial<(typeof tiers)[number]>) => d.set('episodeSizeByRuntime', tiers.map((t, j) => (j === i ? { ...t, ...patch } : t)));
@@ -75,9 +129,12 @@ export function MediaManagementSettings() {
               </button>
             </div>
           ))}
-          <button className="btn-secondary" onClick={() => m.set('extraFolders', [...extra, { id: `folder-${Date.now().toString(36)}`, name: '', kind: 'movie', path: '', category: '' }])}>
-            Add folder
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-secondary" onClick={() => m.set('extraFolders', [...extra, { id: `folder-${Date.now().toString(36)}`, name: '', kind: 'movie', path: '', category: '' }])}>
+              Add folder
+            </button>
+            <FromBingeBandit extra={extra} onAdd={(add) => m.set('extraFolders', [...extra, ...add])} />
+          </div>
         </div>
         <Field label="Audiobooks folder">
           <input className="input" value={m.values.audiobooksPath} onChange={(e) => m.set('audiobooksPath', e.target.value)} />

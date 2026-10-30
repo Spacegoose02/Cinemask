@@ -260,6 +260,9 @@ export class LibrarySync {
       // Imported lazily: arr/monitor uses this module too.
       const { monitorLibrary } = await import('../arr/monitor.js');
       this.status.autoMonitored = await monitorLibrary(this.ctx).catch(() => 0);
+      // Titles moved between libraries on the server (Movies → Kids Movies) keep their new folder.
+      const { followMovedFolders } = await import('../files/service.js');
+      followMovedFolders(this.ctx);
       return this.status;
     } finally {
       this.status.running = false;
