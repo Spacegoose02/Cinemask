@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext } from '../context.js';
@@ -53,13 +53,54 @@ export function moveToRoot(ctx: AppContext, row: MonitoredRow, rootId: string): 
     fs.cpSync(row.path, dest, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true });
     fs.rmSync(row.path, { recursive: true });
   }
-  const moved = (p: string | null) => (p && (p === row.path || p.startsWith(`${row.path}${path.sep}`)) ? path.join(dest, path.relative(row.path!, p)) : p);
-  if (row.id) {
-    for (const e of episodesOf(ctx, row.id)) {
-      if (e.filePath) ctx.db.update(monitoredEpisodes).set({ filePath: moved(e.filePath) }).where(eq(monitoredEpisodes.id, e.id)).run();
+  return repoint(ctx, row, dest, rootId);
+}
+
+/** Points a title and its tracked files at the folder it now sits in, in root folder rootId. */
+function repoint(ctx: AppContext, row: MonitoredRow, dest: string, rootId: string): MonitoredRow {
+  const from = row.path!;
+  const moved = (p: string | null) => (p && (p === from || p.startsWith(`${from}${path.sep}`)) ? path.join(dest, path.relative(from, p)) : p);
+  const values = { rootId: rootId === 'default' ? null : rootId, path: dest, filePath: moved(row.filePath) };
+  if (!row.id) return { ...row, ...values };
+  for (const e of episodesOf(ctx, row.id)) {
+    if (e.filePath) ctx.db.update(monitoredEpisodes).set({ filePath: moved(e.filePath) }).where(eq(monitoredEpisodes.id, e.id)).run();
+  }
+  return ctx.db.update(monitored).set(values).where(eq(monitored.id, row.id)).returning().get()!;
+}
+
+/**
+ * A title whose folder was moved outside Cinemask, such as by BingeBandit's "Move to library"
+ * (Movies → Kids Movies), is found again in whichever root folder holds it now: first by the
+ * folder's own name, then the way locateFolder looks. Its root folder, path and tracked files
+ * follow, so upgrades land beside it rather than in the old folder. Unchanged when the folder is
+ * still there or can't be found.
+ */
+export function followMovedFolder(ctx: AppContext, row: MonitoredRow): MonitoredRow {
+  if (!row.path || fs.existsSync(row.path)) return row;
+  const name = path.basename(row.path);
+  let found: { folder: string; rootId: string } | null = null;
+  for (const r of listRoots(ctx, row.kind)) {
+    const folder = path.join(r.path, name);
+    if (insideRoot(r.path, folder) && fs.existsSync(folder)) {
+      found = { folder, rootId: r.id };
+      break;
     }
   }
-  return save({ rootId: next, path: dest, filePath: moved(row.filePath) });
+  found ??= locateFolder(ctx, row);
+  return found ? repoint(ctx, row, found.folder, found.rootId) : row;
+}
+
+/** Runs followMovedFolder over every title with a folder; returns how many moved. */
+export function followMovedFolders(ctx: AppContext): number {
+  let n = 0;
+  for (const row of ctx.db.select().from(monitored).where(isNotNull(monitored.path)).all()) {
+    try {
+      if (followMovedFolder(ctx, row) !== row) n++;
+    } catch {
+      // A folder that can't be read is looked for again next sync.
+    }
+  }
+  return n;
 }
 
 function assertInside(root: string, target: string) {

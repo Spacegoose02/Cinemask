@@ -4,6 +4,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- Settings → Media management → **Add BingeBandit libraries** adds each BingeBandit movie and show library (Kids Movies, Kids TV, 4K, …) as a folder, found where Cinemask sees it, so Download and Monitor ask which library a title goes in instead of always using Movies. Libraries Cinemask can't see are listed with BingeBandit's path. Needs a BingeBandit admin's key.
+
+### Fixed
+- A title moved to another library outside Cinemask (BingeBandit's Move, say Movies → Kids Movies) is followed: library sync and the next import find its folder in the new root folder, so its folder, root and files point there and upgrades land beside it instead of recreating it in the old folder.
+
 ## [0.27.1] - 2026-10-28
 
 ### Fixed

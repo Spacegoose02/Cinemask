@@ -10,6 +10,7 @@ import { parseRelease, VIDEO_EXTENSIONS } from './parser.js';
 import { insideRoot } from '../lib/paths.js';
 import { qualityRank } from './quality.js';
 import { listRoots, rootOf } from './roots.js';
+import { followMovedFolder } from '../files/service.js';
 
 const SAMPLE_MAX = 80 * 1024 * 1024;
 
@@ -145,8 +146,10 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
   const mode = opts.mode;
   const dl = ctx.db.select().from(downloads).where(eq(downloads.id, downloadId)).get();
   if (!dl?.monitoredId) throw new Error('This download is not linked to a movie or show');
-  const row = ctx.db.select().from(monitored).where(eq(monitored.id, dl.monitoredId)).get();
-  if (!row) throw new Error('The movie or show was removed');
+  const stored = ctx.db.select().from(monitored).where(eq(monitored.id, dl.monitoredId)).get();
+  if (!stored) throw new Error('The movie or show was removed');
+  // Moved to another library since (BingeBandit's Move, say): the upgrade goes where the title is now.
+  const row = followMovedFolder(ctx, stored);
   const mediaSettings = ctx.settings.get('media');
   const naming = ctx.settings.get('naming');
   const located = locateDownload(ctx, sourcePath);

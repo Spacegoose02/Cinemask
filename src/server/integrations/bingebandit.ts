@@ -5,6 +5,8 @@ interface BbLibrary {
   id: number;
   name: string;
   kind: string;
+  /** The library's folders as BingeBandit sees them; only an admin's key gets them. */
+  paths?: string[] | null;
 }
 
 interface BbItem {

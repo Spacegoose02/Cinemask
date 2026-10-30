@@ -9,6 +9,7 @@ import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/err
 import { parse } from '../lib/validate.js';
 import { availabilityFor, refreshMetadata } from '../library/service.js';
 import { upstream } from '../library/routes.js';
+import { bingeBanditFolders } from './bingebandit-folders.js';
 import { CLIENT_PROTOCOL, createClient } from './clients.js';
 import { startLinkDownload } from './direct.js';
 import { listProwlarrIndexers, testIndexer } from './indexers.js';
@@ -169,6 +170,9 @@ export async function arrRoutes(app: FastifyInstance) {
     roots: listRoots(ctx).map((r) => ({ id: r.id, name: r.name, kind: r.kind, path: r.path })),
     destinations: linkDestinations(ctx).map((d) => ({ key: d.key, name: d.name, path: d.path })),
   }));
+
+  /** BingeBandit's library folders as Cinemask sees them, for Settings → Media management to add as root folders. */
+  app.get('/api/root-folders/bingebandit', { config: { access: 'admin' } }, async () => ({ folders: await bingeBanditFolders(ctx) }));
 
   app.get('/api/monitored', { config: { access: 'manager' } }, async (req) => {
     const q = parse(z.object({ kind: kind.optional() }), req.query);
