@@ -13,6 +13,10 @@ A self-hosted media manager for families running Plex or Jellyfin. It does what 
 - **Discover** by genre, network, streaming service, year, rating and language, with trending and popular rows.
 - A personal **home page** with rows you choose, a **calendar** of upcoming releases, **collections** and **lists**.
 - **Books**: request audiobooks and ebooks, browse your Audiobookshelf library, and find podcasts.
+- **Family ratings and reviews**, a "Family favorites" row and "Because you liked…" picks.
+- **Movie nights**: plan one, RSVP, and get a reminder before it starts.
+- **Games**: trivia and guess-the-scene rounds made from your own library, with a weekly leaderboard and daily streaks.
+- **Cinemask Wrapped**: a yearly or monthly recap with your raccoon persona, plus **badges** to collect.
 - 31 **themes** (five each of Dark, Light, Retro, Futuristic, 16-bit and Cinemas, plus Blockbuster) and a phone-friendly layout you can install to your home screen.
 
 **For whoever runs it**

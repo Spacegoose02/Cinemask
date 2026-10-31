@@ -512,3 +512,78 @@ export const youtubeVideos = sqliteTable(
   },
   (t) => [uniqueIndex('youtube_videos_channel_video_unique').on(t.channelId, t.videoId), index('youtube_videos_status_idx').on(t.status)],
 );
+
+/** A household member's stars (1 to 5) and optional review of a title. */
+export const ratings = sqliteTable(
+  'ratings',
+  {
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    stars: integer('stars').notNull(),
+    review: text('review'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.kind, t.tmdbId] }), index('ratings_title_idx').on(t.kind, t.tmdbId)],
+);
+
+export const movieNights = sqliteTable(
+  'movie_nights',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    title: text('title').notNull(),
+    year: integer('year'),
+    posterPath: text('poster_path'),
+    startsAt: integer('starts_at').notNull(),
+    note: text('note'),
+    hostId: integer('host_id').references(() => users.id, { onDelete: 'set null' }),
+    hostName: text('host_name'),
+    /** When the "starting soon" notification went out. */
+    remindedAt: integer('reminded_at'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('movie_nights_starts_idx').on(t.startsAt)],
+);
+
+export const RSVP_ANSWERS = ['yes', 'maybe', 'no'] as const;
+
+export const movieNightRsvps = sqliteTable(
+  'movie_night_rsvps',
+  {
+    nightId: integer('night_id')
+      .notNull()
+      .references(() => movieNights.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    answer: text('answer', { enum: RSVP_ANSWERS }).notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.nightId, t.userId] })],
+);
+
+export const GAMES = ['trivia', 'scene'] as const;
+export type Game = (typeof GAMES)[number];
+
+/** One round of a game. The questions (answers included) stay on the server; the player only sees the choices. */
+export const gameRounds = sqliteTable(
+  'game_rounds',
+  {
+    id: text('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    game: text('game', { enum: GAMES }).notNull(),
+    questions: text('questions').notNull(), // JSON GameQuestion[]
+    total: integer('total').notNull(),
+    score: integer('score'),
+    createdAt: integer('created_at').notNull(),
+    finishedAt: integer('finished_at'),
+  },
+  (t) => [index('game_rounds_user_idx').on(t.userId, t.finishedAt)],
+);

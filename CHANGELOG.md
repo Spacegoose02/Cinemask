@@ -4,6 +4,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- **Family ratings.** Everyone can give a title one to five stars and a review on its page, which shows the household's average next to everyone's reviews. Managers can remove someone's review (audited). New homepage rows: **Family favorites** and **Because you liked…** (TMDB recommendations for the last title you loved).
+- **Movie nights.** Plan one from any title's page ("Plan a movie night"), and everyone can answer I'm in, Maybe or Can't make it on the new Movie nights page or the homepage row. Only the host or a manager can change or cancel it. Webhooks get `movie_night.created` and a `movie_night.reminder` within the hour before it starts.
+- **Games.** Trivia (years, plots with the title blanked out, ratings, genres, runtimes) and Guess the scene (a still from a title), five questions made from what's on your servers. Answers stay on the server until a round is scored. A weekly leaderboard and daily streaks.
+- **Cinemask Wrapped.** A recap of a year or a month: your raccoon persona from the genres you request and rate, your requests, ratings, movie nights and game points, and the household's hours watched, movies, episodes, most-binged show, top genres and busiest month (from the servers' play history).
+- **Badges** for requests, ratings, reviews, movie nights, perfect rounds and game streaks, shown on Wrapped with progress towards the next ones.
+
 ## [0.28.0] - 2026-10-30
 
 ### Added

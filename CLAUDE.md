@@ -16,6 +16,7 @@ The app is called **Cinemask** (raccoon mascot). The head logo is the app icon (
   - `books/`: book and audiobook requests (Open Library metadata), downloads through Shelfmark or the indexers, imports as `Author/Title (Year)`, and the Audiobookshelf mirror (`abs_items`) plus podcasts (Apple directory, subscribed through Audiobookshelf).
   - `api/`: `/api/openapi.json` (generated from the registered routes) and `/api/stats`. `notify/`: webhook events. `auth/apikeys.ts`: API keys; the guard decides which routes accept them (`config.apiKey`, default no for admin/owner and all of `/api/auth/*`).
   - `calendar/` and `health/`: the calendar feed and the Settings → Health checks.
+  - `fun/`: household ratings and reviews, movie nights (RSVPs and reminders), the trivia and scene games (answers never leave the server until a round is scored), Wrapped and badges (worked out from activity, no table).
   - `jobs/scheduler.ts`: all background jobs (backups, library sync, download tracking, RSS, health).
 - `src/web`: React + Vite + TanStack Query + Tailwind v4. Theme colours are CSS variables in `styles.css`; new themes only redefine them (add the name to `lib/theme.ts` and `THEME_NAMES` in `auth/apikey-routes.ts`). Don't start client routes with `/api`, which the server reserves.
 - `test/`: Vitest. `helpers.ts` has a browser-like `Client` that keeps cookies and sends CSRF headers.

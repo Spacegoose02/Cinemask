@@ -11,6 +11,10 @@ import { bookRoutes } from './books/routes.js';
 import { calendarRoutes } from './calendar/routes.js';
 import { collectionRoutes } from './collections/routes.js';
 import { discoverRoutes } from './discover/routes.js';
+import { gameRoutes } from './fun/games.js';
+import { movieNightRoutes } from './fun/nights.js';
+import { ratingRoutes } from './fun/ratings.js';
+import { wrappedRoutes } from './fun/wrapped.js';
 import { homeRoutes } from './home/routes.js';
 import { listRoutes } from './lists/routes.js';
 import { posterRoutes } from './posters/routes.js';
@@ -154,6 +158,10 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   await app.register(youtubeRoutes);
   await app.register(importRoutes);
   await app.register(homeRoutes);
+  await app.register(ratingRoutes);
+  await app.register(movieNightRoutes);
+  await app.register(gameRoutes);
+  await app.register(wrappedRoutes);
   await app.register(bookRoutes);
   await app.register(apiRoutes);
 

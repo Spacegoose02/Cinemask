@@ -566,6 +566,56 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       DROP TABLE collection_items_keep;
     `,
   },
+  {
+    id: 20,
+    name: 'ratings, movie nights and games',
+    sql: `
+      CREATE TABLE ratings (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+        review TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, kind, tmdb_id)
+      );
+      CREATE INDEX ratings_title_idx ON ratings(kind, tmdb_id);
+      CREATE TABLE movie_nights (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        year INTEGER,
+        poster_path TEXT,
+        starts_at INTEGER NOT NULL,
+        note TEXT,
+        host_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        host_name TEXT,
+        reminded_at INTEGER,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX movie_nights_starts_idx ON movie_nights(starts_at);
+      CREATE TABLE movie_night_rsvps (
+        night_id INTEGER NOT NULL REFERENCES movie_nights(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        answer TEXT NOT NULL CHECK (answer IN ('yes','maybe','no')),
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (night_id, user_id)
+      );
+      CREATE TABLE game_rounds (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        game TEXT NOT NULL CHECK (game IN ('trivia','scene')),
+        questions TEXT NOT NULL,
+        total INTEGER NOT NULL,
+        score INTEGER,
+        created_at INTEGER NOT NULL,
+        finished_at INTEGER
+      );
+      CREATE INDEX game_rounds_user_idx ON game_rounds(user_id, finished_at);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

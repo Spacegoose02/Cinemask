@@ -6,6 +6,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { api, hasRole, type AuthStatus, type Role } from './lib/api';
 import { useAuth } from './lib/auth';
+import { FamilyPanel } from './components/FamilyPanel';
 import { FilesPanel } from './components/FilesPanel';
 import { MediaActions } from './components/MediaActions';
 import { CalendarPage } from './pages/Calendar';
@@ -14,15 +15,25 @@ import { DiscoverPage } from './pages/Discover';
 import { ListDetailPage, ListsPage } from './pages/Lists';
 import { AccountPage } from './pages/Account';
 import { DownloadsPage } from './pages/Downloads';
+import { GamesPage } from './pages/Games';
+import { MovieNightsPage } from './pages/MovieNights';
+import { WrappedPage } from './pages/Wrapped';
 import { RequestsPage } from './pages/Requests';
 import { HomePage } from './pages/Home';
 import { LibraryPage } from './pages/Library';
 import { LoginPage } from './pages/Login';
-import { MediaDetailPage } from './pages/MediaDetail';
+import { MediaDetailPage, type MediaDetail } from './pages/MediaDetail';
 import { MonitoredPage } from './pages/Monitored';
 import { SearchPage } from './pages/Search';
 import { SettingsPage } from './pages/Settings';
 import { SetupPage } from './pages/Setup';
+
+const panels = (m: MediaDetail) => (
+  <>
+    <FamilyPanel m={m} />
+    <FilesPanel m={m} />
+  </>
+);
 
 function RequireRole({ role, children }: { role: Role; children: React.ReactNode }) {
   const { me } = useAuth();
@@ -51,8 +62,8 @@ export function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/search" element={<SearchPage />} />
-        <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" actions={(m) => <MediaActions m={m} />} panels={(m) => <FilesPanel m={m} />} />} />
-        <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} panels={(m) => <FilesPanel m={m} />} />} />
+        <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" actions={(m) => <MediaActions m={m} />} panels={panels} />} />
+        <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} panels={panels} />} />
         <Route path="/books" element={<BooksPage />} />
         <Route path="/developer" element={<ApiDocsPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
@@ -62,6 +73,9 @@ export function App() {
         <Route path="/collections" element={<CollectionsPage />} />
         <Route path="/collections/:id" element={<CollectionDetailPage />} />
         <Route path="/requests" element={<RequestsPage />} />
+        <Route path="/movie-nights" element={<MovieNightsPage />} />
+        <Route path="/games" element={<GamesPage />} />
+        <Route path="/wrapped" element={<WrappedPage />} />
         <Route
           path="/monitored"
           element={
