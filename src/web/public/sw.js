@@ -32,8 +32,10 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// The page asks for this when the user accepts "a new version is ready".
+// The page asks for this when the user accepts "a new version is ready". Only our own pages can
+// reach a service worker, but check the sender anyway.
 self.addEventListener('message', (event) => {
+  if (event.origin !== self.location.origin) return;
   if (event.data === 'skip-waiting') self.skipWaiting();
 });
 
