@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-10-31
+
 ### Added
 - **Family ratings.** Everyone can give a title one to five stars and a review on its page, which shows the household's average next to everyone's reviews. Managers can remove someone's review (audited). New homepage rows: **Family favorites** and **Because you liked…** (TMDB recommendations for the last title you loved).
 - **Movie nights.** Plan one from any title's page ("Plan a movie night"), and everyone can answer I'm in, Maybe or Can't make it on the new Movie nights page or the homepage row. Only the host or a manager can change or cancel it. Webhooks get `movie_night.created` and a `movie_night.reminder` within the hour before it starts.
