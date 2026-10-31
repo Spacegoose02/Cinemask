@@ -4,6 +4,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-10-31
+
+### Added
+- **Install Cinemask as an app.** Browsers offer "Install app" (on iPhone, Add to Home Screen help shows how). The app never stores anything from `/api` offline, so nothing private is cached. It shows an offline banner, a "can't reach the server" screen, and a "new version ready" prompt to reload.
+- **Live updates.** Pages refresh by themselves when something changes (a request approved, a download finished, a library sync done) instead of waiting for a reload. Each signed-in tab only hears about changes its role can see, and only that something changed, never the data itself.
+- **Phone tab bar** at the bottom: Home, Library, Discover, Requests and More.
+
 ### Fixed
 - **Sign out on phones.** The phone menu now has your name and a Sign out button; before, only the desktop sidebar had one.
 - **Ended sessions.** When a session expires or is signed out from another device, the app goes to the sign-in page ("You were signed out") instead of showing empty pages, and Sign out works even then. Data from the last account is cleared from the tab.
