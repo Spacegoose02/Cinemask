@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ApiError } from '../lib/api';
 
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
@@ -47,5 +48,20 @@ export function SecretInput({ isSet, value, onChange, placeholder }: { isSet: bo
         </button>
       )}
     </div>
+  );
+}
+
+/** Says when a page's data couldn't be loaded, instead of leaving it blank, with a way to try again. */
+export function LoadError({ queries }: { queries: { error: unknown; refetch: () => unknown }[] }) {
+  // A lost session sends them to sign in, so it needs no message here.
+  const failed = queries.filter((q) => q.error && !(q.error instanceof ApiError && q.error.status === 401));
+  if (!failed.length) return null;
+  return (
+    <Alert>
+      Couldn't load this: {(failed[0]!.error as Error).message}{' '}
+      <button className="underline" onClick={() => failed.forEach((q) => void q.refetch())}>
+        Try again
+      </button>
+    </Alert>
   );
 }

@@ -134,7 +134,7 @@ function SyncSettings() {
         </select>
       </Field>
       <Field label="Monitor what the sync finds" hint="Who can change it per title: managers, with Monitor / Unmonitor on its page. Titles removed by hand stay removed.">
-        <select className="input w-auto" value={s.values.autoMonitor} onChange={(e) => s.set('autoMonitor', e.target.value)}>
+        <select className="input w-auto max-w-full" value={s.values.autoMonitor} onChange={(e) => s.set('autoMonitor', e.target.value)}>
           <option value="new">New episodes only (nothing already out is searched)</option>
           <option value="all">Everything (fill missing episodes and upgrade by quality profile)</option>
           <option value="off">Don't monitor</option>

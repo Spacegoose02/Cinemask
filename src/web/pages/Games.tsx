@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Alert } from '../components/ui';
+import { Alert, LoadError } from '../components/ui';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { mediaPath, poster, type MediaKind } from '../lib/media';
@@ -39,11 +39,18 @@ function Play({ round, onDone }: { round: Round; onDone: () => void }) {
   const [answers, setAnswers] = useState<(number | null)[]>([]);
   const [scored, setScored] = useState<Scored | null>(null);
   const [error, setError] = useState('');
+  // Answers as tapped, ahead of the re-render: a quick double tap mustn't answer twice or send the round twice.
+  const given = useRef<number[]>([]);
+  const shownAt = useRef(-Infinity);
   const i = answers.length;
   const q = round.questions[i];
 
-  const choose = async (choice: number) => {
-    const next = [...answers, choice];
+  const choose = async (choice: number, question: number, at: number) => {
+    // A tap meant for the last question that lands on the next one (a double tap) is ignored for a moment.
+    if (question !== given.current.length || at - shownAt.current < 300) return;
+    const next = [...given.current, choice];
+    given.current = next;
+    shownAt.current = at;
     setAnswers(next);
     if (next.length < round.questions.length) return;
     try {
@@ -55,7 +62,16 @@ function Play({ round, onDone }: { round: Round; onDone: () => void }) {
     }
   };
 
-  if (error) return <Alert>{error}</Alert>;
+  if (error) {
+    return (
+      <section className="card space-y-3">
+        <Alert>{error}</Alert>
+        <button className="btn-primary" onClick={onDone}>
+          Start a new round
+        </button>
+      </section>
+    );
+  }
   if (scored) {
     return (
       <section className="card space-y-4">
@@ -109,7 +125,7 @@ function Play({ round, onDone }: { round: Round; onDone: () => void }) {
       {q.detail && <p className="rounded-md bg-surface-2 p-3 text-sm leading-relaxed">{q.detail}</p>}
       <div className="grid gap-2 sm:grid-cols-2">
         {q.choices.map((c, n) => (
-          <button key={`${i}-${n}`} className="btn-secondary justify-start whitespace-normal py-3 text-left" onClick={() => choose(n)}>
+          <button key={`${i}-${n}`} className="btn-secondary justify-start whitespace-normal py-3 text-left" onClick={(e) => choose(n, i, e.timeStamp)}>
             {c}
           </button>
         ))}
@@ -147,6 +163,7 @@ export function GamesPage() {
         )}
       </div>
       {error && <Alert>{error}</Alert>}
+      <LoadError queries={[board]} />
       {round ? (
         <Play key={round.id} round={round} onDone={() => setRound(null)} />
       ) : (

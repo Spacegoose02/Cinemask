@@ -315,8 +315,10 @@ function BookRequests() {
                   <button
                     className="btn-danger"
                     onClick={() => {
-                      const reason = prompt('Reason (optional):') ?? undefined;
-                      void act(() => api(`/api/books/${r.id}/decline`, { body: { reason } }));
+                      const reason = prompt('Reason (optional):');
+                      // Cancel means don't decline; OK with nothing typed declines without a reason.
+                      if (reason === null) return;
+                      void act(() => api(`/api/books/${r.id}/decline`, { body: { reason: reason.trim() || undefined } }));
                     }}
                   >
                     Decline

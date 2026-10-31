@@ -67,7 +67,7 @@ function Edit({ night, onClose }: { night: MovieNight; onClose: () => void }) {
         </Field>
         {error && <Alert>{error}</Alert>}
         <div className="flex justify-between">
-          <button className="btn-primary" onClick={() => run(() => api(`/api/movie-nights/${night.id}`, { method: 'PATCH', body: { startsAt: new Date(at).getTime(), note: note || null } }))}>
+          <button className="btn-primary" disabled={!at} title={at ? undefined : 'Pick a time'} onClick={() => run(() => api(`/api/movie-nights/${night.id}`, { method: 'PATCH', body: { startsAt: new Date(at).getTime(), note: note || null } }))}>
             Save
           </button>
           <button className="btn-danger" onClick={() => confirm('Call off this movie night?') && run(() => api(`/api/movie-nights/${night.id}`, { method: 'DELETE' }))}>

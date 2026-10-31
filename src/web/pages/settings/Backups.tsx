@@ -42,13 +42,16 @@ export function BackupSettings() {
 
   const restore = (name: string, encrypted: boolean) => {
     if (!confirm(`Restore ${name}? Everything since then will be replaced. A safety backup is taken first.`)) return;
-    const passphrase = encrypted ? (prompt('Backup passphrase (leave blank to use the saved one):') ?? undefined) : undefined;
+    const passphrase = encrypted ? prompt('Backup passphrase (leave blank to use the saved one):') : '';
+    // Cancel on the passphrase box stops the restore.
+    if (passphrase === null) return;
     void run(() => api(`/api/backups/${name}/restore`, { body: { passphrase: passphrase || undefined } }).then(afterRestore), 'Restored.');
   };
 
   const uploadRestore = (file: File) => {
     if (!confirm(`Restore from ${file.name}? Everything will be replaced. A safety backup is taken first.`)) return;
-    const passphrase = prompt('Passphrase, if the backup is encrypted:') ?? '';
+    const passphrase = prompt('Passphrase, if the backup is encrypted (leave blank if not):');
+    if (passphrase === null) return;
     void run(
       () =>
         api('/api/backups/upload-restore', {
@@ -82,7 +85,13 @@ export function BackupSettings() {
                 <button className="btn-secondary" disabled={busy} onClick={() => fileRef.current?.click()}>
                   Restore from file
                 </button>
-                <input ref={fileRef} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && uploadRestore(e.target.files[0])} />
+                <input ref={fileRef} type="file" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    // Cleared so the same file can be picked again after a cancel.
+                    e.target.value = '';
+                    if (file) uploadRestore(file);
+                  }}
+                />
               </>
             )}
           </div>

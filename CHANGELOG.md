@@ -4,6 +4,21 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+- **Sign out on phones.** The phone menu now has your name and a Sign out button; before, only the desktop sidebar had one.
+- **Ended sessions.** When a session expires or is signed out from another device, the app goes to the sign-in page ("You were signed out") instead of showing empty pages, and Sign out works even then. Data from the last account is cleared from the tab.
+- **Links survive signing in.** Opening a link while signed out (a title, Requests…) goes back to it after signing in, not to Home.
+- **Pages say when they can't load.** Library, Requests, Account, Games, the API reference and the Settings tabs show the error with Try again instead of a blank page. "Not found" and similar answers are no longer retried three times, so the title page shows its error at once instead of after about seven seconds.
+- **Show requests.** Users can request seasons a show is still missing after an earlier request ("Request more seasons"); seasons already asked for show as such. New seasons are added to your own waiting request, or make a new request when the earlier one was approved, instead of being dropped. A show request is only marked ready (and "ready to watch" sent) once every aired episode of the requested seasons is on a server, not as soon as any episode is.
+- **Declined requests** show on the title page with the reason, and can be requested again.
+- **Cancel cancels.** Cancel on the decline reason box no longer declines the request (movies, shows and books), and Cancel on the passphrase box no longer restores a backup. The same backup file can be picked again after a cancel.
+- **Games.** A double tap no longer answers the next question or replaces your score with "already scored", and an expired round or failed scoring offers Start a new round.
+- **Dates follow your time zone.** Episodes airing tomorrow no longer show as missing in the evening in the Americas, Home's upcoming row keeps today's releases, and the server stops counting episodes as aired (and searching for them) up to a day early. Server dates use `TZ`.
+- Plan a movie night suggests 8 pm today until 7:30 pm, and Change won't save an empty time.
+- A failed "Sign out" of another device on the Account page now says why.
+- Two Settings pages (Media servers, Media management) no longer scroll sideways on phones.
+- The version shown without `APP_VERSION` (npm start, development) comes from package.json instead of 0.10.2.
+
 ## [0.29.0] - 2026-10-31
 
 ### Added

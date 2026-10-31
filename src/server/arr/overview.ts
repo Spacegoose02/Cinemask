@@ -2,6 +2,7 @@ import { and, eq, gte, lte } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { libraryEpisodes, libraryItems, media, monitored, monitoredEpisodes, type MediaKind } from '../db/schema.js';
 import { listProfiles } from './profiles.js';
+import { localDay } from '../lib/dates.js';
 
 export type OverviewStatus = 'downloaded' | 'missing' | 'partial' | 'upcoming';
 
@@ -24,7 +25,7 @@ export interface OverviewRow {
   nextAir: string | null;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDay();
 const ENDED = new Set(['Ended', 'Canceled', 'Cancelled']);
 
 /**

@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { RootPicker, useRootFolders } from '../components/MediaActions';
-import { Alert } from '../components/ui';
+import { Alert, LoadError } from '../components/ui';
 import { api, formatDate, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { mediaPath, poster, type MediaKind } from '../lib/media';
@@ -69,6 +69,7 @@ export function RequestsPage() {
         </select>
       </div>
       {error && <Alert>{error}</Alert>}
+      <LoadError queries={[list]} />
       {list.data?.length === 0 && <div className="card text-sm text-muted">No requests here. Find something with the search bar and press Request.</div>}
       <ul className="space-y-3">
         {list.data?.map((r) => (
@@ -117,8 +118,10 @@ export function RequestsPage() {
                   <button
                     className="btn-danger"
                     onClick={() => {
-                      const reason = prompt('Reason (optional):') ?? undefined;
-                      void act(() => api(`/api/requests/${r.id}/decline`, { body: { reason } }));
+                      const reason = prompt('Reason (optional):');
+                      // Cancel means don't decline; OK with nothing typed declines without a reason.
+                      if (reason === null) return;
+                      void act(() => api(`/api/requests/${r.id}/decline`, { body: { reason: reason.trim() || undefined } }));
                     }}
                   >
                     Decline

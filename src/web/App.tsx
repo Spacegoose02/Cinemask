@@ -35,6 +35,12 @@ const panels = (m: MediaDetail) => (
   </>
 );
 
+/** Where to go after signing in: the page they first asked for, if it's one of ours. */
+function afterSignIn(state: unknown): string {
+  const from = (state as { from?: unknown } | null)?.from;
+  return typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') && !from.startsWith('/login') ? from : '/';
+}
+
 function RequireRole({ role, children }: { role: Role; children: React.ReactNode }) {
   const { me } = useAuth();
   if (!hasRole(me, role)) return <Navigate to="/" replace />;
@@ -52,13 +58,15 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage status={status.data!} />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* Remember where they were going, so a shared link still opens after signing in. */}
+        <Route path="*" element={<Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />} />
       </Routes>
     );
   }
   return (
     <Layout>
       <Routes>
+        <Route path="/login" element={<Navigate to={afterSignIn(location.state)} replace />} />
         <Route path="/" element={<HomePage />} />
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/search" element={<SearchPage />} />

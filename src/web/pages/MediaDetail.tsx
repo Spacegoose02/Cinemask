@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { StatusBadge, TrailerModal } from '../components/media';
 import { Alert } from '../components/ui';
-import { api } from '../lib/api';
+import { api, localDay } from '../lib/api';
 import { poster, serverName, type AvailabilityInfo, type MediaKind } from '../lib/media';
 
 export interface MediaDetail {
@@ -77,7 +77,7 @@ function SeasonRow({ tmdbId, season }: { tmdbId: number; season: MediaDetail['se
                     ✓ Watched
                   </span>
                 ) : null}
-                <StatusBadge status={e.onServer ? 'on_server' : e.airDate && e.airDate <= new Date().toISOString().slice(0, 10) ? 'not_on_server' : 'not_available'} resolution={e.resolution} />
+                <StatusBadge status={e.onServer ? 'on_server' : e.airDate && e.airDate <= localDay() ? 'not_on_server' : 'not_available'} resolution={e.resolution} />
               </span>
             </li>
           ))}

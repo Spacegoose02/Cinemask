@@ -26,7 +26,10 @@ interface Lookup {
     defaultMaxSizeMb?: number | null;
     path?: string | null;
   } | null;
+  /** The newest request for the title, declined ones included. */
   request: { id: number; status: string; requestedByName: string | null; reason: string | null } | null;
+  /** Pending or approved requests: the seasons they cover between them, or 'all'. */
+  openRequest: { seasons: number[] | 'all' } | null;
   /** Managers: the title's folder on disk and the root folder it's in. */
   folder?: string | null;
   folderRoot?: string;
@@ -193,7 +196,7 @@ function MoveFolder({ kind, tmdbId, folder, current, roots, onClose, onMoved }: 
   );
 }
 
-function SeasonPicker({ seasons, value, onChange }: { seasons: MediaDetail['seasons']; value: number[]; onChange: (v: number[]) => void }) {
+function SeasonPicker({ seasons, value, onChange, requested = [] }: { seasons: MediaDetail['seasons']; value: number[]; onChange: (v: number[]) => void; requested?: number[] }) {
   const real = seasons.filter((s) => s.seasonNumber > 0);
   return (
     <div className="space-y-1">
@@ -201,10 +204,14 @@ function SeasonPicker({ seasons, value, onChange }: { seasons: MediaDetail['seas
         <label key={s.seasonNumber} className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
-            checked={value.includes(s.seasonNumber)}
+            disabled={requested.includes(s.seasonNumber)}
+            checked={value.includes(s.seasonNumber) || requested.includes(s.seasonNumber)}
             onChange={(e) => onChange(e.target.checked ? [...value, s.seasonNumber] : value.filter((x) => x !== s.seasonNumber))}
           />
-          {s.name} <span className="text-xs text-muted">({s.onServer}/{s.episodeCount} on server)</span>
+          {s.name}{' '}
+          <span className="text-xs text-muted">
+            ({s.onServer}/{s.episodeCount} on server{requested.includes(s.seasonNumber) ? ', already requested' : ''})
+          </span>
         </label>
       ))}
     </div>
@@ -373,7 +380,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   const lookup = useQuery({ queryKey: ['lookup', m.kind, m.tmdbId], queryFn: () => api<Lookup>(`/api/monitored/lookup/${m.kind}/${m.tmdbId}`) });
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: () => api<Profile[]>('/api/profiles'), enabled: isManager });
   const [requesting, setRequesting] = useState(false);
-  const [seasons, setSeasons] = useState<number[]>(m.seasons.filter((s) => s.seasonNumber > 0 && s.onServer < s.episodeCount).map((s) => s.seasonNumber));
+  const [seasons, setSeasons] = useState<number[] | null>(null);
   const [manual, setManual] = useState(false);
   const [posters, setPosters] = useState(false);
   const [folderSize, setFolderSize] = useState(false);
@@ -403,6 +410,15 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   const mon = lookup.data?.monitored;
   const req = lookup.data?.request;
   const fullyAvailable = m.availability.status === 'on_server';
+  const open = lookup.data?.openRequest ?? null;
+  const requestedSeasons = open && open.seasons !== 'all' ? open.seasons : [];
+  // Seasons someone could still ask for: not all on a server yet, and not already asked for.
+  const missingSeasons = m.seasons
+    .filter((s) => s.seasonNumber > 0 && (s.onServer < s.episodeCount || s.episodeCount === 0) && !requestedSeasons.includes(s.seasonNumber))
+    .map((s) => s.seasonNumber);
+  const picked = seasons ?? missingSeasons;
+  const canRequest =
+    m.kind === 'movie' ? !open && !fullyAvailable : m.seasons.length ? open?.seasons !== 'all' && missingSeasons.length > 0 : !open;
   const chosenRoot = rootId || lookup.data?.folderRoot || (roots.length > 1 ? '' : 'default');
   const download = (root: string) => run(() => api('/api/requests', { body: { kind: m.kind, tmdbId: m.tmdbId, ...(isManager ? { rootId: root } : {}) } }), requested);
   const monitorOnly = (root: string) =>
@@ -411,10 +427,10 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   return (
     <>
       {/* Users can ask for a title even when it's already monitored but not on the server yet. */}
-      {(!mon || !isManager) && !req && !(m.kind === 'movie' && fullyAvailable) && (
+      {(!mon || !isManager) && canRequest && (
         <>
-          <button className="btn-primary" onClick={() => (m.kind === 'show' ? setRequesting(true) : isManager && !chosenRoot ? setAsking('download') : download(chosenRoot))}>
-            {isManager ? 'Download' : 'Request'}
+          <button className="btn-primary" onClick={() => (m.kind === 'show' ? (setSeasons(null), setRequesting(true)) : isManager && !chosenRoot ? setAsking('download') : download(chosenRoot))}>
+            {isManager ? 'Download' : open || req?.status === 'available' ? 'Request more seasons' : 'Request'}
           </button>
         </>
       )}
@@ -427,8 +443,8 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           {fullyAvailable ? 'Monitor for upgrades' : 'Monitor only'}
         </button>
       )}
-      {req && (!mon || !isManager) && <span className="self-center text-sm text-muted">Requested by {req.requestedByName} · {req.status}</span>}
-      {req?.status === 'declined' && req.reason && <span className="self-center text-sm text-danger">Declined: {req.reason}</span>}
+      {req && req.status !== 'declined' && (!mon || !isManager) && <span className="self-center text-sm text-muted">Requested by {req.requestedByName} · {req.status}</span>}
+      {req?.status === 'declined' && !open && <span className="self-center text-sm text-danger">Request declined{req.reason ? `: ${req.reason}` : ''}</span>}
       {mon && isManager && 'profileId' in mon && (
         <>
           <select
@@ -485,7 +501,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
       {requesting && (
         <Modal title={`Request ${m.title}`} onClose={() => setRequesting(false)}>
           <p className="mb-3 text-sm text-muted">Pick the seasons you want.</p>
-          <SeasonPicker seasons={m.seasons} value={seasons} onChange={setSeasons} />
+          <SeasonPicker seasons={m.seasons} value={picked} onChange={setSeasons} requested={requestedSeasons} />
           {isManager && roots.length > 1 && (
             <label className="mt-3 block">
               <span className="label">Library</span>
@@ -494,13 +510,13 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           )}
           <button
             className="btn-primary mt-4"
-            disabled={!seasons.length || (isManager && !chosenRoot)}
+            disabled={!picked.length || (isManager && !chosenRoot)}
             onClick={async () => {
-              await run(() => api('/api/requests', { body: { kind: 'show', tmdbId: m.tmdbId, seasons, ...(isManager ? { rootId: chosenRoot } : {}) } }), requested);
+              await run(() => api('/api/requests', { body: { kind: 'show', tmdbId: m.tmdbId, seasons: picked, ...(isManager ? { rootId: chosenRoot } : {}) } }), requested);
               setRequesting(false);
             }}
           >
-            {isManager ? 'Download' : 'Request'} {seasons.length} season{seasons.length === 1 ? '' : 's'}
+            {isManager ? 'Download' : 'Request'} {picked.length} season{picked.length === 1 ? '' : 's'}
           </button>
         </Modal>
       )}
