@@ -284,7 +284,7 @@ function ChannelCard({ c, startOpen }: { c: Channel; startOpen?: boolean }) {
 export function YoutubePage() {
   const [adding, setAdding] = useState(false);
   const [justAdded, setJustAdded] = useState<number | null>(null);
-  const channels = useQuery({ queryKey: ['yt-channels'], queryFn: () => api<Channel[]>('/api/youtube/channels'), refetchInterval: 30_000 });
+  const channels = useQuery({ queryKey: ['yt-channels'], queryFn: () => api<Channel[]>('/api/youtube/channels') });
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">

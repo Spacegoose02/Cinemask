@@ -263,7 +263,7 @@ function BookRequests() {
   const [status, setStatus] = useState(isManager ? 'pending' : 'all');
   const [error, setError] = useState('');
   const [matching, setMatching] = useState<BookRequest | null>(null);
-  const list = useQuery({ queryKey: ['book-requests', status], queryFn: () => api<BookRequest[]>(`/api/books?status=${status}`), refetchInterval: 15_000 });
+  const list = useQuery({ queryKey: ['book-requests', status], queryFn: () => api<BookRequest[]>(`/api/books?status=${status}`) });
   const act = async (fn: () => Promise<unknown>) => {
     setError('');
     try {

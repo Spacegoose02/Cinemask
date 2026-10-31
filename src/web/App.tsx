@@ -6,6 +6,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { api, hasRole, type AuthStatus, type Role } from './lib/api';
 import { useAuth } from './lib/auth';
+import { useOnline } from './lib/pwa';
 import { FamilyPanel } from './components/FamilyPanel';
 import { FilesPanel } from './components/FilesPanel';
 import { MediaActions } from './components/MediaActions';
@@ -51,7 +52,11 @@ export function App() {
   const { me, loading } = useAuth();
   const location = useLocation();
   const status = useQuery({ queryKey: ['auth-status'], queryFn: () => api<AuthStatus>('/api/auth/status') });
+  const online = useOnline();
 
+  // Opened from the home screen with no connection, or the server is down: say so instead of
+  // spinning. Queries resume on their own once the connection is back.
+  if ((!online && (loading || status.isLoading)) || status.isError) return <Unreachable offline={!online} retry={() => void status.refetch()} />;
   if (loading || status.isLoading) return <div className="p-8 text-muted">Loading…</div>;
   if (status.data?.needsSetup) return location.pathname === '/setup' ? <SetupPage /> : <Navigate to="/setup" replace />;
   if (!me) {
@@ -120,5 +125,22 @@ export function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
+  );
+}
+
+function Unreachable({ offline, retry }: { offline: boolean; retry: () => void }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-8 text-center">
+      <img src="/logo-128.png" alt="" className="h-20 w-20 opacity-80" />
+      <h1 className="text-xl font-semibold">{offline ? "You're offline" : "Can't reach Cinemask"}</h1>
+      <p className="max-w-sm text-sm text-muted">
+        {offline ? 'Cinemask will open as soon as you are back online.' : 'The server is not answering right now. Check that it is running, then try again.'}
+      </p>
+      {!offline && (
+        <button className="btn-primary" onClick={retry}>
+          Try again
+        </button>
+      )}
+    </div>
   );
 }

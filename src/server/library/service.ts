@@ -285,6 +285,9 @@ export class LibrarySync {
       return this.status;
     } finally {
       this.status.running = false;
+      // New titles, and requests that became available, show up in open tabs without a refresh.
+      this.ctx.live.publish({ topic: 'library', access: 'user' });
+      this.ctx.live.publish({ topic: 'requests', access: 'user' });
     }
   }
 
