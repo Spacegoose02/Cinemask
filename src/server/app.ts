@@ -45,6 +45,8 @@ import { loadOrCreateSecretKey } from './security/crypto.js';
 import { settingsRoutes } from './settings/routes.js';
 import { SettingsStore } from './settings/store.js';
 import { userRoutes } from './users/routes.js';
+import { LiveBus } from './live/bus.js';
+import { registerLive } from './live/routes.js';
 
 export interface BuiltApp {
   app: FastifyInstance;
@@ -78,6 +80,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
     },
     secretKey,
     settings: undefined as unknown as SettingsStore,
+    live: new LiveBus(),
   };
   ctx.settings = new SettingsStore(() => ctx.db, () => ctx.secretKey);
   seedProfiles(ctx);
@@ -128,6 +131,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   await app.register(cookie);
   await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute' });
   registerGuard(app);
+  registerLive(app);
 
   app.get('/api/health', { config: { access: 'public' } }, async () => ({ status: 'ok' }));
   await app.register(authRoutes);

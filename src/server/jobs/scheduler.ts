@@ -18,6 +18,7 @@ import { purgeHttpCache } from '../integrations/tmdb.js';
 import { sweepTrailers } from '../trailers/service.js';
 import { checkDueChannels, downloadWanted, requeueInterrupted } from '../youtube/service.js';
 import type { LibrarySync } from '../library/service.js';
+import { JOB_TOPICS } from '../live/bus.js';
 
 /** Background jobs. Kept in-process: a household install doesn't need a separate worker. */
 export class Scheduler {
@@ -86,6 +87,8 @@ export class Scheduler {
       this.busy.add(name);
       try {
         await fn();
+        const live = JOB_TOPICS[name];
+        if (live) this.app.ctx.live.publish(live);
       } catch (err) {
         this.app.log.error({ err }, `Job ${name} failed`);
       } finally {
