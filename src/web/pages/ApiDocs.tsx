@@ -1,3 +1,4 @@
+import { LoadError } from '../components/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../lib/api';
@@ -21,7 +22,7 @@ export function ApiDocsPage() {
   const spec = useQuery({ queryKey: ['openapi'], queryFn: () => api<Spec>('/api/openapi.json') });
   const [filter, setFilter] = useState('');
   const [keysOnly, setKeysOnly] = useState(true);
-  if (!spec.data) return null;
+  if (!spec.data) return <LoadError queries={[spec]} />;
   const f = filter.trim().toLowerCase();
   const ops = Object.entries(spec.data.paths).flatMap(([path, methods]) => Object.entries(methods).map(([method, op]) => ({ path, method, op })));
   const shown = ops.filter((o) => (!keysOnly || o.op['x-api-key']) && (!f || o.path.includes(f) || o.op.summary.toLowerCase().includes(f)));

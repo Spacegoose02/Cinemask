@@ -1,7 +1,8 @@
 import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 import { requestAvailable } from '../notify/events.js';
 import type { AppContext } from '../context.js';
-import { libraryEpisodes, libraryItems, matchOverrides, media, requests, type MediaKind, type ServerType } from '../db/schema.js';
+import { libraryEpisodes, libraryItems, matchOverrides, media, monitoredEpisodes, requests, type MediaKind, type ServerType } from '../db/schema.js';
+import { localDay } from '../lib/dates.js';
 import { bestResolution } from '../integrations/http.js';
 import { BingeBanditClient } from '../integrations/bingebandit.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
@@ -13,7 +14,7 @@ import { pickTrailer, releaseDates, TmdbClient, type TmdbSearchResult } from '..
 export type Availability = 'on_server' | 'partial' | 'not_on_server' | 'not_available';
 
 const METADATA_MAX_AGE = 3 * 24 * 60 * 60 * 1000;
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDay();
 
 export function tmdbClient(ctx: AppContext): TmdbClient {
   const m = ctx.settings.get('metadata');
@@ -171,6 +172,24 @@ export function episodesOnServer(ctx: AppContext, tmdbId: number): Map<string, {
   return map;
 }
 
+/**
+ * Whether every aired episode of the seasons a show request asked for is on a server (or imported), so the request
+ * isn't called ready while only last year's season is there (or before the season has aired). Without an episode
+ * list to go by, the show being on a server is enough, as before.
+ */
+export function requestedEpisodesHere(ctx: AppContext, r: typeof requests.$inferSelect): boolean {
+  if (r.monitoredId === null) return true;
+  const asked = r.seasons ? new Set(JSON.parse(r.seasons) as number[]) : null;
+  const day = today();
+  const episodes = ctx.db.select().from(monitoredEpisodes).where(eq(monitoredEpisodes.monitoredId, r.monitoredId)).all();
+  if (!episodes.length) return true;
+  // A season that hasn't aired yet isn't ready either.
+  const aired = episodes.filter((e) => e.season > 0 && (!asked || asked.has(e.season)) && e.airDate !== null && e.airDate <= day);
+  if (!aired.length) return false;
+  const here = episodesOnServer(ctx, r.tmdbId);
+  return aired.every((e) => e.filePath || here.has(`${e.season}:${e.episode}`));
+}
+
 export function toCard(kind: MediaKind, r: TmdbSearchResult) {
   return {
     kind,
@@ -275,6 +294,7 @@ export class LibrarySync {
     for (const r of approved) {
       const status = availabilityFor(this.ctx, r.kind, [{ tmdbId: r.tmdbId }]).get(r.tmdbId)!.status;
       if (status !== 'on_server') continue;
+      if (r.kind === 'show' && !requestedEpisodesHere(this.ctx, r)) continue;
       this.ctx.db.update(requests).set({ status: 'available' }).where(eq(requests.id, r.id)).run();
       requestAvailable(this.ctx, r);
     }

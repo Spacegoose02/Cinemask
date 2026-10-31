@@ -1,3 +1,4 @@
+import { LoadError } from '../components/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -116,6 +117,7 @@ export function LibraryPage() {
           <AiringRow title="Recently aired" items={airing.data?.recent ?? []} more="/calendar" />
         </>
       )}
+      <LoadError queries={[lib]} />
       {lib.data && lib.data.total === 0 && (
         <div className="card text-sm text-muted">Nothing here yet. An admin can connect BingeBandit, Plex or Jellyfin in Settings → Media servers.</div>
       )}

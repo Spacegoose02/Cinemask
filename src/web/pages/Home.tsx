@@ -6,7 +6,7 @@ import { MediaRow } from '../components/media';
 import { Modal } from '../components/Modal';
 import { Alert } from '../components/ui';
 import { collectionLibraries, inLibrary } from '../lib/collections';
-import { api } from '../lib/api';
+import { api, localDay } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { mediaPath, poster, type MediaCardData } from '../lib/media';
 import { nightWhen, useMovieNights } from './MovieNights';
@@ -20,7 +20,7 @@ type HomeRow =
 
 type Card = MediaCardData & { backdropPath?: string | null; overview?: string };
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+const iso = (d: Date) => localDay(d);
 const KIND_NAME = { all: '', movie: 'movies', tv: 'shows' } as const;
 
 function rowKey(r: HomeRow) {

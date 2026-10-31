@@ -34,11 +34,11 @@ export function Stars({ value, onChange, size = 'text-xl' }: { value: number; on
   );
 }
 
-/** A datetime-local value for tonight at 8pm, or tomorrow's if that has passed. */
+/** A datetime-local value for tonight at 8pm, or tomorrow's if that's less than half an hour away. */
 function tonight() {
   const d = new Date();
-  if (d.getHours() >= 19) d.setDate(d.getDate() + 1);
   d.setHours(20, 0, 0, 0);
+  if (d.getTime() - Date.now() < 30 * 60 * 1000) d.setDate(d.getDate() + 1);
   return toLocalInput(d.getTime());
 }
 export const toLocalInput = (ms: number) => {

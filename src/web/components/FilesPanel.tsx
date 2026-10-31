@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, formatBytes, hasRole } from '../lib/api';
+import { api, formatBytes, hasRole, localDay } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { mediaPath } from '../lib/media';
 import type { MediaDetail } from '../pages/MediaDetail';
@@ -74,7 +74,7 @@ function DownloadStatus({ a }: { a: Activity }) {
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDay();
 const base = (p: string) => p.split(/[\\/]/).pop();
 
 function RenameModal({ id, onClose, onDone }: { id: number; onClose: () => void; onDone: (msg: string) => void }) {

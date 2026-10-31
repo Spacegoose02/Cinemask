@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, ne, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, or } from 'drizzle-orm';
 import { notify } from '../notify/service.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -33,6 +33,12 @@ const seasonsSchema = z.array(z.number().int().min(0).max(500)).max(200).nullabl
 const rootIdSchema = z.string().regex(/^[a-z0-9-]{1,40}$/);
 /** MB per movie or per episode; null uses the default from settings, 0 means no limit. */
 const maxSizeSchema = z.number().int().min(0).max(1_000_000).nullable();
+
+/** The seasons open (pending or approved) show requests cover between them, or 'all' when one asked for every season. */
+function openSeasons(open: { seasons: string | null }[]): number[] | 'all' {
+  if (open.some((r) => r.seasons === null)) return 'all';
+  return [...new Set(open.flatMap((r) => JSON.parse(r.seasons!) as number[]))].sort((a, b) => a - b);
+}
 
 export async function arrRoutes(app: FastifyInstance) {
   const ctx = app.ctx;
@@ -83,8 +89,25 @@ export async function arrRoutes(app: FastifyInstance) {
       .select()
       .from(requests)
       .where(and(eq(requests.kind, body.kind), eq(requests.tmdbId, body.tmdbId), inArray(requests.status, ['pending', 'approved'])))
-      .get();
-    if (open) return open;
+      .orderBy(desc(requests.createdAt))
+      .all();
+    // Seasons a show request asks for beyond the open ones (null: every season).
+    let seasons = body.seasons ?? null;
+    if (open.length) {
+      const covered = openSeasons(open);
+      if (body.kind === 'movie' || covered === 'all') return open[0];
+      const extra = seasons === null ? null : seasons.filter((n) => !covered.includes(n));
+      if (extra?.length === 0) return open[0];
+      // Their own request still waiting for approval: one request with all the seasons is easier to approve than two.
+      const pending = open.find((r) => r.status === 'pending' && r.requestedBy === req.user!.id);
+      if (pending && !hasRole(req.user!.role, 'manager')) {
+        const merged = extra === null || pending.seasons === null ? null : [...new Set([...(JSON.parse(pending.seasons) as number[]), ...extra])].sort((a, b) => a - b);
+        db().update(requests).set({ seasons: merged ? JSON.stringify(merged) : null }).where(eq(requests.id, pending.id)).run();
+        audit(db(), req, 'request.seasons_added', { target: `${meta.title} (${meta.year ?? '?'})`, details: { seasons: extra } });
+        return db().select().from(requests).where(eq(requests.id, pending.id)).get();
+      }
+      seasons = extra;
+    }
     const created = db()
       .insert(requests)
       .values({
@@ -93,7 +116,7 @@ export async function arrRoutes(app: FastifyInstance) {
         title: meta.title,
         year: meta.year,
         posterPath: meta.posterPath,
-        seasons: body.seasons ? JSON.stringify(body.seasons) : null,
+        seasons: seasons ? JSON.stringify(seasons) : null,
         status: 'pending',
         requestedBy: req.user!.id,
         requestedByName: req.user!.displayName || req.user!.username,
@@ -191,14 +214,20 @@ export async function arrRoutes(app: FastifyInstance) {
   app.get('/api/monitored/lookup/:kind/:tmdbId', { config: { access: 'user' } }, async (req) => {
     const p = parse(z.object({ kind, tmdbId: z.coerce.number().int().positive() }), req.params);
     const row = db().select().from(monitored).where(and(eq(monitored.kind, p.kind), eq(monitored.tmdbId, p.tmdbId))).get();
-    const request = db().select().from(requests).where(and(eq(requests.kind, p.kind), eq(requests.tmdbId, p.tmdbId), ne(requests.status, 'declined'))).orderBy(desc(requests.createdAt)).get();
+    // The newest request, declined ones too so the person who asked can see why.
+    const request = db().select().from(requests).where(and(eq(requests.kind, p.kind), eq(requests.tmdbId, p.tmdbId))).orderBy(desc(requests.createdAt)).get();
+    const open = db()
+      .select()
+      .from(requests)
+      .where(and(eq(requests.kind, p.kind), eq(requests.tmdbId, p.tmdbId), inArray(requests.status, ['pending', 'approved'])))
+      .all();
     const manager = hasRole(req.user!.role, 'manager');
     // Where it is on disk, for managers: its folder, or one found in the media folders.
     const disk = manager ? titleOnDisk(ctx, p.kind, p.tmdbId) : null;
     const folder = manager ? (disk?.path ?? null) : undefined;
     // The root folder it's in on disk, for the Move button.
     const folderRoot = manager && disk ? (disk.rootId ?? 'default') : undefined;
-    return { monitored: row && manager ? monitoredView(row) : row ? { id: row.id, monitored: row.monitored } : null, request: request ?? null, folder, folderRoot };
+    return { monitored: row && manager ? monitoredView(row) : row ? { id: row.id, monitored: row.monitored } : null, request: request ?? null, openRequest: open.length ? { seasons: openSeasons(open) } : null, folder, folderRoot };
   });
 
   app.post('/api/monitored', { config: { access: 'manager' } }, async (req) => {

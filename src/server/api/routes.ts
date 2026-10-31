@@ -7,6 +7,7 @@ import { calendar } from '../calendar/service.js';
 import { sendWebhook } from '../notify/service.js';
 import { badRequest } from '../lib/errors.js';
 import { buildOpenApi } from './openapi.js';
+import { localDay } from '../lib/dates.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -23,8 +24,8 @@ export async function apiRoutes(app: FastifyInstance) {
     const distinctTitles = (kind: 'movie' | 'show') =>
       count(ctx.db.select({ n: sql<number>`count(distinct coalesce(${libraryItems.tmdbId}, ${libraryItems.title}))` }).from(libraryItems).where(eq(libraryItems.kind, kind)).all());
     const reqCount = (status: 'pending' | 'approved' | 'available') => count(ctx.db.select({ n }).from(requests).where(eq(requests.status, status)).all());
-    const today = new Date().toISOString().slice(0, 10);
-    const week = new Date(Date.now() + 7 * DAY).toISOString().slice(0, 10);
+    const today = localDay();
+    const week = localDay(Date.now() + 7 * DAY);
     const upcoming = calendar(ctx, today, week);
     const isAdmin = hasRole(req.user!.role, 'admin');
     const summary = isAdmin ? app.healthSummary() : null;

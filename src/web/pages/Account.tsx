@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Alert, Field } from '../components/ui';
+import { Alert, Field, LoadError } from '../components/ui';
 import { api, formatDate } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { signInWithPlex } from '../lib/plex';
@@ -41,7 +41,12 @@ export function AccountPage() {
   });
 
   const revoke = async (id: string) => {
-    await api(`/api/auth/sessions/${id}`, { method: 'DELETE' });
+    setMsg(null);
+    try {
+      await api(`/api/auth/sessions/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      setMsg({ kind: 'error', text: (e as Error).message });
+    }
     await qc.invalidateQueries({ queryKey: ['sessions'] });
   };
 
@@ -57,6 +62,7 @@ export function AccountPage() {
   return (
     <div className="max-w-2xl space-y-6">
       <h1 className="text-2xl font-semibold">Account</h1>
+      <LoadError queries={[sessions]} />
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
 
       <section className="card space-y-3">

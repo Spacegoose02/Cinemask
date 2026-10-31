@@ -1,8 +1,15 @@
 let csrfToken = '';
+let onSignedOut: (() => void) | null = null;
 
 export function setCsrfToken(token: string) {
   csrfToken = token;
 }
+
+/** Called when the server says this browser's session is gone (expired, revoked, signed out elsewhere). */
+export function setSignedOutHandler(fn: (() => void) | null) {
+  onSignedOut = fn;
+}
+
 
 export class ApiError extends Error {
   constructor(
@@ -29,6 +36,8 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   if (!res.ok) {
     // This tab's token is from an older session (signed in again in another tab, say): fetch the current one and try once more.
     if (res.status === 403 && data?.code === 'csrf' && !retried && (await refreshCsrfToken())) return api<T>(path, init, true);
+    // The access guard's "not signed in" (a wrong password at sign-in has its own code).
+    if (res.status === 401 && data?.code === 'unauthorized') onSignedOut?.();
     throw new ApiError(res.status, data?.error ?? res.statusText, data?.code);
   }
   return data as T;
@@ -37,7 +46,10 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
 async function refreshCsrfToken(): Promise<boolean> {
   const res = await fetch('/api/auth/me', { headers: { 'x-requested-with': 'fetch' }, credentials: 'same-origin' });
   if (!res.ok) {
-    if (res.status === 401) throw new ApiError(401, 'You were signed out. Reload the page and sign in again.', 'unauthorized');
+    if (res.status === 401) {
+      onSignedOut?.();
+      throw new ApiError(401, 'You were signed out. Sign in again.', 'unauthorized');
+    }
     return false;
   }
   const r = (await res.json()) as { csrfToken: string | null };
@@ -67,6 +79,12 @@ export interface AuthStatus {
 
 export const RANK: Record<Role, number> = { user: 1, manager: 2, admin: 3 };
 export const hasRole = (me: Me | null | undefined, role: Role) => Boolean(me && RANK[me.role] >= RANK[role]);
+
+/** A day as YYYY-MM-DD on this device's calendar, to compare with air and release dates (which are local days). */
+export function localDay(d: Date | number = new Date()): string {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}
 
 export function formatDate(ms: number | null | undefined): string {
   return ms ? new Date(ms).toLocaleString() : 'Never';

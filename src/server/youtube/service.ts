@@ -12,6 +12,7 @@ import { refreshMediaServers } from "../arr/tracker.js";
 import { sanitizeSegment } from "../arr/naming.js";
 import { insideRoot } from "../lib/paths.js";
 import { ytDlpBinary } from "../trailers/service.js";
+import { localDay } from '../lib/dates.js';
 
 export type ChannelRow = typeof youtubeChannels.$inferSelect;
 export type VideoRow = typeof youtubeVideos.$inferSelect;
@@ -417,7 +418,7 @@ export async function downloadVideo(
   const date =
     ymd(info.upload_date) ??
     v.publishedAt ??
-    new Date().toISOString().slice(0, 10);
+    localDay();
   const title = (info.title ?? v.title).slice(0, 300);
   const { root, dir } = channelFolder(ctx, ch);
   const seasonDir = path.join(dir, `Season ${date.slice(0, 4)}`);

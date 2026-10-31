@@ -7,6 +7,7 @@ import type { Target } from './decision.js';
 import { belowCutoff, defaultProfileId, searchProfile } from './profiles.js';
 import { qualityFor } from './quality.js';
 import { assertRoot } from './roots.js';
+import { localDay } from '../lib/dates.js';
 
 export type MonitoredRow = typeof monitored.$inferSelect;
 
@@ -17,7 +18,7 @@ export interface SearchFilter {
   missingOnly?: boolean;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDay();
 
 /** Starts watching a title (or updates how it's watched). Shows get their episode list from TMDB. */
 export async function monitorTitle(

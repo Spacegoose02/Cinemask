@@ -258,7 +258,7 @@ export function MediaManagementSettings() {
             )}
             {!tiers.length && (
               <button
-                className="btn-secondary"
+                className="btn-secondary max-w-full whitespace-normal text-left"
                 onClick={() =>
                   d.set('episodeSizeByRuntime', [
                     { minutes: 30, gb: 0.8 },

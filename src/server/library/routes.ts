@@ -8,6 +8,7 @@ import { bestResolution, IntegrationError } from '../integrations/http.js';
 import { HttpError } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { availabilityFor, cards, episodesOnServer, isReleased, mdblistClient, refreshMetadata, tmdbClient, watchInfo, type LibrarySync } from './service.js';
+import { localDay } from '../lib/dates.js';
 
 const kindParam = z.enum(MEDIA_KINDS);
 
@@ -166,7 +167,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
         airDate: s.air_date,
         onServer: [...eps.keys()].filter((k) => k.startsWith(`${s.season_number}:`)).length,
       }));
-      const airedTotal = show.seasons.filter((s) => s.season_number > 0 && s.air_date && s.air_date <= new Date().toISOString().slice(0, 10)).reduce((n, s) => n + s.episode_count, 0);
+      const airedTotal = show.seasons.filter((s) => s.season_number > 0 && s.air_date && s.air_date <= localDay()).reduce((n, s) => n + s.episode_count, 0);
       cast = (show.aggregate_credits?.cast ?? [])
         .sort((a, b) => a.order - b.order)
         .slice(0, CAST_SIZE)

@@ -1,4 +1,7 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { useSyncExternalStore } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { LoadError } from '../components/ui';
 import { ActivitySettings } from './settings/Activity';
 import { ApiSettings } from './settings/ApiSettings';
 import { BookSettings } from './settings/Books';
@@ -34,6 +37,30 @@ const TABS = [
   { path: 'activity', label: 'Activity log', element: <ActivitySettings /> },
 ];
 
+// What the settings tabs load. A tab whose data fails shows nothing of its own, so this says why.
+const LOADED_HERE = new Set(['settings', 'audit', 'all-api-keys', 'backups', 'clients', 'indexers', 'profiles', 'users']);
+
+function SettingsLoadError() {
+  const qc = useQueryClient();
+  const cache = qc.getQueryCache();
+  const failed = useSyncExternalStore(
+    (onChange) => cache.subscribe(onChange),
+    () =>
+      cache
+        .getAll()
+        .filter((q) => q.state.status === 'error' && q.getObserversCount() > 0 && LOADED_HERE.has(String(q.queryKey[0])))
+        .map((q) => q.queryHash)
+        .join('\n'),
+  );
+  const queries = failed
+    ? failed.split('\n').flatMap((hash) => {
+        const q = cache.get(hash);
+        return q ? [{ error: q.state.error, refetch: () => q.fetch().catch(() => undefined) }] : [];
+      })
+    : [];
+  return <LoadError queries={queries} />;
+}
+
 export function SettingsPage() {
   return (
     <div className="space-y-6">
@@ -49,6 +76,7 @@ export function SettingsPage() {
           </NavLink>
         ))}
       </div>
+      <SettingsLoadError />
       <Routes>
         {TABS.map((t) => (
           <Route key={t.path} path={t.path} element={t.element} />

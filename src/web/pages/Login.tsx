@@ -1,9 +1,10 @@
 import { Brand } from '../components/Brand';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Alert, Field } from '../components/ui';
 import { api, type AuthStatus } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { signInWithPlex } from '../lib/plex';
 
 const SSO_ERRORS: Record<string, string> = {
@@ -20,8 +21,8 @@ const SSO_ERRORS: Record<string, string> = {
 
 export function LoginPage({ status }: { status: AuthStatus }) {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const [params] = useSearchParams();
+  const { expired } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(() => {
@@ -30,9 +31,9 @@ export function LoginPage({ status }: { status: AuthStatus }) {
   });
   const [busy, setBusy] = useState(false);
 
+  // Once signed in, the app sends them on to the page they were trying to open.
   const done = async () => {
     await qc.invalidateQueries();
-    navigate('/');
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -68,6 +69,7 @@ export function LoginPage({ status }: { status: AuthStatus }) {
       <div className="card w-full max-w-sm space-y-4">
         <h1 className="text-xl font-semibold">Sign in</h1>
         {error && <Alert>{error}</Alert>}
+        {!error && expired && <Alert kind="info">You were signed out. Sign in again to carry on.</Alert>}
         {status.methods.oidc && (
           <a className="btn-primary w-full" href="/api/auth/oidc/start">
             {status.methods.oidc.label}
