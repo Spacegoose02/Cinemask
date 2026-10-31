@@ -1,6 +1,6 @@
 {
   "name": "cinemask",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "private": true,
   "description": "Self-hosted family media manager for Plex and Jellyfin households.",
   "type": "module",
