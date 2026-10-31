@@ -13,6 +13,8 @@ const EVENTS: { id: string; label: string }[] = [
   { id: 'download.failed', label: 'A download fails' },
   { id: 'download.warning', label: 'A download is over the size limit' },
   { id: 'health.problem', label: 'A health check starts failing' },
+  { id: 'movie_night.created', label: 'Someone plans a movie night' },
+  { id: 'movie_night.reminder', label: 'A movie night starts within the hour' },
 ];
 
 interface KeyRow {

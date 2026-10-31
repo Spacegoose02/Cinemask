@@ -10,6 +10,7 @@ import { rssSync, searchMissing } from '../arr/rss.js';
 import { trackDownloads } from '../arr/tracker.js';
 import { scanWatchFolder } from '../arr/watch.js';
 import { refreshMonitored } from '../calendar/service.js';
+import { remindMovieNights } from '../fun/nights.js';
 import { pollReadMeABook, pollShelfmark, syncAudiobookshelf } from '../books/service.js';
 import { syncCollections } from '../collections/service.js';
 import { syncDueLists } from '../lists/service.js';
@@ -67,6 +68,8 @@ export class Scheduler {
       cron.schedule('50 * * * *', this.once('trailers', () => sweepTrailers(this.app.ctx))),
       cron.schedule('5 * * * *', this.once('youtube-check', () => checkDueChannels(this.app.ctx))),
       cron.schedule('*/5 * * * *', this.once('youtube-download', () => downloadWanted(this.app.ctx))),
+      // "Movie night soon" goes out within the hour before it starts.
+      cron.schedule('*/5 * * * *', this.once('movie-nights', async () => remindMovieNights(this.app.ctx))),
     ];
     requeueInterrupted(this.app.ctx);
     // First health run shortly after start, so the nav badge is right without waiting an hour.

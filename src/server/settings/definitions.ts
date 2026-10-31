@@ -278,7 +278,7 @@ export const SETTINGS = {
       enabled: z.boolean().default(false),
       /** Where events are POSTed as JSON, e.g. a Home Assistant webhook: http://homeassistant:8123/api/webhook/<id> */
       webhookUrl: httpUrl.default(''),
-      events: z.array(z.enum(NOTIFY_EVENTS)).max(NOTIFY_EVENTS.length).default(['request.created', 'request.available', 'download.failed', 'download.warning', 'health.problem']),
+      events: z.array(z.enum(NOTIFY_EVENTS)).max(NOTIFY_EVENTS.length).default(['request.created', 'request.available', 'download.failed', 'download.warning', 'health.problem', 'movie_night.created', 'movie_night.reminder']),
     }),
     // The webhook id in the URL is what authorises calls to it.
     secrets: ['webhookUrl'],

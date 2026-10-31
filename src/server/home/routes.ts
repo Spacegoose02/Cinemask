@@ -17,6 +17,9 @@ export const homeRow = z.discriminatedUnion('type', [
   z.object({ type: z.literal('list'), id: z.number().int().positive() }),
   z.object({ type: z.literal('collection'), id: z.number().int().positive() }),
   z.object({ type: z.literal('collections') }),
+  z.object({ type: z.literal('family_favorites') }),
+  z.object({ type: z.literal('because_you_liked') }),
+  z.object({ type: z.literal('movie_nights') }),
 ]);
 export type HomeRow = z.infer<typeof homeRow>;
 
@@ -30,6 +33,9 @@ export const DEFAULT_HOME: HomeRow[] = [
   { type: 'trending', kind: 'movie' },
   { type: 'trending', kind: 'tv' },
   { type: 'collections' },
+  { type: 'movie_nights' },
+  { type: 'family_favorites' },
+  { type: 'because_you_liked' },
 ];
 
 /** Each person picks and orders the rows on their own homepage. */

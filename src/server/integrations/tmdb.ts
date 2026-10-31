@@ -133,6 +133,10 @@ export class TmdbClient {
     return this.get<Paged<TmdbSearchResult>>(`/${kind}/popular`, { page, region: this.region });
   }
 
+  recommendations(kind: 'movie' | 'tv', id: number) {
+    return this.get<Paged<TmdbSearchResult>>(`/${kind}/${id}/recommendations`, {}, 24 * 60 * 60 * 1000);
+  }
+
   upcomingMovies(page = 1) {
     return this.get<Paged<TmdbSearchResult>>('/movie/upcoming', { page, region: this.region });
   }

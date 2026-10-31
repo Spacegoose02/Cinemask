@@ -9,9 +9,10 @@ import { collectionLibraries, inLibrary } from '../lib/collections';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { mediaPath, poster, type MediaCardData } from '../lib/media';
+import { nightWhen, useMovieNights } from './MovieNights';
 
 type HomeRow =
-  | { type: 'featured' | 'upcoming' | 'requests' | 'collections' | 'airing_next' | 'airing_recent' }
+  | { type: 'featured' | 'upcoming' | 'requests' | 'collections' | 'airing_next' | 'airing_recent' | 'family_favorites' | 'because_you_liked' | 'movie_nights' }
   | { type: 'recent'; kind?: 'movie' | 'show'; library?: string }
   | { type: 'trending'; kind: 'all' | 'movie' | 'tv' }
   | { type: 'popular'; kind: 'movie' | 'tv' }
@@ -48,6 +49,12 @@ function useNames() {
         return 'My requests';
       case 'collections':
         return 'Collections';
+      case 'family_favorites':
+        return 'Family favorites';
+      case 'because_you_liked':
+        return 'Because you liked…';
+      case 'movie_nights':
+        return 'Movie nights';
       case 'trending':
         return `Trending ${KIND_NAME[r.kind]}`.trim();
       case 'popular':
@@ -82,7 +89,12 @@ async function loadRow(r: HomeRow): Promise<Card[]> {
       return (await api<{ items: Card[] }>(`/api/lists/${r.id}/items?limit=30`)).items;
     case 'collection':
       return (await api<{ items: Card[] }>(`/api/collections/${r.id}`)).items;
+    case 'family_favorites':
+      return (await api<{ items: Card[] }>('/api/ratings/favorites')).items;
+    case 'because_you_liked':
+      return (await api<{ results: Card[] }>('/api/ratings/because')).results;
     case 'collections':
+    case 'movie_nights':
     case 'airing_next':
     case 'airing_recent':
       return [];
@@ -157,6 +169,41 @@ function Airing({ which, label }: { which: 'next' | 'recent'; label: string }) {
   return <AiringRow title={label} items={q.data?.[which] ?? []} more="/calendar" />;
 }
 
+/** Recommendations from the title this person last loved, named in the row's title. */
+function BecauseYouLiked() {
+  const q = useQuery({ queryKey: ['home-row', 'because_you_liked'], queryFn: () => api<{ basedOn: { title: string } | null; results: Card[] }>('/api/ratings/because') });
+  if (!q.data?.basedOn) return null;
+  return <MediaRow title={`Because you liked ${q.data.basedOn.title}`} items={q.data.results} />;
+}
+
+function MovieNightsRow() {
+  const q = useMovieNights();
+  const upcoming = q.data?.upcoming ?? [];
+  if (!upcoming.length) return null;
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-lg font-semibold">Movie nights</h2>
+        <Link to="/movie-nights" className="text-sm text-muted hover:text-accent">
+          See all
+        </Link>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-2">
+        {upcoming.map((n) => (
+          <Link key={n.id} to="/movie-nights" className="card flex w-72 shrink-0 gap-3 p-3 hover:border-accent">
+            <div className="w-14 shrink-0 overflow-hidden rounded border border-border bg-surface-2">{n.posterPath ? <img src={poster(n.posterPath, 'w185')!} alt="" className="w-full" /> : <div className="aspect-[2/3]" />}</div>
+            <div className="min-w-0 text-sm">
+              <div className="text-xs text-accent">{nightWhen(n.startsAt)}</div>
+              <div className="truncate font-semibold">{n.title}</div>
+              <div className="text-muted">{n.rsvps.filter((r) => r.answer === 'yes').length} going{n.myAnswer ? '' : ' · RSVP'}</div>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Row({ row, label, more }: { row: HomeRow; label: string; more?: string }) {
   const q = useQuery({ queryKey: ['home-row', rowKey(row)], queryFn: () => loadRow(row) });
   return <MediaRow title={label} items={q.data ?? []} more={more} />;
@@ -181,6 +228,9 @@ function Customize({ rows, onClose }: { rows: HomeRow[]; onClose: () => void }) 
     { type: 'upcoming' },
     { type: 'requests' },
     { type: 'collections' },
+    { type: 'movie_nights' },
+    { type: 'family_favorites' },
+    { type: 'because_you_liked' },
     { type: 'trending', kind: 'all' },
     { type: 'trending', kind: 'movie' },
     { type: 'trending', kind: 'tv' },
@@ -266,6 +316,10 @@ export function HomePage() {
           <Featured key="featured" />
         ) : r.type === 'collections' ? (
           <CollectionsRow key="collections" items={collections} />
+        ) : r.type === 'because_you_liked' ? (
+          <BecauseYouLiked key={r.type} />
+        ) : r.type === 'movie_nights' ? (
+          <MovieNightsRow key={r.type} />
         ) : r.type === 'airing_next' || r.type === 'airing_recent' ? (
           <Airing key={r.type} which={r.type === 'airing_next' ? 'next' : 'recent'} label={label(r)} />
         ) : (
