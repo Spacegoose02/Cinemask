@@ -24,6 +24,8 @@ export interface Decision {
   covers: { season: number; episodes: number[] } | null;
   /** Set when the release is bigger than the size limit: its size per movie or per episode, in bytes. */
   oversize: number | null;
+  /** Set when the only thing holding the release back is the delay profile: when it may be grabbed. */
+  delayedUntil: number | null;
 }
 
 export interface DecideOptions {
@@ -31,6 +33,12 @@ export interface DecideOptions {
   skipCam?: boolean;
   /** Largest wanted size in bytes, per movie or per episode. Bigger releases are still accepted but only used when nothing smaller is. */
   maxSize?: number | null;
+  /** Delay profile: minutes to wait after a release appears, per protocol, before grabbing it automatically. */
+  delay?: { usenet: number; torrent: number; bypassAtCutoff: boolean };
+  /** Releases of this protocol win over equal ones of the other. */
+  preferredProtocol?: 'any' | 'usenet' | 'torrent';
+  /** For tests: the current time. */
+  now?: number;
 }
 
 const THEATRICAL_LABEL = { cam: 'CAM', telesync: 'telesync', telecine: 'telecine', screener: 'screener' } as const;
@@ -85,8 +93,21 @@ export function decide(release: Release, target: Target, profile: Profile, block
   if (blocklisted.has(release.title)) rejections.push('Blocklisted after a failed download');
   if (release.protocol === 'torrent' && release.seeders === 0) rejections.push('No seeders');
 
+  // Delay profile: give a better release time to turn up, unless this one already meets the cutoff.
+  let delayedUntil: number | null = null;
+  const wait = opts.delay ? (release.protocol === 'usenet' ? opts.delay.usenet : release.protocol === 'torrent' ? opts.delay.torrent : 0) : 0;
+  if (wait > 0 && release.publishedAt && !(opts.delay!.bypassAtCutoff && qualityRank(parsed.quality) >= qualityRank(profile.cutoff))) {
+    const until = release.publishedAt + wait * 60_000;
+    const now = opts.now ?? Date.now();
+    if (until > now) {
+      if (!rejections.length) delayedUntil = until;
+      rejections.push(`Waiting ${Math.ceil((until - now) / 60_000)} more min for a better release (delay profile)`);
+    }
+  }
+
   const score =
     qualityRank(parsed.quality) * 1000 +
+    (opts.preferredProtocol && opts.preferredProtocol !== 'any' && release.protocol === opts.preferredProtocol ? 200 : 0) +
     (parsed.proper ? 100 : 0) +
     (parsed.fullSeason ? 50 : 0) +
     Math.min(release.seeders ?? 50, 99);
@@ -95,7 +116,7 @@ export function decide(release: Release, target: Target, profile: Profile, block
   const perItem = release.size ? release.size / Math.max(1, target.kind === 'show' ? (covers?.episodes.length ?? 1) : 1) : null;
   const oversize = opts.maxSize && perItem && perItem > opts.maxSize ? perItem : null;
 
-  return { release, parsed, accepted: rejections.length === 0, rejections, score, covers, oversize };
+  return { release, parsed, accepted: rejections.length === 0, rejections, score, covers, oversize, delayedUntil };
 }
 
 /** Best first: anything within the size limit beats anything over it, then by score. */

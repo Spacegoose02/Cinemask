@@ -616,6 +616,25 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       CREATE INDEX game_rounds_user_idx ON game_rounds(user_id, finished_at);
     `,
   },
+  {
+    id: 21,
+    name: 'request limits, 4K requests, notes and followers',
+    sql: `
+      ALTER TABLE users ADD COLUMN movie_request_limit INTEGER;
+      ALTER TABLE users ADD COLUMN season_request_limit INTEGER;
+      ALTER TABLE users ADD COLUMN can_request_4k INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE requests ADD COLUMN four_k INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE requests ADD COLUMN note TEXT;
+      CREATE TABLE request_followers (
+        request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (request_id, user_id)
+      );
+      CREATE INDEX request_followers_user_idx ON request_followers(user_id);
+      CREATE INDEX requests_user_idx ON requests(requested_by, created_at);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

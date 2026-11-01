@@ -286,6 +286,29 @@ export function MediaManagementSettings() {
           onChange={(v) => d.set('skipCamReleases', v)}
           hint="Never grab releases filmed in a cinema or leaked early (CAM, TS, TC, screener)."
         />
+        <h3 className="pt-2 font-medium">Delay profile</h3>
+        <p className="hint">Waiting a little after a release appears gives a better one (a proper, a higher quality, your preferred protocol) time to show up before anything is grabbed. Manual search can still grab straight away.</p>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Prefer">
+            <select className="input" value={d.values.preferredProtocol ?? 'any'} onChange={(e) => d.set('preferredProtocol', e.target.value)}>
+              <option value="any">Either</option>
+              <option value="usenet">Usenet</option>
+              <option value="torrent">Torrents</option>
+            </select>
+          </Field>
+          <Field label="Usenet delay (minutes)">
+            <input className="input w-28" type="number" min={0} value={d.values.usenetDelayMinutes ?? 0} onChange={(e) => d.set('usenetDelayMinutes', Number(e.target.value))} />
+          </Field>
+          <Field label="Torrent delay (minutes)">
+            <input className="input w-28" type="number" min={0} value={d.values.torrentDelayMinutes ?? 0} onChange={(e) => d.set('torrentDelayMinutes', Number(e.target.value))} />
+          </Field>
+        </div>
+        <Toggle
+          label="Don't wait for releases at the cutoff"
+          checked={d.values.bypassDelayAtCutoff ?? true}
+          onChange={(v) => d.set('bypassDelayAtCutoff', v)}
+          hint="A release that already meets the quality profile's cutoff is grabbed at once."
+        />
         <Toggle
           label="Allow direct downloads from home-network addresses"
           checked={d.values.allowPrivateDirectUrls}

@@ -15,6 +15,7 @@ import { IndexerSettings } from './settings/Indexers';
 import { MediaManagementSettings } from './settings/MediaManagement';
 import { MetadataSettings } from './settings/Metadata';
 import { ProfileSettings } from './settings/Profiles';
+import { RequestSettings } from './settings/Requests';
 import { SignInSettings } from './settings/SignIn';
 import { UserSettings } from './settings/Users';
 
@@ -29,6 +30,7 @@ const TABS = [
   { path: 'download-clients', label: 'Download clients', element: <DownloadClientSettings /> },
   { path: 'books', label: 'Books', element: <BookSettings /> },
   { path: 'import', label: 'Import', element: <ImportSettings /> },
+  { path: 'requests', label: 'Requests', element: <RequestSettings /> },
   { path: 'users', label: 'Users', element: <UserSettings /> },
   { path: 'sign-in', label: 'Sign-in', element: <SignInSettings /> },
   { path: 'api', label: 'API and webhooks', element: <ApiSettings /> },

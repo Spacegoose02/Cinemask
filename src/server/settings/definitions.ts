@@ -237,6 +237,34 @@ export const SETTINGS = {
         .array(z.object({ minutes: z.number().int().min(1).max(600), gb: z.number().min(0.1).max(1000) }))
         .max(10)
         .default([]),
+      /** Delay profile: which protocol wins when both have a fitting release. */
+      preferredProtocol: z.enum(['any', 'usenet', 'torrent']).default('any'),
+      /** Wait this long after a release appears before grabbing it automatically, so a better one can turn up. */
+      usenetDelayMinutes: z.number().int().min(0).max(10080).default(0),
+      torrentDelayMinutes: z.number().int().min(0).max(10080).default(0),
+      /** Grab straight away, delay or not, when the release already meets the profile's cutoff. */
+      bypassDelayAtCutoff: z.boolean().default(true),
+    }),
+    secrets: [],
+  },
+  requests: {
+    schema: z.object({
+      /** How many movies and show seasons each user may request per period. 0 means no limit. Managers have none. */
+      movieLimit: z.number().int().min(0).max(1000).default(0),
+      seasonLimit: z.number().int().min(0).max(1000).default(0),
+      limitDays: z.number().int().min(1).max(90).default(7),
+      /** Profile and library folder an approved 4K request uses. Null and '' fall back to the defaults. */
+      fourKMovieProfile: z.number().int().positive().nullable().default(null),
+      fourKShowProfile: z.number().int().positive().nullable().default(null),
+      fourKMovieRoot: z.string().regex(/^([a-z0-9-]{1,40})?$/).default(''),
+      fourKShowRoot: z.string().regex(/^([a-z0-9-]{1,40})?$/).default(''),
+      /**
+       * Titles already on a streaming service the household has: say so before a request ("warn"),
+       * refuse requests from users ("block"), or say nothing ("off").
+       */
+      streaming: z.enum(['off', 'warn', 'block']).default('warn'),
+      /** TMDB provider ids of the household's services. Empty means any subscription service counts. */
+      streamingProviders: z.array(z.number().int().positive()).max(50).default([]),
     }),
     secrets: [],
   },

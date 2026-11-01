@@ -22,6 +22,9 @@ function toPublic(u: UserRow) {
     disabled: u.disabled,
     autoApproveMovies: u.autoApproveMovies,
     autoApproveShows: u.autoApproveShows,
+    movieRequestLimit: u.movieRequestLimit,
+    seasonRequestLimit: u.seasonRequestLimit,
+    canRequest4k: u.canRequest4k,
     hasPassword: Boolean(u.passwordHash),
     linked: { oidc: Boolean(u.oidcSubject), plex: Boolean(u.plexId) },
     locked: u.lockedUntil !== null && u.lockedUntil > Date.now(),
@@ -92,6 +95,10 @@ export async function userRoutes(app: FastifyInstance) {
         unlock: z.boolean().optional(),
         autoApproveMovies: z.boolean().optional(),
         autoApproveShows: z.boolean().optional(),
+        /** Null uses the default from Settings → Requests; 0 means no limit. */
+        movieRequestLimit: z.number().int().min(0).max(1000).nullable().optional(),
+        seasonRequestLimit: z.number().int().min(0).max(1000).nullable().optional(),
+        canRequest4k: z.boolean().optional(),
       }),
       req.body,
     );
@@ -108,6 +115,9 @@ export async function userRoutes(app: FastifyInstance) {
     if (body.disabled !== undefined) patch.disabled = body.disabled;
     if (body.autoApproveMovies !== undefined) patch.autoApproveMovies = body.autoApproveMovies;
     if (body.autoApproveShows !== undefined) patch.autoApproveShows = body.autoApproveShows;
+    if (body.movieRequestLimit !== undefined) patch.movieRequestLimit = body.movieRequestLimit;
+    if (body.seasonRequestLimit !== undefined) patch.seasonRequestLimit = body.seasonRequestLimit;
+    if (body.canRequest4k !== undefined) patch.canRequest4k = body.canRequest4k;
     if (body.unlock) Object.assign(patch, { failedLogins: 0, lockedUntil: null });
     if (body.password !== undefined) {
       const problem = passwordProblem(body.password, target.username);

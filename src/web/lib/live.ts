@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
  * API route that was written to (POST /api/requests → requests), or a background job's topic.
  */
 const TOPIC_QUERIES: Record<string, string[]> = {
-  requests: ['requests', 'request-count', 'home-row', 'media', 'lookup', 'activity', 'search', 'discover'],
+  requests: ['requests', 'request-count', 'request-quota', 'home-row', 'media', 'lookup', 'activity', 'search', 'discover'],
   downloads: ['downloads', 'download-count', 'files', 'monitored-overview', 'activity', 'manual-import', 'media', 'calendar', 'import'],
   monitored: ['monitored-overview', 'files', 'media', 'calendar', 'airing', 'downloads', 'download-count', 'lookup'],
   files: ['files', 'media', 'duplicates', 'rename', 'monitored-overview'],

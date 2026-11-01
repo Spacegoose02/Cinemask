@@ -6,7 +6,7 @@ import { CATEGORIES, searchIndexer } from './indexers.js';
 import { wantedTarget, type MonitoredRow } from './monitor.js';
 import { normalizeTitle, parseRelease } from './parser.js';
 import { getProfile } from './profiles.js';
-import { autoSearch, decideOptions, enabledIndexers, grabBest } from './search.js';
+import { autoSearch, decideOptions, enabledIndexers, grabBest, retryAfterDelay } from './search.js';
 import { blocklist } from '../db/schema.js';
 
 /**
@@ -24,6 +24,7 @@ export async function rssSync(ctx: AppContext): Promise<{ checked: number; grabb
   let checked = 0;
   let grabbed = 0;
   const perTitle = new Map<number, Decision[]>();
+  const delayed = new Map<number, Decision[]>();
   for (const idx of enabledIndexers(ctx)) {
     let releases;
     try {
@@ -42,6 +43,7 @@ export async function rssSync(ctx: AppContext): Promise<{ checked: number; grabb
         const bl = new Set(ctx.db.select({ t: blocklist.releaseTitle }).from(blocklist).where(eq(blocklist.monitoredId, row.id)).all().map((b) => b.t));
         const d = decide(rel, target, profile, bl, decideOptions(ctx, row));
         if (d.accepted) perTitle.set(row.id, [...(perTitle.get(row.id) ?? []), d]);
+        else if (d.delayedUntil) delayed.set(row.id, [...(delayed.get(row.id) ?? []), d]);
       }
     }
   }
@@ -49,6 +51,7 @@ export async function rssSync(ctx: AppContext): Promise<{ checked: number; grabb
     const row = rows.find((r) => r.id === id)!;
     grabbed += await grabBest(ctx, row, decisions).catch(() => 0);
   }
+  for (const [id, decisions] of delayed) if (!perTitle.has(id)) retryAfterDelay(ctx, rows.find((r) => r.id === id)!, decisions);
   return { checked, grabbed };
 }
 

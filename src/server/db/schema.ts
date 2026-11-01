@@ -23,6 +23,12 @@ export const users = sqliteTable('users', {
   // A user's requests of that kind download without a manager's approval.
   autoApproveMovies: integer('auto_approve_movies', { mode: 'boolean' }).notNull().default(false),
   autoApproveShows: integer('auto_approve_shows', { mode: 'boolean' }).notNull().default(false),
+  /** Movies this user may request per period (Settings → Requests). Null uses the default; 0 means no limit. */
+  movieRequestLimit: integer('movie_request_limit'),
+  /** Show seasons this user may request per period. Null uses the default; 0 means no limit. */
+  seasonRequestLimit: integer('season_request_limit'),
+  /** May ask for titles in 4K (managers always can). */
+  canRequest4k: integer('can_request_4k', { mode: 'boolean' }).notNull().default(false),
 });
 
 export const sessions = sqliteTable(
@@ -253,8 +259,27 @@ export const requests = sqliteTable(
     reason: text('reason'),
     monitoredId: integer('monitored_id').references(() => monitored.id, { onDelete: 'set null' }),
     createdAt: integer('created_at').notNull(),
+    /** Asked for in 4K: approval uses the 4K profile and folder from Settings → Requests. */
+    fourK: integer('four_k', { mode: 'boolean' }).notNull().default(false),
+    /** A short note from the requester, such as "the 2005 one, not the remake". */
+    note: text('note'),
   },
-  (t) => [index('requests_status_idx').on(t.status)],
+  (t) => [index('requests_status_idx').on(t.status), index('requests_user_idx').on(t.requestedBy, t.createdAt)],
+);
+
+/** People who want the same title as an open request ("me too"); they hear when it's ready. */
+export const requestFollowers = sqliteTable(
+  'request_followers',
+  {
+    requestId: integer('request_id')
+      .notNull()
+      .references(() => requests.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.requestId, t.userId] }), index('request_followers_user_idx').on(t.userId)],
 );
 
 export const indexers = sqliteTable('indexers', {

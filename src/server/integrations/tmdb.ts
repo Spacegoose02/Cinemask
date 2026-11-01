@@ -157,6 +157,20 @@ export class TmdbClient {
     );
   }
 
+  /** Where a title streams, by country. Only the subscription ("flatrate") offers matter for requests. */
+  titleProviders(kind: 'movie' | 'tv', id: number) {
+    return this.get<{ results: Record<string, { link?: string; flatrate?: { provider_id: number; provider_name: string; logo_path: string }[] }> }>(
+      `/${kind}/${id}/watch/providers`,
+      {},
+      24 * 60 * 60 * 1000,
+    );
+  }
+
+  /** The region watch providers are read for. */
+  get watchRegion() {
+    return this.region;
+  }
+
   movie(id: number) {
     return this.get<TmdbMovie>(`/movie/${id}`, { append_to_response: 'videos,release_dates,credits' });
   }
