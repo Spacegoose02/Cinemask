@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-01
+
 ### Changed
 - The webhook moved from Settings → API and webhooks (now **API**) to the new **Settings → Notifications**. The "send events" switch there now covers every shared channel.
 
@@ -18,6 +20,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **Discord, Telegram, ntfy, Gotify and Pushover**, alongside the webhook, in the new Settings → Notifications tab, each with its own test button. Messages link back to the title in Cinemask when Settings → General has the public URL.
 - **Custom formats and release scores.** Settings → Quality has custom formats: rules on the release name, release group, indexer, language, protocol or size that pick out things like HDR, Dolby Vision, Atmos, lossless audio, a streaming service or a low-quality group. Each profile scores each format; releases are ranked by quality first and then by score, a profile can refuse anything under a minimum score, and can keep upgrading a file at the cutoff quality until its score reaches a target (files imported before this aren't touched). Fourteen ready-made formats can be added in one go, with suggested scores. Manual search shows each release's formats and score.
 - **Request notes and "me too".** Users can add a short note to a request. Asking for something someone else already requested adds you to their request instead of making a second one: it shows on your Requests with "Stop following", and the request shows how many others want it.
+
+### Fixed
+- **Back goes back to where you were.** Back restores the scroll position of the page you left (once its data has loaded), and new pages open at the top. Discover keeps its filters in the address, and the status filters on Requests and book requests stay as you left them.
 
 ## [0.30.0] - 2026-10-31
 
