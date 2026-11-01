@@ -744,6 +744,13 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    id: 26,
+    name: 'interface language',
+    sql: `
+      ALTER TABLE users ADD COLUMN language TEXT;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

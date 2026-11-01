@@ -41,6 +41,8 @@ export const users = sqliteTable('users', {
   watchlistError: text('watchlist_error'),
   /** Kids profile: the oldest age rating this user may see and request (such as 12). Null means no limit. */
   maxAge: integer('max_age'),
+  /** Interface language (src/web/lib/i18n.ts). Null follows the browser. */
+  language: text('language'),
 });
 
 export const sessions = sqliteTable(

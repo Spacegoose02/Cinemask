@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api, formatDate } from '../lib/api';
 import { Alert, Toggle } from './ui';
+import { useT } from '../lib/i18n';
 
 interface WatchlistState {
   sync: boolean;
@@ -21,6 +22,7 @@ const RESULT: Record<string, string> = {
 /** Account → Watchlist: Plex watchlist and Jellyfin favourites become requests. */
 export function WatchlistSync() {
   const qc = useQueryClient();
+  const t = useT();
   const q = useQuery({ queryKey: ['watchlist-me'], queryFn: () => api<WatchlistState>('/api/watchlist/me') });
   const set = useMutation({
     mutationFn: (sync: boolean) => api<WatchlistState>('/api/watchlist/me', { method: 'PUT', body: { sync } }),
@@ -35,7 +37,7 @@ export function WatchlistSync() {
   const from = [d.sources.plex && 'your Plex watchlist', d.sources.jellyfin && 'your Jellyfin favourites'].filter(Boolean).join(' and ');
   return (
     <section className="card space-y-3">
-      <h2 className="font-semibold">Watchlist</h2>
+      <h2 className="font-semibold">{t('Watchlist')}</h2>
       {from ? (
         <Toggle label={`Request what I add to ${from}`} checked={d.sync} onChange={(v) => set.mutate(v)} hint="Checked every 30 minutes. Requests follow the usual rules: approval, your request limit and so on." />
       ) : (

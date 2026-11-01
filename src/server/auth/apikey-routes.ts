@@ -12,6 +12,9 @@ const DAY = 24 * 60 * 60 * 1000;
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 /** Every theme in src/web/lib/theme.ts (test/themes.test.ts checks they match). */
 // prettier-ignore
+/** Every interface language in src/web/lib/i18n.ts (test/themes.test.ts checks they match). */
+export const LANGUAGE_CODES = ['en', 'es', 'fr', 'de', 'nl'] as const;
+
 export const THEME_NAMES = [
   'dark', 'midnight', 'oled', 'forest', 'plum',
   'light', 'paper', 'mint', 'sky', 'rose',
@@ -53,6 +56,12 @@ export async function apiKeyRoutes(app: FastifyInstance) {
     if (!row) throw notFound('Key not found');
     db().delete(apiKeys).where(eq(apiKeys.id, id)).run();
     audit(db(), req, 'api_key.deleted', { target: row.name, details: { prefix: row.prefix } });
+    return { ok: true };
+  });
+
+  app.put('/api/auth/language', { config: { access: 'user' } }, async (req) => {
+    const { language } = parse(z.object({ language: z.enum(LANGUAGE_CODES).nullable() }), req.body);
+    db().update(users).set({ language }).where(eq(users.id, req.user!.id)).run();
     return { ok: true };
   });
 

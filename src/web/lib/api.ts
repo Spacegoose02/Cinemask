@@ -69,6 +69,7 @@ export interface Me {
   isOwner: boolean;
   hasPassword: boolean;
   theme: string | null;
+  language: string | null;
 }
 
 export interface AuthStatus {

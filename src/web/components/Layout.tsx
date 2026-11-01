@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { api, hasRole } from '../lib/api';
 import { SearchBar } from './SearchBar';
+import { useT } from '../lib/i18n';
 import { useAuth } from '../lib/auth';
 import { useLiveUpdates } from '../lib/live';
 import { useInstall, useOnline, useUpdateReady } from '../lib/pwa';
@@ -11,6 +12,7 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
   `block rounded-md px-3 py-2 text-sm ${isActive ? 'bg-surface-2 text-accent' : 'text-muted hover:text-text'}`;
 
 export function Layout({ children }: { children: ReactNode }) {
+  const t = useT();
   const { me, signedOut } = useAuth();
   const [open, setOpen] = useState(false);
   const live = useLiveUpdates(Boolean(me));
@@ -41,12 +43,12 @@ export function Layout({ children }: { children: ReactNode }) {
   const install =
     installer.mode === 'prompt' ? (
       <button className="btn-primary w-full" onClick={() => void installer.install()}>
-        Install app
+        {t('Install app')}
       </button>
     ) : installer.mode === 'ios' ? (
       <div>
         <button className="btn-secondary w-full" onClick={() => setIosHelp(!iosHelp)} aria-expanded={iosHelp}>
-          Add to Home Screen
+          {t('Add to Home Screen')}
         </button>
         {iosHelp && <p className="mt-2 text-xs text-muted">In Safari, tap the Share button, then “Add to Home Screen”.</p>}
       </div>
@@ -58,7 +60,7 @@ export function Layout({ children }: { children: ReactNode }) {
         {me?.displayName || me?.username} · {me?.role}
       </div>
       <button className="btn-secondary w-full" onClick={logout}>
-        Sign out
+        {t('Sign out')}
       </button>
     </div>
   );
@@ -66,71 +68,71 @@ export function Layout({ children }: { children: ReactNode }) {
   const nav = (
     <nav className="space-y-1" onClick={() => setOpen(false)}>
       <NavLink to="/" end className={linkClass}>
-        Home
+        {t('Home')}
       </NavLink>
       <NavLink to="/library" className={linkClass}>
-        Library
+        {t('Library')}
       </NavLink>
       <NavLink to="/discover" className={linkClass}>
-        Discover
+        {t('Discover')}
       </NavLink>
       <NavLink to="/collections" className={linkClass}>
-        Collections
+        {t('Collections')}
       </NavLink>
       <NavLink to="/lists" className={linkClass}>
-        Lists
+        {t('Lists')}
       </NavLink>
       <NavLink to="/books" className={linkClass}>
-        Books
+        {t('Books')}
       </NavLink>
       <NavLink to="/calendar" className={linkClass}>
-        Calendar
+        {t('Calendar')}
       </NavLink>
       <NavLink to="/requests" className={(p) => `${linkClass(p)} flex items-center`}>
-        Requests {badge(reqCount.data?.pending)}
+        {t('Requests')} {badge(reqCount.data?.pending)}
       </NavLink>
       <NavLink to="/issues" className={(p) => `${linkClass(p)} flex items-center`}>
-        Problems {badge(issueCount.data?.open)}
+        {t('Problems')} {badge(issueCount.data?.open)}
       </NavLink>
       <NavLink to="/movie-nights" className={linkClass}>
-        Movie nights
+        {t('Movie nights')}
       </NavLink>
       <NavLink to="/games" className={linkClass}>
-        Games
+        {t('Games')}
       </NavLink>
       <NavLink to="/wrapped" className={linkClass}>
-        Wrapped
+        {t('Wrapped')}
       </NavLink>
       {isManager && (
         <NavLink to="/monitored" className={linkClass}>
-          Monitored
+          {t('Monitored')}
         </NavLink>
       )}
       {isManager && (
         <NavLink to="/downloads" className={(p) => `${linkClass(p)} flex items-center`}>
-          Downloads {badge(dlCount.data?.active)}
+          {t('Downloads')} {badge(dlCount.data?.active)}
         </NavLink>
       )}
       {isManager && (
         <NavLink to="/storage" className={linkClass}>
-          Storage
+          {t('Storage')}
         </NavLink>
       )}
       {isManager && (
         <NavLink to="/youtube" className={linkClass}>
-          YouTube
+          {t('YouTube')}
         </NavLink>
       )}
       {isAdmin && (
         <NavLink to="/settings" className={(p) => `${linkClass(p)} flex items-center`}>
-          Settings
+          {t('Settings')}
           {health.data?.problems ? (
             <span className={`ml-auto h-2 w-2 rounded-full ${health.data.level === 'error' ? 'bg-danger' : 'bg-warning'}`} title={`${health.data.problems} health problem(s)`} />
           ) : null}
         </NavLink>
       )}
       <NavLink to="/account" className={linkClass}>
-        Account
+        {t('Account')}
       </NavLink>
     </nav>
   );
@@ -145,26 +147,26 @@ export function Layout({ children }: { children: ReactNode }) {
     >
       <NavLink to="/" end className={tabClass} onClick={() => setOpen(false)}>
         <Icon d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" />
-        Home
+        {t('Home')}
       </NavLink>
       <NavLink to="/library" className={tabClass} onClick={() => setOpen(false)}>
         <Icon d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l4 1-3 15-4-1z" />
-        Library
+        {t('Library')}
       </NavLink>
       <NavLink to="/discover" className={tabClass} onClick={() => setOpen(false)}>
         <Icon d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm4 5-2 6-6 2 2-6z" />
-        Discover
+        {t('Discover')}
       </NavLink>
       <NavLink to="/requests" className={tabClass} onClick={() => setOpen(false)}>
         <Icon d="M5 4h14v16l-7-4-7 4z" />
-        Requests
+        {t('Requests')}
         {reqCount.data?.pending ? (
           <span className="absolute right-1/4 top-1 rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-fg">{reqCount.data.pending}</span>
         ) : null}
       </NavLink>
       <button className={tabClass({ isActive: open })} onClick={() => setOpen(!open)} aria-expanded={open}>
         <Icon d="M4 6h16M4 12h16M4 18h16" />
-        More
+        {t('More')}
       </button>
     </nav>
   );
@@ -180,7 +182,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="fixed inset-x-0 bottom-20 z-30 mx-auto flex w-fit items-center gap-3 rounded-full border border-border bg-surface px-4 py-2 text-sm shadow-lg md:bottom-6" role="status">
           A new version of Cinemask is ready.
           <button className="btn-primary" onClick={update.apply}>
-            Reload
+            {t('Reload')}
           </button>
         </div>
       )}
