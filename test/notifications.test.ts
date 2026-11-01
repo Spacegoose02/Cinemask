@@ -124,7 +124,14 @@ describe('shared channels', () => {
     expect((await owner.req('GET', '/api/settings/notifications')).body).not.toMatch(/secret-token|bot-secret|family-secret/);
     await kid.req('POST', '/api/requests', { kind: 'movie', tmdbId: 116149 });
     await flush();
-    const discord = posted.find((p) => p.url.startsWith('https://discord.com'))!;
+    const discord = posted.find((p) => {
+      try {
+        const u = new URL(p.url);
+        return u.protocol === 'https:' && u.hostname === 'discord.com';
+      } catch {
+        return false;
+      }
+    })!;
     expect(JSON.parse(discord.body).embeds[0]).toMatchObject({ title: 'New request', url: 'https://media.example.com/movie/116149' });
     expect(posted.find((p) => p.url.includes('api.telegram.org/bot123'))!.body).toContain('-1001234');
     expect(posted.find((p) => p.url.startsWith('https://ntfy.example/'))!.body).toMatch(/requested Paddington/);
