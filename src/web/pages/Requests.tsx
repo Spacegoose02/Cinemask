@@ -5,6 +5,7 @@ import { RootPicker, useRootFolders } from '../components/MediaActions';
 import { Alert, LoadError } from '../components/ui';
 import { api, formatDate, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { usePageState } from '../lib/history';
 import { mediaPath, poster, type MediaKind } from '../lib/media';
 
 interface RequestRow {
@@ -84,7 +85,7 @@ export function RequestsPage() {
   const { me } = useAuth();
   const qc = useQueryClient();
   const isManager = hasRole(me, 'manager');
-  const [status, setStatus] = useState(isManager ? 'pending' : 'all');
+  const [status, setStatus] = usePageState('status', isManager ? 'pending' : 'all');
   const [error, setError] = useState('');
   // Downloads only announce themselves to managers, so a list with something on its way checks back every so often.
   const list = useQuery({

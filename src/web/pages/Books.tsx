@@ -5,6 +5,7 @@ import { Modal } from '../components/Modal';
 import { Alert } from '../components/ui';
 import { api, formatDate, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { usePageState } from '../lib/history';
 import { poster } from '../lib/media';
 
 type Format = 'audiobook' | 'ebook';
@@ -260,7 +261,7 @@ function BookRequests() {
   const { me } = useAuth();
   const qc = useQueryClient();
   const isManager = hasRole(me, 'manager');
-  const [status, setStatus] = useState(isManager ? 'pending' : 'all');
+  const [status, setStatus] = usePageState('status', isManager ? 'pending' : 'all');
   const [error, setError] = useState('');
   const [matching, setMatching] = useState<BookRequest | null>(null);
   const list = useQuery({ queryKey: ['book-requests', status], queryFn: () => api<BookRequest[]>(`/api/books?status=${status}`) });

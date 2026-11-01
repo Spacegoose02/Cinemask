@@ -1,10 +1,12 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { MediaGrid } from '../components/media';
 import { Modal } from '../components/Modal';
 import { Alert, Field, Toggle } from '../components/ui';
 import { api, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { usePageState } from '../lib/history';
 import type { MediaCardData } from '../lib/media';
 
 interface Options {
@@ -59,6 +61,24 @@ function toQuery(f: Filter) {
   if (f.ratingMin) q.set('ratingMin', String(f.ratingMin));
   if (f.language) q.set('language', f.language);
   return q;
+}
+
+/** The filter lives in the address, so Back from a title (or a shared link) shows the same results. */
+function fromQuery(q: URLSearchParams): Filter {
+  const ids = (k: string) => (q.get(k) ?? '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  const num = (k: string) => (Number(q.get(k)) > 0 ? Number(q.get(k)) : undefined);
+  return {
+    kind: q.get('kind') === 'tv' ? 'tv' : 'movie',
+    sort: q.get('sort') || EMPTY.sort,
+    genres: ids('genres'),
+    networks: ids('networks'),
+    providers: ids('providers'),
+    originals: q.get('originals') === 'true' || undefined,
+    yearFrom: num('yearFrom'),
+    yearTo: num('yearTo'),
+    ratingMin: num('ratingMin'),
+    language: q.get('language') || undefined,
+  };
 }
 
 function Chips({ label, items, value, onChange }: { label: string; items: { id: number; name: string }[]; value: number[]; onChange: (v: number[]) => void }) {
@@ -142,9 +162,11 @@ function SaveAsList({ filter, onClose }: { filter: Filter; onClose: () => void }
 
 export function DiscoverPage() {
   const { me } = useAuth();
-  const [f, setF] = useState<Filter>(EMPTY);
+  const [params, setParams] = useSearchParams();
+  const f = fromQuery(params);
+  const setF = (next: Filter) => setParams(toQuery(next), { replace: true });
   const [saving, setSaving] = useState(false);
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = usePageState('showFilters', true);
   const set = <K extends keyof Filter>(k: K, v: Filter[K]) => setF({ ...f, [k]: v });
   const opts = useQuery({ queryKey: ['discover-options', f.kind], queryFn: () => api<Options>(`/api/discover/options?kind=${f.kind}`) });
   const qs = toQuery(f).toString();
