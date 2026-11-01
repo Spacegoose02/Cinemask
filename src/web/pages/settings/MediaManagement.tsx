@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Field, Toggle } from '../../components/ui';
+import { Field, SecretInput, Toggle } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useSettingsSection } from '../../lib/settings';
 import { SaveBar } from './SaveBar';
@@ -76,8 +76,9 @@ export function MediaManagementSettings() {
   const n = useSettingsSection('naming');
   const d = useSettingsSection('downloading');
   const x = useSettingsSection('extras');
+  const sub = useSettingsSection('subtitles');
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: () => api<{ id: number; name: string }[]>('/api/profiles') });
-  if (m.loading || n.loading || d.loading || x.loading) return null;
+  if (m.loading || n.loading || d.loading || x.loading || sub.loading) return null;
   const maps = m.values.remotePathMappings as { remote: string; local: string }[];
   const extra = m.values.extraFolders as ExtraFolder[];
   const setExtra = (i: number, patch: Partial<(typeof extra)[number]>) => m.set('extraFolders', extra.map((f, j) => (j === i ? { ...f, ...patch } : f)));
@@ -316,6 +317,39 @@ export function MediaManagementSettings() {
           hint="Off by default so a link can't be used to reach other devices on your network."
         />
         <SaveBar onSave={d.save} saving={d.saving} message={d.message} />
+      </section>
+
+      <section className="card space-y-4">
+        <h2 className="font-semibold">Subtitles</h2>
+        <p className="hint">Subtitles come from OpenSubtitles.com and are saved next to each video (Movie.en.srt), where Plex, Jellyfin and BingeBandit find them. Matching by the file itself first means they're in sync with your copy.</p>
+        <Toggle label="Fetch subtitles" checked={sub.values.enabled} onChange={(v) => sub.set('enabled', v)} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="API key" hint="opensubtitles.com → your profile → API consumers → New consumer.">
+            <SecretInput isSet={sub.secretsSet['apiKey']!} value={sub.secrets['apiKey']} onChange={(v) => sub.setSecret('apiKey', v)} />
+          </Field>
+          <Field label="Languages" hint="Two-letter codes, comma separated, such as en, es.">
+            <input
+              className="input"
+              defaultValue={(sub.values.languages as string[]).join(', ')}
+              onBlur={(e) => sub.set('languages', e.target.value.split(/[ ,]+/).map((x) => x.trim().toLowerCase()).filter(Boolean))}
+            />
+          </Field>
+          <Field label="Username (optional)" hint="An account allows more downloads a day.">
+            <input className="input" autoComplete="off" value={sub.values.username} onChange={(e) => sub.set('username', e.target.value)} />
+          </Field>
+          <Field label="Password">
+            <SecretInput isSet={sub.secretsSet['password']!} value={sub.secrets['password']} onChange={(v) => sub.setSecret('password', v)} />
+          </Field>
+          <Field label="Hearing-impaired subtitles">
+            <select className="input" value={sub.values.hearingImpaired} onChange={(e) => sub.set('hearingImpaired', e.target.value)}>
+              <option value="prefer_not">Only when there's nothing else</option>
+              <option value="include">Either kind</option>
+              <option value="only">Always (sound descriptions)</option>
+            </select>
+          </Field>
+        </div>
+        <Toggle label="Fetch them after each download" checked={sub.values.auto} onChange={(v) => sub.set('auto', v)} hint="Otherwise use Fetch subtitles on a title's page." />
+        <SaveBar onSave={sub.save} saving={sub.saving} message={sub.message} />
       </section>
 
       <section className="card space-y-4">

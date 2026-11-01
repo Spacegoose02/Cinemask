@@ -223,6 +223,8 @@ export const monitored = sqliteTable(
     /** The release the file came from, and its custom format score when it was imported. */
     fileRelease: text('file_release'),
     fileFormatScore: integer('file_format_score'),
+    /** JSON FileInfo (files/mediainfo.ts): what ffprobe found in the movie's file. */
+    fileInfo: text('file_info'),
   },
   (t) => [uniqueIndex('monitored_kind_tmdb').on(t.kind, t.tmdbId)],
 );
@@ -256,6 +258,7 @@ export const monitoredEpisodes = sqliteTable(
     episodeType: text('episode_type'),
     fileRelease: text('file_release'),
     fileFormatScore: integer('file_format_score'),
+    fileInfo: text('file_info'),
   },
   (t) => [uniqueIndex('monitored_episode_key').on(t.monitoredId, t.season, t.episode)],
 );
@@ -366,6 +369,10 @@ export const downloads = sqliteTable(
     destination: text('destination'),
     /** A release over the size limit waiting for someone to confirm it (status "held"): the release, sealed, since its link can carry an indexer key. */
     heldRelease: text('held_release'),
+    /** Replaces the file already there even when it looks as good (a fix for a problem report). */
+    replaceFile: integer('replace_file', { mode: 'boolean' }).notNull().default(false),
+    /** The problem report this download fixes; it's marked fixed once the download is imported. */
+    issueId: integer('issue_id'),
   },
   (t) => [index('downloads_status_idx').on(t.status)],
 );
@@ -651,4 +658,34 @@ export const pushSubscriptions = sqliteTable(
     lastUsedAt: integer('last_used_at'),
   },
   (t) => [index('push_subscriptions_user_idx').on(t.userId)],
+);
+
+export const ISSUE_TYPES = ['audio', 'subtitles', 'video', 'playback', 'wrong', 'other'] as const;
+export type IssueType = (typeof ISSUE_TYPES)[number];
+export const ISSUE_STATUSES = ['open', 'fixing', 'resolved'] as const;
+
+/** "Report a problem" on a movie, show, season or episode. */
+export const issues = sqliteTable(
+  'issues',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    title: text('title').notNull(),
+    year: integer('year'),
+    posterPath: text('poster_path'),
+    season: integer('season'),
+    episode: integer('episode'),
+    type: text('type', { enum: ISSUE_TYPES }).notNull(),
+    message: text('message'),
+    status: text('status', { enum: ISSUE_STATUSES }).notNull(),
+    reportedBy: integer('reported_by').references(() => users.id, { onDelete: 'set null' }),
+    reportedByName: text('reported_by_name'),
+    resolvedByName: text('resolved_by_name'),
+    /** What was done about it, shown to the person who reported it. */
+    resolution: text('resolution'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [index('issues_status_idx').on(t.status), index('issues_title_idx').on(t.kind, t.tmdbId)],
 );

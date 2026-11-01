@@ -26,6 +26,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const isAdmin = hasRole(me, 'admin');
   const health = useQuery({ queryKey: ['health-summary'], queryFn: () => api<{ level: string | null; problems: number }>('/api/system/health/summary'), enabled: isAdmin, refetchInterval: 300000 });
   const reqCount = useQuery({ queryKey: ['request-count'], queryFn: () => api<{ pending: number }>('/api/requests/count'), enabled: isManager, refetchInterval: fallback(30000) });
+  const issueCount = useQuery({ queryKey: ['issue-count'], queryFn: () => api<{ open: number }>('/api/issues/count'), enabled: isManager, refetchInterval: fallback(60000) });
   const badge = (n: number | undefined) => (n ? <span className="ml-auto rounded-full bg-accent px-1.5 text-xs font-semibold text-accent-fg">{n}</span> : null);
 
   const logout = async () => {
@@ -87,6 +88,9 @@ export function Layout({ children }: { children: ReactNode }) {
       </NavLink>
       <NavLink to="/requests" className={(p) => `${linkClass(p)} flex items-center`}>
         Requests {badge(reqCount.data?.pending)}
+      </NavLink>
+      <NavLink to="/issues" className={(p) => `${linkClass(p)} flex items-center`}>
+        Problems {badge(issueCount.data?.open)}
       </NavLink>
       <NavLink to="/movie-nights" className={linkClass}>
         Movie nights

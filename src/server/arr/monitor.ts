@@ -16,6 +16,8 @@ export interface SearchFilter {
   season?: number;
   episode?: number;
   missingOnly?: boolean;
+  /** Look for a different copy of what's there, as if it had no file (fixing a problem report). */
+  replace?: boolean;
 }
 
 const today = () => localDay();
@@ -102,7 +104,19 @@ function serverQuality(ctx: AppContext, kind: MediaKind, tmdbId: number): Map<st
 /** What still needs downloading (missing, or upgradable) for a monitored title. Null when nothing is wanted. */
 export function wantedTarget(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter): Target | null {
   const profile = searchProfile(ctx, row.profileId);
-  if (!profile || !row.monitored) return null;
+  if (!profile || (!row.monitored && !filter?.replace)) return null;
+  if (filter?.replace) {
+    // Everything in scope counts as missing, so even a file at the cutoff gets a new copy.
+    if (row.kind === 'movie') return { kind: 'movie', title: row.title, year: row.year, currentQuality: null };
+    const eps = ctx.db
+      .select()
+      .from(monitoredEpisodes)
+      .where(eq(monitoredEpisodes.monitoredId, row.id))
+      .all()
+      .filter((e) => (filter.season === undefined || e.season === filter.season) && (filter.episode === undefined || e.episode === filter.episode) && (e.filePath || (e.airDate && e.airDate <= today())))
+      .map((e) => ({ season: e.season, episode: e.episode, airDate: e.airDate, currentQuality: null, currentFormatScore: null }));
+    return eps.length ? { kind: 'show', title: row.title, year: row.year, episodes: eps } : null;
+  }
   if (row.kind === 'movie') {
     const current = row.fileQuality ?? (serverQuality(ctx, 'movie', row.tmdbId) as string | null);
     const score = row.fileQuality ? row.fileFormatScore : null;

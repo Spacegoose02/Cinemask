@@ -7,9 +7,9 @@ import { useEffect, useState } from 'react';
  */
 const TOPIC_QUERIES: Record<string, string[]> = {
   requests: ['requests', 'request-count', 'request-quota', 'home-row', 'media', 'lookup', 'activity', 'search', 'discover'],
-  downloads: ['downloads', 'download-count', 'files', 'monitored-overview', 'activity', 'manual-import', 'media', 'calendar', 'import'],
+  downloads: ['downloads', 'download-count', 'files', 'file-details', 'issues', 'issue-count', 'monitored-overview', 'activity', 'manual-import', 'media', 'calendar', 'import'],
   monitored: ['monitored-overview', 'files', 'media', 'calendar', 'airing', 'downloads', 'download-count', 'lookup'],
-  files: ['files', 'media', 'duplicates', 'rename', 'monitored-overview'],
+  files: ['files', 'file-details', 'media', 'duplicates', 'rename', 'monitored-overview'],
   'manual-import': ['manual-import', 'downloads', 'download-count', 'files'],
   import: ['import', 'files', 'monitored-overview'],
   library: ['library', 'library-sections', 'library-labels', 'home-row', 'media', 'airing', 'calendar', 'duplicates', 'sync-status', 'lookup'],
@@ -33,6 +33,7 @@ const TOPIC_QUERIES: Record<string, string[]> = {
   ratings: ['ratings', 'home-row', 'wrapped', 'badges'],
   'movie-nights': ['movie-nights', 'home-row'],
   games: ['leaderboard', 'badges'],
+  issues: ['issues', 'issue-count', 'title-issues'],
 };
 
 function invalidate(qc: QueryClient, topics: Set<string>) {

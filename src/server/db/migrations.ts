@@ -672,6 +672,37 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE monitored_episodes ADD COLUMN file_format_score INTEGER;
     `,
   },
+  {
+    id: 24,
+    name: 'file details, problem reports and replacement downloads',
+    sql: `
+      ALTER TABLE monitored ADD COLUMN file_info TEXT;
+      ALTER TABLE monitored_episodes ADD COLUMN file_info TEXT;
+      ALTER TABLE downloads ADD COLUMN replace_file INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE downloads ADD COLUMN issue_id INTEGER;
+      CREATE TABLE issues (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        year INTEGER,
+        poster_path TEXT,
+        season INTEGER,
+        episode INTEGER,
+        type TEXT NOT NULL CHECK (type IN ('audio','subtitles','video','playback','wrong','other')),
+        message TEXT,
+        status TEXT NOT NULL CHECK (status IN ('open','fixing','resolved')),
+        reported_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        reported_by_name TEXT,
+        resolved_by_name TEXT,
+        resolution TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX issues_status_idx ON issues(status);
+      CREATE INDEX issues_title_idx ON issues(kind, tmdb_id);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

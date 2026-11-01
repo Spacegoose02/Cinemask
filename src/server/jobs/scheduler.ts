@@ -1,3 +1,4 @@
+import { probeMissing } from '../files/mediainfo.js';
 import cron, { type ScheduledTask } from 'node-cron';
 import type { FastifyInstance } from 'fastify';
 import { lt } from 'drizzle-orm';
@@ -71,6 +72,8 @@ export class Scheduler {
       cron.schedule('*/5 * * * *', this.once('youtube-download', () => downloadWanted(this.app.ctx))),
       // "Movie night soon" goes out within the hour before it starts.
       cron.schedule('*/5 * * * *', this.once('movie-nights', async () => remindMovieNights(this.app.ctx))),
+      // What's really in files imported before file details existed, a few titles an hour.
+      cron.schedule('35 * * * *', this.once('file-details', () => probeMissing(this.app.ctx))),
     ];
     requeueInterrupted(this.app.ctx);
     // First health run shortly after start, so the nav badge is right without waiting an hour.

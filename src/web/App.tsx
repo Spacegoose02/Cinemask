@@ -26,6 +26,8 @@ import { LoginPage } from './pages/Login';
 import { MediaDetailPage, type MediaDetail } from './pages/MediaDetail';
 import { MonitoredPage } from './pages/Monitored';
 import { SearchPage } from './pages/Search';
+import { IssuesPage } from './pages/Issues';
+import { FileDetails } from './components/FileDetails';
 import { SettingsPage } from './pages/Settings';
 import { SetupPage } from './pages/Setup';
 
@@ -33,6 +35,7 @@ const panels = (m: MediaDetail) => (
   <>
     <FamilyPanel m={m} />
     <FilesPanel m={m} />
+    <FileDetails m={m} />
   </>
 );
 
@@ -86,6 +89,7 @@ export function App() {
         <Route path="/collections" element={<CollectionsPage />} />
         <Route path="/collections/:id" element={<CollectionDetailPage />} />
         <Route path="/requests" element={<RequestsPage />} />
+        <Route path="/issues" element={<IssuesPage />} />
         <Route path="/movie-nights" element={<MovieNightsPage />} />
         <Route path="/games" element={<GamesPage />} />
         <Route path="/wrapped" element={<WrappedPage />} />

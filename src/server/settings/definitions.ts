@@ -247,6 +247,32 @@ export const SETTINGS = {
     }),
     secrets: [],
   },
+  subtitles: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      /** An OpenSubtitles.com API consumer key (opensubtitles.com → API consumers). */
+      apiKey: z.string().max(200).default(''),
+      /** An OpenSubtitles.com account raises the daily download limit. */
+      username: z.string().trim().max(100).default(''),
+      password: z.string().max(200).default(''),
+      languages: z.array(z.string().regex(/^[a-z]{2}(-[a-z]{2})?$/)).min(1).max(5).default(['en']),
+      /** Fetch missing subtitles after each import. */
+      auto: z.boolean().default(true),
+      /** Subtitles for the deaf and hard of hearing (with sound descriptions). */
+      hearingImpaired: z.enum(['prefer_not', 'include', 'only']).default('prefer_not'),
+    }),
+    secrets: ['apiKey', 'password'],
+  },
+  issues: {
+    schema: z.object({
+      /**
+       * Fix wrong-language, bad-picture and won't-play reports straight away (blocklist the copy and
+       * find another, or fetch subtitles) instead of waiting for a manager.
+       */
+      autoFix: z.boolean().default(false),
+    }),
+    secrets: [],
+  },
   requests: {
     schema: z.object({
       /** How many movies and show seasons each user may request per period. 0 means no limit. Managers have none. */

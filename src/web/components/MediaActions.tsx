@@ -6,6 +6,7 @@ import type { MediaDetail } from '../pages/MediaDetail';
 import { PosterPicker, useCreateSeriesCollection } from './Extras';
 import { Modal } from './Modal';
 import { Alert } from './ui';
+import { ReportProblem } from './ReportProblem';
 
 interface Profile {
   id: number;
@@ -561,6 +562,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           Add {m.collection.name} to your media servers
         </button>
       )}
+      {(fullyAvailable || mon) && <ReportProblem m={m} />}
       {msg && msg.text && <Alert kind={msg.kind}>{msg.text}</Alert>}
       {posters && <PosterPicker kind={m.kind} tmdbId={m.tmdbId} onClose={() => setPosters(false)} />}
       {requesting && (

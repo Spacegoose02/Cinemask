@@ -13,6 +13,8 @@ import { listRoots, rootOf } from './roots.js';
 import { followMovedFolder } from '../files/service.js';
 import { listFormats, scoreRelease } from './formats.js';
 import { getProfile } from './profiles.js';
+import { afterImport } from '../files/after-import.js';
+import { issueFixed } from '../issues/service.js';
 
 const SAMPLE_MAX = 80 * 1024 * 1024;
 
@@ -169,6 +171,8 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     );
   }
   const result: ImportResult = { imported: [], skipped: [] };
+  // A replacement for a reported problem goes in even when the old file looks as good.
+  if (dl.replaceFile) opts = { ...opts, replace: true };
   // The release's custom format score under the title's profile, kept with the file so later
   // releases can be compared with it.
   const profile = getProfile(ctx, row.profileId);
@@ -195,7 +199,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     } else {
       placeFile(file, dest, mode ?? mediaSettings.importMode);
       if (row.filePath && row.filePath !== dest && inside(root, row.filePath) && fs.existsSync(row.filePath)) fs.rmSync(row.filePath);
-      ctx.db.update(monitored).set({ path: folder, filePath: dest, fileQuality: quality, fileRelease: dl.title, fileFormatScore: releaseScore }).where(eq(monitored.id, row.id)).run();
+      ctx.db.update(monitored).set({ path: folder, filePath: dest, fileQuality: quality, fileRelease: dl.title, fileFormatScore: releaseScore, fileInfo: null }).where(eq(monitored.id, row.id)).run();
       result.imported.push(dest);
     }
   } else {
@@ -234,7 +238,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
       placeFile(file, dest, mode ?? mediaSettings.importMode);
       for (const e of epRows) {
         if (e.filePath && e.filePath !== dest && inside(root, e.filePath) && fs.existsSync(e.filePath)) fs.rmSync(e.filePath);
-        ctx.db.update(monitoredEpisodes).set({ filePath: dest, fileQuality: quality, fileRelease: dl.title, fileFormatScore: releaseScore }).where(eq(monitoredEpisodes.id, e.id)).run();
+        ctx.db.update(monitoredEpisodes).set({ filePath: dest, fileQuality: quality, fileRelease: dl.title, fileFormatScore: releaseScore, fileInfo: null }).where(eq(monitoredEpisodes.id, e.id)).run();
       }
       result.imported.push(dest);
     }
@@ -248,6 +252,9 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
       ctx.db.update(requests).set({ status: 'available' }).where(and(eq(requests.monitoredId, row.id), eq(requests.status, 'approved'))).run();
       for (const r of open) requestAvailable(ctx, r);
     }
+    if (dl.issueId) issueFixed(ctx, dl.issueId, `Replaced with a different copy (${dl.title}).`);
+    // Read what's really in the new files, and fetch subtitles, in the background.
+    void afterImport(ctx, row.id);
     notify(ctx, { event: 'download.imported', title: 'Download imported', message: `${row.title}${row.year ? ` (${row.year})` : ''} is ready to watch`, data: { kind: row.kind, tmdbId: row.tmdbId, release: dl.title } });
   } else {
     ctx.db.update(downloads).set({ status: 'failed', error: result.skipped.join('; ') || 'Nothing to import' }).where(eq(downloads.id, dl.id)).run();
