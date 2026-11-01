@@ -42,7 +42,7 @@ const TABS = [
 ];
 
 // What the settings tabs load. A tab whose data fails shows nothing of its own, so this says why.
-const LOADED_HERE = new Set(['settings', 'audit', 'all-api-keys', 'backups', 'clients', 'indexers', 'profiles', 'users']);
+const LOADED_HERE = new Set(['settings', 'custom-formats', 'audit', 'all-api-keys', 'backups', 'clients', 'indexers', 'profiles', 'users']);
 
 function SettingsLoadError() {
   const qc = useQueryClient();

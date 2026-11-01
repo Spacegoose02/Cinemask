@@ -10,6 +10,11 @@ export interface Profile {
   cutoff: QualityId;
   upgradesAllowed: boolean;
   language: string;
+  /** Custom format id → score. */
+  formatScores: Record<string, number>;
+  minFormatScore: number;
+  /** Upgrades continue past the cutoff quality until a file's format score reaches this (0: off). */
+  upgradeUntilFormatScore: number;
 }
 
 export function seedProfiles(ctx: AppContext) {
@@ -20,7 +25,17 @@ export function seedProfiles(ctx: AppContext) {
 }
 
 function toProfile(r: typeof qualityProfiles.$inferSelect): Profile {
-  return { id: r.id, name: r.name, qualities: JSON.parse(r.qualities) as QualityId[], cutoff: r.cutoff as QualityId, upgradesAllowed: r.upgradesAllowed, language: r.language };
+  return {
+    id: r.id,
+    name: r.name,
+    qualities: JSON.parse(r.qualities) as QualityId[],
+    cutoff: r.cutoff as QualityId,
+    upgradesAllowed: r.upgradesAllowed,
+    language: r.language,
+    formatScores: JSON.parse(r.formatScores) as Record<string, number>,
+    minFormatScore: r.minFormatScore,
+    upgradeUntilFormatScore: r.upgradeUntilFormatScore,
+  };
 }
 
 export function listProfiles(ctx: AppContext): Profile[] {
@@ -38,10 +53,16 @@ export function searchProfile(ctx: AppContext, id: number): Profile | null {
   return p && { ...p, upgradesAllowed: p.upgradesAllowed && ctx.settings.get('downloading').upgrades };
 }
 
-/** Would a file of this quality still be upgraded under the profile? */
-export function belowCutoff(profile: Profile, current: string | null): boolean {
+/**
+ * Would a file of this quality (and format score, when known) still be upgraded under the profile?
+ * Files whose format score isn't known (imported before scores, or only on a media server) are only
+ * upgraded for quality, so turning scores on doesn't re-download the whole library.
+ */
+export function belowCutoff(profile: Profile, current: string | null, formatScore: number | null = null): boolean {
   if (!current) return true;
-  return profile.upgradesAllowed && qualityRank(current) < qualityRank(profile.cutoff);
+  if (!profile.upgradesAllowed) return false;
+  if (qualityRank(current) < qualityRank(profile.cutoff)) return true;
+  return formatScore !== null && profile.upgradeUntilFormatScore > 0 && formatScore < profile.upgradeUntilFormatScore;
 }
 
 export function defaultProfileId(ctx: AppContext, kind: 'movie' | 'show'): number {

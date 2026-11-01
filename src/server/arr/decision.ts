@@ -2,6 +2,7 @@ import type { Release } from './indexers.js';
 import { parseRelease, titlesMatch, type ParsedRelease } from './parser.js';
 import type { Profile } from './profiles.js';
 import { qualityRank } from './quality.js';
+import { scoreRelease, type CustomFormat } from './formats.js';
 
 export interface Target {
   kind: 'movie' | 'show';
@@ -9,9 +10,11 @@ export interface Target {
   altTitles?: string[];
   year: number | null;
   /** For shows: the episodes still wanted, with the quality already on disk (if any). */
-  episodes?: { season: number; episode: number; currentQuality: string | null; airDate?: string | null }[];
+  episodes?: { season: number; episode: number; currentQuality: string | null; airDate?: string | null; currentFormatScore?: number | null }[];
   /** For movies: quality already on disk. */
   currentQuality?: string | null;
+  /** For movies: the custom format score of the file on disk, when known. */
+  currentFormatScore?: number | null;
 }
 
 export interface Decision {
@@ -26,6 +29,9 @@ export interface Decision {
   oversize: number | null;
   /** Set when the only thing holding the release back is the delay profile: when it may be grabbed. */
   delayedUntil: number | null;
+  /** Custom format score under the profile, and the formats it matched. */
+  formatScore: number;
+  formats: string[];
 }
 
 export interface DecideOptions {
@@ -39,6 +45,8 @@ export interface DecideOptions {
   preferredProtocol?: 'any' | 'usenet' | 'torrent';
   /** For tests: the current time. */
   now?: number;
+  /** Custom formats the profile's scores refer to. */
+  formats?: CustomFormat[];
 }
 
 const THEATRICAL_LABEL = { cam: 'CAM', telesync: 'telesync', telecine: 'telecine', screener: 'screener' } as const;
@@ -76,18 +84,38 @@ export function decide(release: Release, target: Target, profile: Profile, block
     rejections.push(`Language is ${parsed.languages.join(', ')}, wanted ${profile.language}`);
   }
 
-  // Upgrades: only when better than what's on disk and that is still below the cutoff.
+  // A season pack is judged per episode, so a 20 GB pack of ten episodes passes a 3 GB limit.
+  const perItem = release.size ? release.size / Math.max(1, target.kind === 'show' ? (covers?.episodes.length ?? 1) : 1) : null;
+
+  // Custom formats: a release scoring under the profile's minimum isn't wanted.
+  const fmt = opts.formats?.length ? scoreRelease(opts.formats, profile.formatScores ?? {}, release, parsed, perItem) : { score: 0, matched: [] };
+  if (fmt.score < (profile.minFormatScore ?? 0)) rejections.push(`Format score ${fmt.score} is below the profile's minimum of ${profile.minFormatScore}`);
+
+  // Upgrades: only when better than what's on disk: a better quality while under the cutoff, or the
+  // same quality with a higher format score while under the profile's "upgrade until" score.
+  const covered = (target.episodes ?? []).filter((e) => covers && e.season === covers.season && covers.episodes.includes(e.episode));
   const current =
     target.kind === 'movie'
       ? (target.currentQuality ?? null)
-      : (target.episodes ?? [])
-          .filter((e) => covers && e.season === covers.season && covers.episodes.includes(e.episode))
-          .map((e) => e.currentQuality)
-          .reduce<string | null>((worst, q) => (q === null || worst === null ? null : qualityRank(q) < qualityRank(worst) ? q : worst), 'Remux-2160p');
+      : covered.map((e) => e.currentQuality).reduce<string | null>((worst, q) => (q === null || worst === null ? null : qualityRank(q) < qualityRank(worst) ? q : worst), 'Remux-2160p');
+  const currentScore =
+    target.kind === 'movie'
+      ? (target.currentFormatScore ?? null)
+      : covered.some((e) => e.currentFormatScore === null || e.currentFormatScore === undefined)
+        ? null
+        : covered.length
+          ? Math.min(...covered.map((e) => e.currentFormatScore!))
+          : null;
   if (current) {
+    const atCutoff = qualityRank(current) >= qualityRank(profile.cutoff);
+    const betterQuality = !atCutoff && qualityRank(parsed.quality) > qualityRank(current);
+    const until = profile.upgradeUntilFormatScore ?? 0;
+    const betterFormat = until > 0 && currentScore !== null && currentScore < until && qualityRank(parsed.quality) >= qualityRank(current) && fmt.score > currentScore;
     if (!profile.upgradesAllowed) rejections.push('Already have it and upgrades are off');
-    else if (qualityRank(current) >= qualityRank(profile.cutoff)) rejections.push(`Already at cutoff (${current})`);
-    else if (qualityRank(parsed.quality) <= qualityRank(current)) rejections.push(`Not better than ${current}`);
+    else if (betterQuality || betterFormat) {
+      // wanted
+    } else if (atCutoff) rejections.push(until > 0 && currentScore !== null && currentScore < until ? `Format score ${fmt.score} is not better than ${currentScore}` : `Already at cutoff (${current})`);
+    else rejections.push(`Not better than ${current}`);
   }
 
   if (blocklisted.has(release.title)) rejections.push('Blocklisted after a failed download');
@@ -105,18 +133,18 @@ export function decide(release: Release, target: Target, profile: Profile, block
     }
   }
 
+  // Quality first, then the format score, then the smaller things.
   const score =
-    qualityRank(parsed.quality) * 1000 +
+    qualityRank(parsed.quality) * 1e9 +
+    Math.max(-99_999, Math.min(99_999, fmt.score)) * 1000 +
     (opts.preferredProtocol && opts.preferredProtocol !== 'any' && release.protocol === opts.preferredProtocol ? 200 : 0) +
     (parsed.proper ? 100 : 0) +
     (parsed.fullSeason ? 50 : 0) +
     Math.min(release.seeders ?? 50, 99);
 
-  // A season pack is judged per episode, so a 20 GB pack of ten episodes passes a 3 GB limit.
-  const perItem = release.size ? release.size / Math.max(1, target.kind === 'show' ? (covers?.episodes.length ?? 1) : 1) : null;
   const oversize = opts.maxSize && perItem && perItem > opts.maxSize ? perItem : null;
 
-  return { release, parsed, accepted: rejections.length === 0, rejections, score, covers, oversize, delayedUntil };
+  return { release, parsed, accepted: rejections.length === 0, rejections, score, covers, oversize, delayedUntil, formatScore: fmt.score, formats: fmt.matched };
 }
 
 /** Best first: anything within the size limit beats anything over it, then by score. */

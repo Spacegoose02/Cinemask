@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
 import { hasRole } from '../auth/guard.js';
-import { DOWNLOAD_CLIENT_TYPES, downloadClients, downloads, indexers, MEDIA_KINDS, monitored, monitoredEpisodes, qualityProfiles, requestFollowers, requests, users, type DownloadClientType } from '../db/schema.js';
+import { DOWNLOAD_CLIENT_TYPES, downloadClients, downloads, indexers, MEDIA_KINDS, monitored, monitoredEpisodes, qualityProfiles, customFormats, requestFollowers, requests, users, type DownloadClientType } from '../db/schema.js';
 import { quotaFor, quotaProblem, requestProgress, showSeasonCount, streamingFor } from '../requests/rules.js';
 import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
@@ -19,6 +19,7 @@ import { excludeFromAutoMonitor, monitorTitle, refreshEpisodes, upgradeCandidate
 import { defaultProfileId, getProfile, listProfiles } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
+import { formatBody, getFormat, listFormats, PRESETS } from './formats.js';
 import { autoSearch, confirmHeld, defaultMaxSize, explainedSearch, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats, refreshMediaServers } from './tracker.js';
@@ -491,6 +492,8 @@ export async function arrRoutes(app: FastifyInstance) {
         rejections: d.rejections,
         covers: d.covers,
         oversize: d.oversize,
+        formatScore: d.formatScore,
+        formats: d.formats,
       })),
     };
   });
@@ -688,14 +691,23 @@ export async function arrRoutes(app: FastifyInstance) {
     cutoff: z.enum(QUALITY_IDS),
     upgradesAllowed: z.boolean().default(true),
     language: z.string().trim().regex(/^(any|multi|[a-z]{2})$/).default('en'),
+    formatScores: z.record(z.string().regex(/^\d{1,9}$/), z.number().int().min(-100_000).max(100_000)).default({}),
+    minFormatScore: z.number().int().min(-100_000).max(100_000).default(0),
+    upgradeUntilFormatScore: z.number().int().min(0).max(100_000).default(0),
   });
+  const profileRow = (b: z.output<typeof profileBody>) => {
+    // Only scores for formats that exist are kept.
+    const known = new Set(listFormats(ctx).map((f) => String(f.id)));
+    const scores = Object.fromEntries(Object.entries(b.formatScores).filter(([id, v]) => known.has(id) && v !== 0));
+    return { ...b, qualities: JSON.stringify(b.qualities), formatScores: JSON.stringify(scores) };
+  };
 
   app.get('/api/profiles', { config: { access: 'user' } }, async () => listProfiles(ctx));
 
   app.post('/api/profiles', { config: { access: 'admin' } }, async (req) => {
     const b = parse(profileBody, req.body);
     if (!b.qualities.includes(b.cutoff)) throw badRequest('The cutoff must be one of the allowed qualities');
-    const r = db().insert(qualityProfiles).values({ ...b, qualities: JSON.stringify(b.qualities), createdAt: Date.now() }).returning().get();
+    const r = db().insert(qualityProfiles).values({ ...profileRow(b), createdAt: Date.now() }).returning().get();
     audit(db(), req, 'profile.created', { target: b.name });
     return getProfile(ctx, r.id);
   });
@@ -705,7 +717,7 @@ export async function arrRoutes(app: FastifyInstance) {
     const b = parse(profileBody, req.body);
     if (!b.qualities.includes(b.cutoff)) throw badRequest('The cutoff must be one of the allowed qualities');
     if (!getProfile(ctx, id)) throw notFound();
-    db().update(qualityProfiles).set({ ...b, qualities: JSON.stringify(b.qualities) }).where(eq(qualityProfiles.id, id)).run();
+    db().update(qualityProfiles).set(profileRow(b)).where(eq(qualityProfiles.id, id)).run();
     audit(db(), req, 'profile.updated', { target: b.name });
     return getProfile(ctx, id);
   });
@@ -716,6 +728,77 @@ export async function arrRoutes(app: FastifyInstance) {
     db().delete(qualityProfiles).where(eq(qualityProfiles.id, id)).run();
     audit(db(), req, 'profile.deleted', { target: String(id) });
     return { ok: true };
+  });
+
+  // ---------------- Custom formats ----------------
+  app.get('/api/custom-formats', { config: { access: 'manager' } }, async () => ({
+    formats: listFormats(ctx),
+    presets: PRESETS.map((p) => ({ name: p.name, score: p.score, about: p.about, added: false })).map((p) => ({ ...p, added: listFormats(ctx).some((f) => f.name.toLowerCase() === p.name.toLowerCase()) })),
+  }));
+
+  app.post('/api/custom-formats', { config: { access: 'admin' } }, async (req) => {
+    const b = parse(formatBody, req.body);
+    if (listFormats(ctx).some((f) => f.name.toLowerCase() === b.name.toLowerCase())) throw conflict('A format with that name already exists');
+    const r = db().insert(customFormats).values({ name: b.name, rules: JSON.stringify(b.rules), createdAt: Date.now() }).returning().get();
+    audit(db(), req, 'format.created', { target: b.name });
+    return getFormat(ctx, r.id);
+  });
+
+  app.put('/api/custom-formats/:id', { config: { access: 'admin' } }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const b = parse(formatBody, req.body);
+    if (!getFormat(ctx, id)) throw notFound();
+    if (listFormats(ctx).some((f) => f.id !== id && f.name.toLowerCase() === b.name.toLowerCase())) throw conflict('A format with that name already exists');
+    db().update(customFormats).set({ name: b.name, rules: JSON.stringify(b.rules) }).where(eq(customFormats.id, id)).run();
+    audit(db(), req, 'format.updated', { target: b.name });
+    return getFormat(ctx, id);
+  });
+
+  app.delete('/api/custom-formats/:id', { config: { access: 'admin' } }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const f = getFormat(ctx, id);
+    if (!f) throw notFound();
+    db().delete(customFormats).where(eq(customFormats.id, id)).run();
+    // Profiles forget its score.
+    for (const p of listProfiles(ctx)) {
+      if (!(String(id) in p.formatScores)) continue;
+      const rest = Object.fromEntries(Object.entries(p.formatScores).filter(([k]) => k !== String(id)));
+      db().update(qualityProfiles).set({ formatScores: JSON.stringify(rest) }).where(eq(qualityProfiles.id, p.id)).run();
+    }
+    audit(db(), req, 'format.deleted', { target: f.name });
+    return { ok: true };
+  });
+
+  /**
+   * Adds the ready-made formats that aren't there yet and, for the profiles named, sets their
+   * suggested scores (only where the profile has no score of its own for that format).
+   */
+  app.post('/api/custom-formats/presets', { config: { access: 'admin' } }, async (req) => {
+    const { names, profileIds } = parse(z.object({ names: z.array(z.string().max(60)).max(50).optional(), profileIds: z.array(z.number().int().positive()).max(50).default([]) }), req.body ?? {});
+    const wanted = PRESETS.filter((p) => !names || names.includes(p.name));
+    const existing = listFormats(ctx);
+    let added = 0;
+    const idOf = new Map<string, number>();
+    for (const p of wanted) {
+      const have = existing.find((f) => f.name.toLowerCase() === p.name.toLowerCase());
+      if (have) idOf.set(p.name, have.id);
+      else {
+        idOf.set(p.name, db().insert(customFormats).values({ name: p.name, rules: JSON.stringify(p.rules), createdAt: Date.now() }).returning().get().id);
+        added++;
+      }
+    }
+    for (const pid of profileIds) {
+      const prof = getProfile(ctx, pid);
+      if (!prof) continue;
+      const scores = { ...prof.formatScores };
+      for (const p of wanted) {
+        const key = String(idOf.get(p.name));
+        if (!(key in scores) && p.score !== 0) scores[key] = p.score;
+      }
+      db().update(qualityProfiles).set({ formatScores: JSON.stringify(scores) }).where(eq(qualityProfiles.id, pid)).run();
+    }
+    audit(db(), req, 'format.presets', { details: { added, profiles: profileIds.length } });
+    return { added, formats: listFormats(ctx) };
   });
 
   // ---------------- Indexers ----------------

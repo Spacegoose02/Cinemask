@@ -178,6 +178,20 @@ export const qualityProfiles = sqliteTable('quality_profiles', {
   /** 'any', or an ISO 639-1 code such as 'en'. Releases in other languages are skipped. */
   language: text('language').notNull().default('any'),
   createdAt: integer('created_at').notNull(),
+  /** JSON { [customFormatId]: score }. */
+  formatScores: text('format_scores').notNull().default('{}'),
+  /** Releases scoring below this are not grabbed automatically. */
+  minFormatScore: integer('min_format_score').notNull().default(0),
+  /** Keep upgrading a file at the cutoff quality until its format score reaches this. 0 turns it off. */
+  upgradeUntilFormatScore: integer('upgrade_until_format_score').notNull().default(0),
+});
+
+/** Named release rules (HDR, Atmos, a release group…) that quality profiles score. See arr/formats.ts. */
+export const customFormats = sqliteTable('custom_formats', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull().unique(),
+  rules: text('rules').notNull(), // JSON FormatRule[]
+  createdAt: integer('created_at').notNull(),
 });
 
 /** A movie or show the app keeps an eye on: searches for it, downloads and upgrades it. */
@@ -206,6 +220,9 @@ export const monitored = sqliteTable(
     maxSizeMb: integer('max_size_mb'),
     /** Doubles the default size limit for this title (when maxSizeMb is null). */
     largerFiles: integer('larger_files', { mode: 'boolean' }).notNull().default(false),
+    /** The release the file came from, and its custom format score when it was imported. */
+    fileRelease: text('file_release'),
+    fileFormatScore: integer('file_format_score'),
   },
   (t) => [uniqueIndex('monitored_kind_tmdb').on(t.kind, t.tmdbId)],
 );
@@ -237,6 +254,8 @@ export const monitoredEpisodes = sqliteTable(
     fileQuality: text('file_quality'),
     /** TMDB's episode_type: "standard", "mid_season" or "finale". */
     episodeType: text('episode_type'),
+    fileRelease: text('file_release'),
+    fileFormatScore: integer('file_format_score'),
   },
   (t) => [uniqueIndex('monitored_episode_key').on(t.monitoredId, t.season, t.episode)],
 );

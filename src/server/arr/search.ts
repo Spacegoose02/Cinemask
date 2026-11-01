@@ -10,6 +10,7 @@ import { searchProfile } from './profiles.js';
 import { parseRelease, titlesMatch } from './parser.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { rootOf } from './roots.js';
+import { listFormats } from './formats.js';
 import { notify } from '../notify/service.js';
 
 export function enabledIndexers(ctx: AppContext): IndexerConfig[] {
@@ -109,6 +110,7 @@ export function decideOptions(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 
     maxSize: maxSizeFor(ctx, row),
     delay: { usenet: s.usenetDelayMinutes, torrent: s.torrentDelayMinutes, bypassAtCutoff: s.bypassDelayAtCutoff },
     preferredProtocol: s.preferredProtocol,
+    formats: listFormats(ctx),
   };
 }
 

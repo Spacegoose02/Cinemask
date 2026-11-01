@@ -653,6 +653,25 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       CREATE INDEX push_subscriptions_user_idx ON push_subscriptions(user_id);
     `,
   },
+  {
+    id: 23,
+    name: 'custom formats',
+    sql: `
+      CREATE TABLE custom_formats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        rules TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      ALTER TABLE quality_profiles ADD COLUMN format_scores TEXT NOT NULL DEFAULT '{}';
+      ALTER TABLE quality_profiles ADD COLUMN min_format_score INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE quality_profiles ADD COLUMN upgrade_until_format_score INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE monitored ADD COLUMN file_release TEXT;
+      ALTER TABLE monitored ADD COLUMN file_format_score INTEGER;
+      ALTER TABLE monitored_episodes ADD COLUMN file_release TEXT;
+      ALTER TABLE monitored_episodes ADD COLUMN file_format_score INTEGER;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

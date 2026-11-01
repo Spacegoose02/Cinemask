@@ -11,6 +11,8 @@ import { insideRoot } from '../lib/paths.js';
 import { qualityRank } from './quality.js';
 import { listRoots, rootOf } from './roots.js';
 import { followMovedFolder } from '../files/service.js';
+import { listFormats, scoreRelease } from './formats.js';
+import { getProfile } from './profiles.js';
 
 const SAMPLE_MAX = 80 * 1024 * 1024;
 
@@ -167,6 +169,18 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     );
   }
   const result: ImportResult = { imported: [], skipped: [] };
+  // The release's custom format score under the title's profile, kept with the file so later
+  // releases can be compared with it.
+  const profile = getProfile(ctx, row.profileId);
+  const scoreOf = (release: string) => {
+    if (!profile) return null;
+    const parsed = parseRelease(release);
+    return scoreRelease(listFormats(ctx), profile.formatScores, { title: release, indexer: dl.indexer ?? '', protocol: dl.protocol === 'direct' ? 'torrent' : dl.protocol, size: dl.size ?? 0 }, parsed).score;
+  };
+  const releaseScore = scoreOf(dl.title);
+  // Same quality, better format score (e.g. now with HDR): still an upgrade when the profile wants one.
+  const betterFormat = (curQuality: string, curScore: number | null, quality: string) =>
+    qualityRank(curQuality) === qualityRank(quality) && curScore !== null && releaseScore !== null && releaseScore > curScore;
 
   if (row.kind === 'movie') {
     const root = rootOf(ctx, row).path;
@@ -176,12 +190,12 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     const name = naming.renameFiles ? renderName(naming.movieFile, { movieTitle: row.title, year: row.year, quality, tmdbId: row.tmdbId }) : path.parse(file).name;
     const dest = path.join(folder, `${name}${path.extname(file).toLowerCase()}`);
     if (!inside(root, dest)) throw new Error('Refusing to write outside the movies folder');
-    if (!opts.replace && row.filePath && row.fileQuality && qualityRank(row.fileQuality) >= qualityRank(quality)) {
+    if (!opts.replace && row.filePath && row.fileQuality && qualityRank(row.fileQuality) >= qualityRank(quality) && !betterFormat(row.fileQuality, row.fileFormatScore, quality)) {
       result.skipped.push(`${path.basename(file)}: existing file is as good or better`);
     } else {
       placeFile(file, dest, mode ?? mediaSettings.importMode);
       if (row.filePath && row.filePath !== dest && inside(root, row.filePath) && fs.existsSync(row.filePath)) fs.rmSync(row.filePath);
-      ctx.db.update(monitored).set({ path: folder, filePath: dest, fileQuality: quality }).where(eq(monitored.id, row.id)).run();
+      ctx.db.update(monitored).set({ path: folder, filePath: dest, fileQuality: quality, fileRelease: dl.title, fileFormatScore: releaseScore }).where(eq(monitored.id, row.id)).run();
       result.imported.push(dest);
     }
   } else {
@@ -208,7 +222,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
         continue;
       }
       const quality = parsed.quality !== 'Unknown' ? parsed.quality : (dl.quality ?? 'Unknown');
-      if (!opts.replace && epRows.every((e) => e.fileQuality && qualityRank(e.fileQuality) >= qualityRank(quality))) {
+      if (!opts.replace && epRows.every((e) => e.fileQuality && qualityRank(e.fileQuality) >= qualityRank(quality) && !betterFormat(e.fileQuality, e.fileFormatScore, quality))) {
         result.skipped.push(`${path.basename(file)}: existing file is as good or better`);
         continue;
       }
@@ -220,7 +234,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
       placeFile(file, dest, mode ?? mediaSettings.importMode);
       for (const e of epRows) {
         if (e.filePath && e.filePath !== dest && inside(root, e.filePath) && fs.existsSync(e.filePath)) fs.rmSync(e.filePath);
-        ctx.db.update(monitoredEpisodes).set({ filePath: dest, fileQuality: quality }).where(eq(monitoredEpisodes.id, e.id)).run();
+        ctx.db.update(monitoredEpisodes).set({ filePath: dest, fileQuality: quality, fileRelease: dl.title, fileFormatScore: releaseScore }).where(eq(monitoredEpisodes.id, e.id)).run();
       }
       result.imported.push(dest);
     }

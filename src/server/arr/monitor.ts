@@ -105,8 +105,9 @@ export function wantedTarget(ctx: AppContext, row: MonitoredRow, filter?: Search
   if (!profile || !row.monitored) return null;
   if (row.kind === 'movie') {
     const current = row.fileQuality ?? (serverQuality(ctx, 'movie', row.tmdbId) as string | null);
-    if (current && (filter?.missingOnly || !belowCutoff(profile, current))) return null;
-    return { kind: 'movie', title: row.title, year: row.year, currentQuality: current };
+    const score = row.fileQuality ? row.fileFormatScore : null;
+    if (current && (filter?.missingOnly || !belowCutoff(profile, current, score))) return null;
+    return { kind: 'movie', title: row.title, year: row.year, currentQuality: current, currentFormatScore: score };
   }
   const onServer = serverQuality(ctx, 'show', row.tmdbId) as Map<string, string>;
   const eps = ctx.db
@@ -119,8 +120,14 @@ export function wantedTarget(ctx: AppContext, row: MonitoredRow, filter?: Search
     .filter((e) => (filter?.season !== undefined || e.monitored) && (filter?.episode !== undefined || (e.airDate && e.airDate <= today())))
     .filter((e) => filter?.season === undefined || e.season === filter.season)
     .filter((e) => filter?.episode === undefined || e.episode === filter.episode)
-    .map((e) => ({ season: e.season, episode: e.episode, airDate: e.airDate, currentQuality: e.fileQuality ?? onServer.get(`${e.season}:${e.episode}`) ?? null }))
-    .filter((e) => !e.currentQuality || (!filter?.missingOnly && belowCutoff(profile, e.currentQuality)));
+    .map((e) => ({
+      season: e.season,
+      episode: e.episode,
+      airDate: e.airDate,
+      currentQuality: e.fileQuality ?? onServer.get(`${e.season}:${e.episode}`) ?? null,
+      currentFormatScore: e.fileQuality ? e.fileFormatScore : null,
+    }))
+    .filter((e) => !e.currentQuality || (!filter?.missingOnly && belowCutoff(profile, e.currentQuality, e.currentFormatScore)));
   return eps.length ? { kind: 'show', title: row.title, year: row.year, episodes: eps } : null;
 }
 

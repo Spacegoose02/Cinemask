@@ -49,6 +49,8 @@ interface ReleaseRow {
   rejections: string[];
   /** Size per movie or episode when over the size limit. */
   oversize: number | null;
+  formatScore?: number;
+  formats?: string[];
   /** The status of this release's download when it was already sent for this title. */
   grabbed: string | null;
 }
@@ -319,6 +321,11 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
                   <div className="text-xs text-muted">
                     {r.indexer} · {r.protocol} · {r.languages.join(', ')}
                   </div>
+                  {!!r.formats?.length && (
+                    <div className="text-xs text-muted">
+                      {r.formats.join(' · ')} {r.formatScore ? `(${r.formatScore > 0 ? '+' : ''}${r.formatScore})` : ''}
+                    </div>
+                  )}
                   {!r.accepted && <div className="text-xs text-danger">{r.rejections.join('; ')}</div>}
                   {r.oversize !== null && <div className="text-xs text-warning">Over the size limit ({formatBytes(r.oversize)}{season ? ' per episode' : ''})</div>}
                   <GrabbedNote now={sentNow[r.guid]} before={r.grabbed} />
