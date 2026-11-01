@@ -64,6 +64,14 @@ export function ApiSettings() {
       </section>
 
       <section className="card space-y-2">
+        <h2 className="font-semibold">Apps made for Radarr and Sonarr</h2>
+        <p className="text-sm text-muted">
+          Overseerr, Jellyseerr, LunaSea, nzb360 and Home Assistant can talk to Cinemask as if it were Radarr and Sonarr. Add a Radarr or Sonarr server in the app with Cinemask's address and port, the URL base <code>/api/compat/radarr</code> or{' '}
+          <code>/api/compat/sonarr</code>, and an API key of a manager or admin. Titles added from those apps skip approval and show in the activity log.
+        </p>
+      </section>
+
+      <section className="card space-y-2">
         <h2 className="font-semibold">Webhooks</h2>
         <p className="text-sm text-muted">
           The webhook for Home Assistant and others is now with Discord, Telegram and the rest in <Link to="/settings/notifications" className="text-accent hover:underline">Settings → Notifications</Link>.
