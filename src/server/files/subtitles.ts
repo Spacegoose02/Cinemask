@@ -22,9 +22,10 @@ export function movieHash(file: string): string | null {
   const CHUNK = 65536;
   let fd: number | null = null;
   try {
-    const size = fs.statSync(file).size;
-    if (size < CHUNK * 2) return null;
+    // Open first and size the open file, so it can't change between the check and the read.
     fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    if (size < CHUNK * 2) return null;
     let sum = BigInt(size);
     const buf = Buffer.alloc(CHUNK);
     for (const at of [0, size - CHUNK]) {
@@ -157,13 +158,30 @@ export async function fetchSubtitles(ctx: AppContext, row: MonitoredRow, scope: 
       if (!res.ok) throw new IntegrationError(SERVICE, `the subtitle download answered HTTP ${res.status}`, res.status);
       const text = await res.text();
       if (text.length > MAX_SUB_BYTES) throw new IntegrationError(SERVICE, 'sent a subtitle file that is far too big');
+      // Only ever write what is plainly a subtitle file: SubRip timings, and no binary content.
+      if (!isSubRip(text)) throw new IntegrationError(SERVICE, "sent something that isn't a subtitle file");
       const dest = path.join(path.dirname(v.file), `${path.parse(v.file).name}.${lang}${best.attributes.hearing_impaired ? '.sdh' : ''}.srt`);
       if (!insideRoot(root, dest)) throw new Error('Refusing to write outside the media folder');
-      fs.writeFileSync(dest, text);
+      writeNoFollow(dest, text);
       out.saved.push(dest);
     }
   }
   return out;
+}
+
+/** SubRip text: has at least one "00:00:01,000 --> 00:00:02,000" timing and no NUL bytes. */
+export function isSubRip(text: string): boolean {
+  return !text.includes('\0') && /\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}/.test(text);
+}
+
+/** Writes a file without following a symlink planted where it goes. */
+function writeNoFollow(dest: string, text: string) {
+  const fd = fs.openSync(dest, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW ?? 0), 0o644);
+  try {
+    fs.writeFileSync(fd, text);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /** After an import: fetch subtitles automatically when that's turned on. Errors are ignored. */

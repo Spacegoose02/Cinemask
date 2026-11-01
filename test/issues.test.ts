@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trackDownloads } from '../src/server/arr/tracker.js';
 import { fromProbe, problemsOf, resolutionOf } from '../src/server/files/mediainfo.js';
-import { movieHash, pickSubtitle } from '../src/server/files/subtitles.js';
+import { isSubRip, movieHash, pickSubtitle } from '../src/server/files/subtitles.js';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
 import { bodyText, fakeFetch, torrentFile, tmdbRoutes } from './fakes.js';
 
@@ -55,6 +55,12 @@ describe('subtitles', () => {
     const expected = (BigInt(200_000) + 2n * 8192n * 0x0101010101010101n) & 0xffffffffffffffffn;
     expect(movieHash(f)).toBe(expected.toString(16).padStart(16, '0'));
     fs.rmSync(dir, { recursive: true });
+  });
+
+  it('only writes what is plainly a SubRip file', () => {
+    expect(isSubRip('1\n00:00:01,000 --> 00:00:02,000\nHello, bear.\n')).toBe(true);
+    expect(isSubRip('<html>not a subtitle</html>')).toBe(false);
+    expect(isSubRip('1\n00:00:01,000 --> 00:00:02,000\n\0binary')).toBe(false);
   });
 
   it('prefers an exact file match, then human-made, then the most downloaded', () => {
