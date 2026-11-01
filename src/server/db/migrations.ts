@@ -672,6 +672,85 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE monitored_episodes ADD COLUMN file_format_score INTEGER;
     `,
   },
+  {
+    id: 24,
+    name: 'file details, problem reports and replacement downloads',
+    sql: `
+      ALTER TABLE monitored ADD COLUMN file_info TEXT;
+      ALTER TABLE monitored_episodes ADD COLUMN file_info TEXT;
+      ALTER TABLE downloads ADD COLUMN replace_file INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE downloads ADD COLUMN issue_id INTEGER;
+      CREATE TABLE issues (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        year INTEGER,
+        poster_path TEXT,
+        season INTEGER,
+        episode INTEGER,
+        type TEXT NOT NULL CHECK (type IN ('audio','subtitles','video','playback','wrong','other')),
+        message TEXT,
+        status TEXT NOT NULL CHECK (status IN ('open','fixing','resolved')),
+        reported_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        reported_by_name TEXT,
+        resolved_by_name TEXT,
+        resolution TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX issues_status_idx ON issues(status);
+      CREATE INDEX issues_title_idx ON issues(kind, tmdb_id);
+    `,
+  },
+  {
+    id: 25,
+    name: 'watchlists, kids profiles, series types, seeding and the storage manager',
+    sql: `
+      ALTER TABLE users ADD COLUMN plex_token TEXT;
+      ALTER TABLE users ADD COLUMN jellyfin_user_id TEXT;
+      ALTER TABLE users ADD COLUMN watchlist_sync INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN watchlist_synced_at INTEGER;
+      ALTER TABLE users ADD COLUMN watchlist_error TEXT;
+      ALTER TABLE users ADD COLUMN max_age INTEGER;
+      ALTER TABLE media ADD COLUMN certification TEXT;
+      ALTER TABLE media ADD COLUMN min_age INTEGER;
+      ALTER TABLE monitored ADD COLUMN series_type TEXT NOT NULL DEFAULT 'standard' CHECK (series_type IN ('standard','daily','anime'));
+      ALTER TABLE monitored ADD COLUMN keep INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE monitored_episodes ADD COLUMN absolute_number INTEGER;
+      ALTER TABLE downloads ADD COLUMN seeding INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE downloads ADD COLUMN progress_at INTEGER;
+      CREATE TABLE watchlist_items (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        source TEXT NOT NULL CHECK (source IN ('plex','jellyfin')),
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        result TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, source, kind, tmdb_id)
+      );
+      CREATE TABLE recycle_bin (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER,
+        title TEXT NOT NULL,
+        original_path TEXT NOT NULL,
+        bin_path TEXT NOT NULL,
+        size INTEGER NOT NULL DEFAULT 0,
+        reason TEXT,
+        deleted_by_name TEXT,
+        deleted_at INTEGER NOT NULL
+      );
+    `,
+  },
+  {
+    id: 26,
+    name: 'interface language',
+    sql: `
+      ALTER TABLE users ADD COLUMN language TEXT;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

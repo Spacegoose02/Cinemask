@@ -8,6 +8,8 @@ import { signInWithPlex } from '../lib/plex';
 import { ApiKeys } from '../components/ApiKeys';
 import { ThemePicker } from '../components/ThemePicker';
 import { NotificationPrefs } from '../components/NotificationPrefs';
+import { WatchlistSync } from '../components/WatchlistSync';
+import { chooseLanguage, LANGUAGES, useT, type Language } from '../lib/i18n';
 
 interface SessionRow {
   id: string;
@@ -20,6 +22,7 @@ interface SessionRow {
 
 export function AccountPage() {
   const { me, refresh } = useAuth();
+  const t = useT();
   const qc = useQueryClient();
   const [params] = useSearchParams();
   const [current, setCurrent] = useState('');
@@ -55,6 +58,7 @@ export function AccountPage() {
     try {
       await signInWithPlex(true);
       setMsg({ kind: 'success', text: 'Plex account linked.' });
+      await qc.invalidateQueries({ queryKey: ['watchlist-me'] });
     } catch (e) {
       setMsg({ kind: 'error', text: (e as Error).message });
     }
@@ -62,19 +66,42 @@ export function AccountPage() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <h1 className="text-2xl font-semibold">Account</h1>
+      <h1 className="text-2xl font-semibold">{t('Account')}</h1>
       <LoadError queries={[sessions]} />
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
 
       <NotificationPrefs />
 
+      <WatchlistSync />
+
       <section className="card space-y-3">
-        <h2 className="font-semibold">Appearance</h2>
+        <h2 className="font-semibold">{t('Appearance')}</h2>
         <ThemePicker current={me?.theme ?? null} />
       </section>
 
       <section className="card space-y-3">
-        <h2 className="font-semibold">{me?.hasPassword ? 'Change password' : 'Set a password'}</h2>
+        <h2 className="font-semibold">{t('Language')}</h2>
+        <select
+          className="input sm:w-auto"
+          value={me?.language ?? ''}
+          onChange={(e) =>
+            void chooseLanguage((e.target.value || null) as Language | null)
+              .then(refresh)
+              .catch((err: Error) => setMsg({ kind: 'error', text: err.message }))
+          }
+          aria-label={t('Language')}
+        >
+          <option value="">{t('Same as this browser')}</option>
+          {LANGUAGES.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+      </section>
+
+      <section className="card space-y-3">
+        <h2 className="font-semibold">{me?.hasPassword ? t('Change password') : t('Set a password')}</h2>
         {me?.hasPassword && (
           <Field label="Current password">
             <input className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
@@ -90,7 +117,7 @@ export function AccountPage() {
 
       {(status.data?.methods.oidc || status.data?.methods.plex) && (
         <section className="card space-y-3">
-          <h2 className="font-semibold">Linked sign-in</h2>
+          <h2 className="font-semibold">{t('Linked sign-in')}</h2>
           <p className="text-sm text-muted">Link an outside account so you can sign in with it.</p>
           <div className="flex flex-wrap gap-2">
             {status.data.methods.oidc && (
@@ -108,7 +135,7 @@ export function AccountPage() {
       )}
 
       <section className="card space-y-3">
-        <h2 className="font-semibold">Signed-in devices</h2>
+        <h2 className="font-semibold">{t('Signed-in devices')}</h2>
         <ul className="divide-y divide-border">
           {sessions.data?.map((s) => (
             <li key={s.id} className="flex items-center justify-between gap-3 py-2 text-sm">

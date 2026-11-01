@@ -16,6 +16,8 @@ export interface SearchFilter {
   season?: number;
   episode?: number;
   missingOnly?: boolean;
+  /** Look for a different copy of what's there, as if it had no file (fixing a problem report). */
+  replace?: boolean;
 }
 
 const today = () => localDay();
@@ -45,7 +47,14 @@ export async function monitorTitle(
         .values({ kind: input.kind, tmdbId: input.tmdbId, title: meta.title, year: meta.year, profileId: input.profileId, seasons, addedBy: input.addedBy ?? null, addedAt: Date.now(), ...extra })
         .returning()
         .get();
-  if (row.kind === 'show') await refreshEpisodes(ctx, row, true);
+  if (row.kind === 'show') {
+    const show = await refreshEpisodes(ctx, row, true);
+    // Japanese animation is usually released with absolute numbers.
+    if (!existing && show && looksLikeAnime(show)) {
+      ctx.db.update(monitored).set({ seriesType: 'anime' }).where(eq(monitored.id, row.id)).run();
+      return { ...row, seriesType: 'anime' };
+    }
+  }
   return row;
 }
 
@@ -58,18 +67,21 @@ export async function refreshEpisodes(ctx: AppContext, row: MonitoredRow, resetM
   const show = await tmdb.show(row.tmdbId);
   const wantedSeasons: number[] | null = row.seasons ? (JSON.parse(row.seasons) as number[]) : null;
   const runtimes: number[] = [];
-  for (const s of show.seasons) {
+  // Anime is numbered from the first episode of the show; count it in season order.
+  let absolute = 0;
+  for (const s of [...show.seasons].sort((a, b) => a.season_number - b.season_number)) {
     if (s.season_number === 0) continue; // specials are opt-in by searching manually
     const season = await tmdb.season(row.tmdbId, s.season_number);
-    for (const e of season.episodes) {
+    for (const e of [...season.episodes].sort((a, b) => a.episode_number - b.episode_number)) {
+      absolute++;
       if (e.runtime) runtimes.push(e.runtime);
       const isMonitored = !wantedSeasons || wantedSeasons.includes(s.season_number);
       ctx.db
         .insert(monitoredEpisodes)
-        .values({ monitoredId: row.id, season: s.season_number, episode: e.episode_number, title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, monitored: isMonitored })
+        .values({ monitoredId: row.id, season: s.season_number, episode: e.episode_number, title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, monitored: isMonitored, absoluteNumber: absolute })
         .onConflictDoUpdate({
           target: [monitoredEpisodes.monitoredId, monitoredEpisodes.season, monitoredEpisodes.episode],
-          set: { title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, ...(resetMonitored ? { monitored: isMonitored } : {}) },
+          set: { title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, absoluteNumber: absolute, ...(resetMonitored ? { monitored: isMonitored } : {}) },
         })
         .run();
     }
@@ -80,6 +92,7 @@ export async function refreshEpisodes(ctx: AppContext, row: MonitoredRow, resetM
     const typical = runtimes.sort((a, b) => a - b)[Math.floor(runtimes.length / 2)]!;
     ctx.db.update(media).set({ runtime: typical }).where(and(eq(media.kind, 'show'), eq(media.tmdbId, row.tmdbId), isNull(media.runtime))).run();
   }
+  return show;
 }
 
 /** Quality of what's already on a media server, used when the app didn't import the file itself. */
@@ -99,10 +112,25 @@ function serverQuality(ctx: AppContext, kind: MediaKind, tmdbId: number): Map<st
   return map;
 }
 
+/** Animation made in Japanese: released by fansub and anime groups with absolute numbers. */
+export const looksLikeAnime = (show: { original_language?: string; genres: { id: number; name: string }[] }) => show.original_language === 'ja' && show.genres.some((g) => g.id === 16);
+
 /** What still needs downloading (missing, or upgradable) for a monitored title. Null when nothing is wanted. */
 export function wantedTarget(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter): Target | null {
   const profile = searchProfile(ctx, row.profileId);
-  if (!profile || !row.monitored) return null;
+  if (!profile || (!row.monitored && !filter?.replace)) return null;
+  if (filter?.replace) {
+    // Everything in scope counts as missing, so even a file at the cutoff gets a new copy.
+    if (row.kind === 'movie') return { kind: 'movie', title: row.title, year: row.year, currentQuality: null };
+    const eps = ctx.db
+      .select()
+      .from(monitoredEpisodes)
+      .where(eq(monitoredEpisodes.monitoredId, row.id))
+      .all()
+      .filter((e) => (filter.season === undefined || e.season === filter.season) && (filter.episode === undefined || e.episode === filter.episode) && (e.filePath || (e.airDate && e.airDate <= today())))
+      .map((e) => ({ season: e.season, episode: e.episode, airDate: e.airDate, absolute: e.absoluteNumber, currentQuality: null, currentFormatScore: null }));
+    return eps.length ? { kind: 'show', title: row.title, year: row.year, episodes: eps } : null;
+  }
   if (row.kind === 'movie') {
     const current = row.fileQuality ?? (serverQuality(ctx, 'movie', row.tmdbId) as string | null);
     const score = row.fileQuality ? row.fileFormatScore : null;
@@ -124,6 +152,7 @@ export function wantedTarget(ctx: AppContext, row: MonitoredRow, filter?: Search
       season: e.season,
       episode: e.episode,
       airDate: e.airDate,
+      absolute: e.absoluteNumber,
       currentQuality: e.fileQuality ?? onServer.get(`${e.season}:${e.episode}`) ?? null,
       currentFormatScore: e.fileQuality ? e.fileFormatScore : null,
     }))

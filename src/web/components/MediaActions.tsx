@@ -6,6 +6,7 @@ import type { MediaDetail } from '../pages/MediaDetail';
 import { PosterPicker, useCreateSeriesCollection } from './Extras';
 import { Modal } from './Modal';
 import { Alert } from './ui';
+import { ReportProblem } from './ReportProblem';
 
 interface Profile {
   id: number;
@@ -23,6 +24,8 @@ interface Lookup {
     rootId?: string | null;
     maxSizeMb?: number | null;
     largerFiles?: boolean;
+    seriesType?: 'standard' | 'daily' | 'anime';
+    keep?: boolean;
     defaultMaxSizeMb?: number | null;
     path?: string | null;
   } | null;
@@ -102,13 +105,15 @@ function FolderAndSize({ mon, kind, roots, onClose, onSaved }: { mon: NonNullabl
   const [rootId, setRootId] = useState(mon.rootId ?? 'default');
   const [mode, setMode] = useState<'default' | 'double' | 'none' | 'custom'>(mon.maxSizeMb === null || mon.maxSizeMb === undefined ? (mon.largerFiles ? 'double' : 'default') : mon.maxSizeMb === 0 ? 'none' : 'custom');
   const [gb, setGb] = useState(mon.maxSizeMb ? String(Math.round((mon.maxSizeMb / 1024) * 10) / 10) : '');
+  const [seriesType, setSeriesType] = useState(mon.seriesType ?? 'standard');
+  const [keep, setKeep] = useState(Boolean(mon.keep));
   const [msg, setMsg] = useState<string | null>(null);
   const save = async () => {
     setMsg(null);
     try {
       const maxSizeMb = mode === 'default' || mode === 'double' ? null : mode === 'none' ? 0 : Math.round(Number(gb) * 1024);
       if (mode === 'custom' && !(maxSizeMb && maxSizeMb > 0)) throw new Error('Enter a size in GB');
-      await api(`/api/monitored/${mon.id}`, { method: 'PATCH', body: { rootId, maxSizeMb, largerFiles: mode === 'double' } });
+      await api(`/api/monitored/${mon.id}`, { method: 'PATCH', body: { rootId, maxSizeMb, largerFiles: mode === 'double', keep, ...(kind === 'show' ? { seriesType } : {}) } });
       onSaved();
       onClose();
     } catch (e) {
@@ -119,7 +124,7 @@ function FolderAndSize({ mon, kind, roots, onClose, onSaved }: { mon: NonNullabl
   const limit = (mb: number) => `${Math.round((mb / 1024) * 10) / 10} GB`;
   const def = mon.defaultMaxSizeMb;
   return (
-    <Modal title="Folder and size" onClose={onClose}>
+    <Modal title="Folder, size and more" onClose={onClose}>
       <div className="space-y-4">
         {msg && <Alert>{msg}</Alert>}
         {roots.length > 1 && (
@@ -151,6 +156,20 @@ function FolderAndSize({ mon, kind, roots, onClose, onSaved }: { mon: NonNullabl
           ))}
           <p className="hint">Bigger releases are only grabbed when nothing smaller is found, and you get a warning when that happens.</p>
         </fieldset>
+        {kind === 'show' && (
+          <label className="block">
+            <span className="label">Episode numbering</span>
+            <select className="input" value={seriesType} onChange={(e) => setSeriesType(e.target.value as typeof seriesType)}>
+              <option value="standard">Seasons and episodes (S01E05)</option>
+              <option value="anime">Anime: counted from the first episode (Show - 112)</option>
+              <option value="daily">Daily: by air date (Show 2025-03-14)</option>
+            </select>
+            <span className="hint block">Anime is also searched by its absolute number. Japanese animation is set to anime automatically.</span>
+          </label>
+        )}
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep: never suggest or delete it to free up space
+        </label>
         <button className="btn-primary" onClick={save}>
           Save
         </button>
@@ -541,7 +560,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
             {mon.monitored ? 'Unmonitor' : 'Monitor'}
           </button>
           <button className="btn-secondary" onClick={() => setFolderSize(true)}>
-            {roots.length > 1 ? 'Folder and size' : 'Size limit'}
+            {roots.length > 1 ? 'Folder, size and more' : 'Size and more'}
             {'largerFiles' in mon && mon.largerFiles && !mon.maxSizeMb && mon.maxSizeMb !== 0 ? ' (2×)' : ''}
           </button>
         </>
@@ -561,6 +580,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           Add {m.collection.name} to your media servers
         </button>
       )}
+      {(fullyAvailable || mon) && <ReportProblem m={m} />}
       {msg && msg.text && <Alert kind={msg.kind}>{msg.text}</Alert>}
       {posters && <PosterPicker kind={m.kind} tmdbId={m.tmdbId} onClose={() => setPosters(false)} />}
       {requesting && (

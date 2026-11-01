@@ -5,6 +5,8 @@ export interface ParsedRelease {
   year: number | null;
   season: number | null;
   episodes: number[];
+  /** Anime-style absolute episode numbers ("[Group] Show - 112 [1080p]"), when there's no season. */
+  absolute: number[];
   fullSeason: boolean;
   airDate: string | null;
   resolution: string | null;
@@ -52,7 +54,14 @@ const LANGUAGES: [RegExp, string][] = [
 /** Parses a scene/P2P release name like "Show.Name.S01E02.1080p.WEB-DL.DDP5.1-GROUP". */
 export function parseRelease(raw: string): ParsedRelease {
   const name = raw.replace(/\.(mkv|mp4|avi|m4v|ts|nzb|torrent)$/i, '');
-  const s = name.replace(/[._]/g, ' ').replace(/\s+/g, ' ').trim();
+  // Fansub releases put the group first and a checksum last: "[SubsPlease] Show - 12 (1080p) [A1B2C3D4]".
+  const leadGroup = /^\s*\[([^\]]{1,40})\]\s*/.exec(name);
+  const s = name
+    .slice(leadGroup ? leadGroup[0].length : 0)
+    .replace(/\s*\[[0-9A-F]{8}\]\s*$/i, '')
+    .replace(/[._]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   let season: number | null = null;
   let episodes: number[] = [];
@@ -82,6 +91,16 @@ export function parseRelease(raw: string): ParsedRelease {
     season = Number(seasonOnly[1] ?? seasonOnly[2]);
     fullSeason = true;
     mark(seasonOnly.index);
+  }
+  let absolute: number[] = [];
+  if (season === null && !airDate) {
+    // "Show - 12", "Show - 012v2", "Show - 01-12": a number after " - " that isn't a year.
+    const abs = /\s-\s(\d{1,4})(?:v\d)?(?:\s?[-~]\s?(\d{1,4})(?:v\d)?)?(?=\s|$|\[|\()/.exec(s);
+    const n = abs ? Number(abs[1]) : NaN;
+    if (abs && !(n >= 1900 && n <= 2099) && n > 0) {
+      absolute = abs[2] ? range(n, Number(abs[2])) : [n];
+      mark(abs.index);
+    }
   }
   if (!fullSeason && /\bcomplete\b/i.test(s) && season !== null && episodes.length === 0) fullSeason = true;
 
@@ -134,7 +153,7 @@ export function parseRelease(raw: string): ParsedRelease {
     mark(from + m.index);
   }
 
-  const group = /-([A-Za-z0-9]+)$/.exec(name.trim())?.[1] ?? null;
+  const group = leadGroup?.[1]?.trim() ?? /-([A-Za-z0-9]+)$/.exec(name.trim())?.[1] ?? null;
   const title = s
     .slice(0, cut)
     .replace(/[([{]$/, '')
@@ -146,6 +165,7 @@ export function parseRelease(raw: string): ParsedRelease {
     year,
     season,
     episodes,
+    absolute,
     fullSeason,
     airDate,
     resolution,

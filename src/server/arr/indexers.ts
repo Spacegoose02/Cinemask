@@ -33,7 +33,7 @@ export interface SearchQuery {
 }
 
 /** Standard Newznab category ids. */
-export const CATEGORIES = { movies: [2000], tv: [5000], audiobooks: [3030], books: [7000, 7020] };
+export const CATEGORIES = { movies: [2000], tv: [5000], anime: [5070], audiobooks: [3030], books: [7000, 7020] };
 
 export interface IndexerConfig {
   id: number;

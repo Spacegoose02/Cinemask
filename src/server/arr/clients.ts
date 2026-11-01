@@ -17,6 +17,9 @@ export interface ClientItem {
   speed?: number;
   /** Seconds left, when the client reports it. */
   eta?: number;
+  /** Torrents: uploaded ÷ downloaded, and how long it has been seeding, when the client says. */
+  ratio?: number;
+  seedingSeconds?: number;
 }
 
 /** Clients use huge numbers or negatives for "unknown"; keep only sensible ETAs. */
@@ -204,11 +207,13 @@ class QBittorrent implements DownloadClient {
       tags: string;
       dlspeed?: number;
       eta?: number;
+      ratio?: number;
+      seeding_time?: number;
     }[];
     return items.map((t): ClientItem => {
       const done = t.progress >= 1 || ['uploading', 'stalledUP', 'pausedUP', 'stoppedUP', 'queuedUP', 'forcedUP', 'checkingUP'].includes(t.state);
       const status: ClientItem['status'] = t.state === 'error' || t.state === 'missingFiles' ? 'failed' : done ? 'completed' : t.state.startsWith('paused') || t.state.startsWith('stopped') ? 'paused' : t.state.startsWith('queued') ? 'queued' : 'downloading';
-      return { id: t.hash, name: t.name, progress: t.progress, status, size: t.size, outputPath: t.content_path ?? `${t.save_path}/${t.name}`, tags: t.tags.split(',').map((x) => x.trim()).filter(Boolean), speed: t.dlspeed, eta: etaOf(t.eta) };
+      return { id: t.hash, name: t.name, progress: t.progress, status, size: t.size, outputPath: t.content_path ?? `${t.save_path}/${t.name}`, tags: t.tags.split(',').map((x) => x.trim()).filter(Boolean), speed: t.dlspeed, eta: etaOf(t.eta), ratio: t.ratio, seedingSeconds: t.seeding_time };
     });
   }
 
@@ -253,9 +258,9 @@ class Transmission implements DownloadClient {
   }
 
   async list(category: string) {
-    const r = await this.rpc<{ torrents: { hashString: string; name: string; percentDone: number; status: number; totalSize: number; downloadDir: string; labels?: string[]; error: number; errorString: string; rateDownload?: number; eta?: number }[] }>(
+    const r = await this.rpc<{ torrents: { hashString: string; name: string; percentDone: number; status: number; totalSize: number; downloadDir: string; labels?: string[]; error: number; errorString: string; rateDownload?: number; eta?: number; uploadRatio?: number; secondsSeeding?: number }[] }>(
       'torrent-get',
-      { fields: ['hashString', 'name', 'percentDone', 'status', 'totalSize', 'downloadDir', 'labels', 'error', 'errorString', 'rateDownload', 'eta'] },
+      { fields: ['hashString', 'name', 'percentDone', 'status', 'totalSize', 'downloadDir', 'labels', 'error', 'errorString', 'rateDownload', 'eta', 'uploadRatio', 'secondsSeeding'] },
     );
     return r.torrents
       .filter((t) => (t.labels ?? []).includes(category))
@@ -271,6 +276,8 @@ class Transmission implements DownloadClient {
         error: t.error ? t.errorString : undefined,
         speed: t.rateDownload,
         eta: etaOf(t.eta),
+        ratio: t.uploadRatio !== undefined && t.uploadRatio >= 0 ? t.uploadRatio : undefined,
+        seedingSeconds: t.secondsSeeding,
       }));
   }
 
@@ -329,8 +336,8 @@ class Deluge implements DownloadClient {
 
   async list(category: string) {
     await this.ensureLogin();
-    const r = await this.rpc<{ torrents: Record<string, { name: string; progress: number; state: string; total_size: number; save_path: string; label?: string; download_payload_rate?: number; eta?: number }> }>('web.update_ui', [
-      ['name', 'progress', 'state', 'total_size', 'save_path', 'label', 'download_payload_rate', 'eta'],
+    const r = await this.rpc<{ torrents: Record<string, { name: string; progress: number; state: string; total_size: number; save_path: string; label?: string; download_payload_rate?: number; eta?: number; ratio?: number; seeding_time?: number }> }>('web.update_ui', [
+      ['name', 'progress', 'state', 'total_size', 'save_path', 'label', 'download_payload_rate', 'eta', 'ratio', 'seeding_time'],
       {},
     ]);
     return Object.entries(r.torrents ?? {})
@@ -345,6 +352,8 @@ class Deluge implements DownloadClient {
         tags: t.label ? [t.label] : [],
         speed: t.download_payload_rate,
         eta: t.eta ? etaOf(t.eta) : undefined,
+        ratio: t.ratio !== undefined && t.ratio >= 0 ? t.ratio : undefined,
+        seedingSeconds: t.seeding_time,
       }));
   }
 

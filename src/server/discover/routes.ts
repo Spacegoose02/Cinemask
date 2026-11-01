@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { tmdbClient } from '../library/service.js';
 import { upstream } from '../library/routes.js';
 import { parse } from '../lib/validate.js';
+import { forViewer } from '../kids/ratings.js';
 import { discover, discoverFilter, NETWORKS, providerKey, SORTS } from './service.js';
 
 export async function discoverRoutes(app: FastifyInstance) {
@@ -10,7 +11,8 @@ export async function discoverRoutes(app: FastifyInstance) {
 
   app.get('/api/discover', { config: { access: 'user' } }, async (req) => {
     const q = parse(discoverFilter.extend({ page: z.coerce.number().int().min(1).max(500).default(1) }), req.query);
-    return upstream(() => discover(ctx, q, q.page));
+    const r = await upstream(() => discover(ctx, q, q.page));
+    return { ...r, results: await forViewer(ctx, req.user!.id, r.results) };
   });
 
   /** Everything the Discover filters offer: genres and streaming services come from TMDB. */

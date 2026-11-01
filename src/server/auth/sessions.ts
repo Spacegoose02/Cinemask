@@ -17,10 +17,11 @@ export interface SessionUser {
   isOwner: boolean;
   hasPassword: boolean;
   theme: string | null;
+  language: string | null;
 }
 
 export function toSessionUser(u: typeof users.$inferSelect): SessionUser {
-  return { id: u.id, username: u.username, displayName: u.displayName, email: u.email, role: u.role, isOwner: u.isOwner, hasPassword: Boolean(u.passwordHash), theme: u.theme };
+  return { id: u.id, username: u.username, displayName: u.displayName, email: u.email, role: u.role, isOwner: u.isOwner, hasPassword: Boolean(u.passwordHash), theme: u.theme, language: u.language };
 }
 
 export interface SessionInfo {
