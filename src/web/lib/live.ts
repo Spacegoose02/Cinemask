@@ -6,10 +6,10 @@ import { useEffect, useState } from 'react';
  * API route that was written to (POST /api/requests → requests), or a background job's topic.
  */
 const TOPIC_QUERIES: Record<string, string[]> = {
-  requests: ['requests', 'request-count', 'request-quota', 'home-row', 'media', 'lookup', 'activity', 'search', 'discover'],
+  requests: ['requests', 'request-count', 'request-quota', 'watchlist-me', 'home-row', 'media', 'lookup', 'activity', 'search', 'discover'],
   downloads: ['downloads', 'download-count', 'files', 'file-details', 'issues', 'issue-count', 'monitored-overview', 'activity', 'manual-import', 'media', 'calendar', 'import'],
-  monitored: ['monitored-overview', 'files', 'media', 'calendar', 'airing', 'downloads', 'download-count', 'lookup'],
-  files: ['files', 'file-details', 'media', 'duplicates', 'rename', 'monitored-overview'],
+  monitored: ['storage', 'monitored-overview', 'files', 'media', 'calendar', 'airing', 'downloads', 'download-count', 'lookup'],
+  files: ['storage', 'files', 'file-details', 'media', 'duplicates', 'rename', 'monitored-overview'],
   'manual-import': ['manual-import', 'downloads', 'download-count', 'files'],
   import: ['import', 'files', 'monitored-overview'],
   library: ['library', 'library-sections', 'library-labels', 'home-row', 'media', 'airing', 'calendar', 'duplicates', 'sync-status', 'lookup'],
@@ -24,7 +24,7 @@ const TOPIC_QUERIES: Record<string, string[]> = {
   posters: ['posters', 'media', 'collection', 'collections'],
   duplicates: ['duplicates'],
   home: ['home-layout', 'home-row'],
-  users: ['users', 'sessions'],
+  users: ['users', 'sessions', 'watchlist-me'],
   backups: ['backups'],
   indexers: ['indexers', 'health-summary'],
   'download-clients': ['clients', 'health-summary'],
@@ -34,6 +34,8 @@ const TOPIC_QUERIES: Record<string, string[]> = {
   'movie-nights': ['movie-nights', 'home-row'],
   games: ['leaderboard', 'badges'],
   issues: ['issues', 'issue-count', 'title-issues'],
+  watchlist: ['watchlist-me'],
+  storage: ['storage', 'files', 'monitored-overview'],
 };
 
 function invalidate(qc: QueryClient, topics: Set<string>) {

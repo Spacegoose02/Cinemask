@@ -31,6 +31,16 @@ export const users = sqliteTable('users', {
   canRequest4k: integer('can_request_4k', { mode: 'boolean' }).notNull().default(false),
   /** JSON NotifyPrefs (notify/personal.ts): push, email and the events turned off. Null means the defaults. */
   notifyPrefs: text('notify_prefs'),
+  /** The user's own plex.tv token (sealed), kept from Plex sign-in or linking, to read their watchlist. */
+  plexToken: text('plex_token'),
+  /** The Jellyfin user whose favourites count as this user's watchlist (set by an admin). */
+  jellyfinUserId: text('jellyfin_user_id'),
+  /** Turn watchlist items into requests automatically. */
+  watchlistSync: integer('watchlist_sync', { mode: 'boolean' }).notNull().default(false),
+  watchlistSyncedAt: integer('watchlist_synced_at'),
+  watchlistError: text('watchlist_error'),
+  /** Kids profile: the oldest age rating this user may see and request (such as 12). Null means no limit. */
+  maxAge: integer('max_age'),
 });
 
 export const sessions = sqliteTable(
@@ -107,6 +117,10 @@ export const media = sqliteTable(
     trailerKey: text('trailer_key'),
     posterOverride: text('poster_override'), // poster chosen in the app; pushed to Plex/Jellyfin
     metadataUpdatedAt: integer('metadata_updated_at'),
+    /** Age rating such as "PG-13" or "TV-14"; '' when TMDB has none, null when not looked up yet. */
+    certification: text('certification'),
+    /** The age that rating is for (PG-13 → 13), used by kids profiles. Null when unrated. */
+    minAge: integer('min_age'),
   },
   (t) => [uniqueIndex('media_kind_tmdb').on(t.kind, t.tmdbId)],
 );
@@ -195,6 +209,9 @@ export const customFormats = sqliteTable('custom_formats', {
 });
 
 /** A movie or show the app keeps an eye on: searches for it, downloads and upgrades it. */
+export const SERIES_TYPES = ['standard', 'daily', 'anime'] as const;
+export type SeriesType = (typeof SERIES_TYPES)[number];
+
 export const monitored = sqliteTable(
   'monitored',
   {
@@ -225,6 +242,10 @@ export const monitored = sqliteTable(
     fileFormatScore: integer('file_format_score'),
     /** JSON FileInfo (files/mediainfo.ts): what ffprobe found in the movie's file. */
     fileInfo: text('file_info'),
+    /** Shows: "anime" releases are numbered by absolute episode, "daily" ones by air date. */
+    seriesType: text('series_type', { enum: SERIES_TYPES }).notNull().default('standard'),
+    /** Kept on purpose: the storage manager never suggests or deletes it. */
+    keep: integer('keep', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [uniqueIndex('monitored_kind_tmdb').on(t.kind, t.tmdbId)],
 );
@@ -259,6 +280,8 @@ export const monitoredEpisodes = sqliteTable(
     fileRelease: text('file_release'),
     fileFormatScore: integer('file_format_score'),
     fileInfo: text('file_info'),
+    /** Position counting every regular episode from the first (anime numbering). */
+    absoluteNumber: integer('absolute_number'),
   },
   (t) => [uniqueIndex('monitored_episode_key').on(t.monitoredId, t.season, t.episode)],
 );
@@ -373,6 +396,10 @@ export const downloads = sqliteTable(
     replaceFile: integer('replace_file', { mode: 'boolean' }).notNull().default(false),
     /** The problem report this download fixes; it's marked fixed once the download is imported. */
     issueId: integer('issue_id'),
+    /** Imported, but left in the torrent client until the seeding goal is met. */
+    seeding: integer('seeding', { mode: 'boolean' }).notNull().default(false),
+    /** When the progress last moved, for spotting stalled downloads. */
+    progressAt: integer('progress_at'),
   },
   (t) => [index('downloads_status_idx').on(t.status)],
 );
@@ -689,3 +716,37 @@ export const issues = sqliteTable(
   },
   (t) => [index('issues_status_idx').on(t.status), index('issues_title_idx').on(t.kind, t.tmdbId)],
 );
+
+export const WATCHLIST_SOURCES = ['plex', 'jellyfin'] as const;
+
+/** Titles seen on a user's Plex watchlist or Jellyfin favourites, so each is only requested once. */
+export const watchlistItems = sqliteTable(
+  'watchlist_items',
+  {
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    source: text('source', { enum: WATCHLIST_SOURCES }).notNull(),
+    kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+    tmdbId: integer('tmdb_id').notNull(),
+    title: text('title').notNull(),
+    /** What happened: "requested", "following", "on_server", or why it couldn't be requested. */
+    result: text('result'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.source, t.kind, t.tmdbId] })],
+);
+
+/** Deleted files kept for a while (Settings → Storage) so a mistake can be undone. */
+export const recycleBin = sqliteTable('recycle_bin', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+  tmdbId: integer('tmdb_id'),
+  title: text('title').notNull(),
+  originalPath: text('original_path').notNull(),
+  binPath: text('bin_path').notNull(),
+  size: integer('size').notNull().default(0),
+  reason: text('reason'),
+  deletedByName: text('deleted_by_name'),
+  deletedAt: integer('deleted_at').notNull(),
+});

@@ -4,6 +4,7 @@ import { notify } from '../notify/service.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext } from '../context.js';
+import { discard } from '../files/recycle.js';
 import { downloads, monitored, monitoredEpisodes, requests } from '../db/schema.js';
 import { renderName } from './naming.js';
 import { parseRelease, VIDEO_EXTENSIONS } from './parser.js';
@@ -198,7 +199,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
       result.skipped.push(`${path.basename(file)}: existing file is as good or better`);
     } else {
       placeFile(file, dest, mode ?? mediaSettings.importMode);
-      if (row.filePath && row.filePath !== dest && inside(root, row.filePath) && fs.existsSync(row.filePath)) fs.rmSync(row.filePath);
+      if (row.filePath && row.filePath !== dest && inside(root, row.filePath) && fs.existsSync(row.filePath)) discard(ctx, root, row.filePath, { kind: row.kind, tmdbId: row.tmdbId, title: row.title, reason: 'Replaced by a better copy' });
       ctx.db.update(monitored).set({ path: folder, filePath: dest, fileQuality: quality, fileRelease: dl.title, fileFormatScore: releaseScore, fileInfo: null }).where(eq(monitored.id, row.id)).run();
       result.imported.push(dest);
     }
@@ -212,8 +213,15 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
       const dated = !opts.episode && parsed.season === null && parsed.airDate
         ? ctx.db.select().from(monitoredEpisodes).where(and(eq(monitoredEpisodes.monitoredId, row.id), eq(monitoredEpisodes.airDate, parsed.airDate))).get()
         : undefined;
-      const season = opts.episode?.season ?? dated?.season ?? parsed.season ?? grabbed?.season ?? null;
-      const eps = opts.episode?.episodes ?? (dated ? [dated.episode] : parsed.episodes.length ? parsed.episodes : grabbed?.episodes.length === 1 ? grabbed.episodes : []);
+      // Anime numbered from the first episode ("Show - 112") is whichever season that falls in.
+      const numbered = !opts.episode && !dated && parsed.season === null && parsed.absolute.length
+        ? parsed.absolute
+            .map((n) => ctx.db.select().from(monitoredEpisodes).where(and(eq(monitoredEpisodes.monitoredId, row.id), eq(monitoredEpisodes.absoluteNumber, n))).get())
+            .filter((e): e is NonNullable<typeof e> => Boolean(e))
+        : [];
+      const bySeason = numbered.filter((e) => e.season === numbered[0]?.season);
+      const season = opts.episode?.season ?? dated?.season ?? bySeason[0]?.season ?? parsed.season ?? grabbed?.season ?? null;
+      const eps = opts.episode?.episodes ?? (dated ? [dated.episode] : bySeason.length ? bySeason.map((e) => e.episode) : parsed.episodes.length ? parsed.episodes : grabbed?.episodes.length === 1 ? grabbed.episodes : []);
       if (season === null || !eps.length) {
         result.skipped.push(`${path.basename(file)}: could not tell which episode it is`);
         continue;
@@ -237,7 +245,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
       if (!inside(root, dest)) throw new Error('Refusing to write outside the TV folder');
       placeFile(file, dest, mode ?? mediaSettings.importMode);
       for (const e of epRows) {
-        if (e.filePath && e.filePath !== dest && inside(root, e.filePath) && fs.existsSync(e.filePath)) fs.rmSync(e.filePath);
+        if (e.filePath && e.filePath !== dest && inside(root, e.filePath) && fs.existsSync(e.filePath)) discard(ctx, root, e.filePath, { kind: row.kind, tmdbId: row.tmdbId, title: `${row.title} S${String(e.season).padStart(2, '0')}E${String(e.episode).padStart(2, '0')}`, reason: 'Replaced by a better copy' });
         ctx.db.update(monitoredEpisodes).set({ filePath: dest, fileQuality: quality, fileRelease: dl.title, fileFormatScore: releaseScore, fileInfo: null }).where(eq(monitoredEpisodes.id, e.id)).run();
       }
       result.imported.push(dest);

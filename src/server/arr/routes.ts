@@ -1,15 +1,15 @@
 import { and, asc, desc, eq, gte, inArray, or } from 'drizzle-orm';
-import { notify } from '../notify/service.js';
-import { requestApproved, requestDeclined } from '../notify/events.js';
+import { requestDeclined } from '../notify/events.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
 import { hasRole } from '../auth/guard.js';
-import { DOWNLOAD_CLIENT_TYPES, downloadClients, downloads, indexers, MEDIA_KINDS, monitored, monitoredEpisodes, qualityProfiles, customFormats, requestFollowers, requests, users, type DownloadClientType } from '../db/schema.js';
-import { quotaFor, quotaProblem, requestProgress, showSeasonCount, streamingFor } from '../requests/rules.js';
+import { SERIES_TYPES, DOWNLOAD_CLIENT_TYPES, downloadClients, downloads, indexers, MEDIA_KINDS, monitored, monitoredEpisodes, qualityProfiles, customFormats, requestFollowers, requests, users, type DownloadClientType } from '../db/schema.js';
+import { quotaFor, requestProgress, streamingFor } from '../requests/rules.js';
+import { approveRequest, openSeasons, submitRequest } from '../requests/submit.js';
 import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
-import { availabilityFor, refreshMetadata } from '../library/service.js';
+import { refreshMetadata } from '../library/service.js';
 import { upstream } from '../library/routes.js';
 import { bingeBanditFolders } from './bingebandit-folders.js';
 import { CLIENT_PROTOCOL, createClient } from './clients.js';
@@ -36,12 +36,6 @@ const seasonsSchema = z.array(z.number().int().min(0).max(500)).max(200).nullabl
 const rootIdSchema = z.string().regex(/^[a-z0-9-]{1,40}$/);
 /** MB per movie or per episode; null uses the default from settings, 0 means no limit. */
 const maxSizeSchema = z.number().int().min(0).max(1_000_000).nullable();
-
-/** The seasons open (pending or approved) show requests cover between them, or 'all' when one asked for every season. */
-function openSeasons(open: { seasons: string | null }[]): number[] | 'all' {
-  if (open.some((r) => r.seasons === null)) return 'all';
-  return [...new Set(open.flatMap((r) => JSON.parse(r.seasons!) as number[]))].sort((a, b) => a - b);
-}
 
 export async function arrRoutes(app: FastifyInstance) {
   const ctx = app.ctx;
@@ -90,38 +84,6 @@ export async function arrRoutes(app: FastifyInstance) {
     return { mode, hit: await streamingFor(ctx, p.kind, p.tmdbId) };
   });
 
-  const approve = async (requestId: number, profileId: number | undefined, deciderName: string, deciderId: number, rootId?: string) => {
-    const r = db().select().from(requests).where(eq(requests.id, requestId)).get();
-    if (!r) throw notFound('Request not found');
-    // A title that's already monitored keeps its profile, and gains the requested seasons. A 4K request moves it to the 4K profile.
-    const existing = db().select().from(monitored).where(and(eq(monitored.kind, r.kind), eq(monitored.tmdbId, r.tmdbId))).get();
-    const rs = ctx.settings.get('requests');
-    const fourKProfile = r.fourK ? (r.kind === 'movie' ? rs.fourKMovieProfile : rs.fourKShowProfile) : null;
-    const fourKRoot = r.fourK ? (r.kind === 'movie' ? rs.fourKMovieRoot : rs.fourKShowRoot) || undefined : undefined;
-    const profile = profileId ?? (fourKProfile && getProfile(ctx, fourKProfile) ? fourKProfile : null) ?? existing?.profileId ?? defaultProfileId(ctx, r.kind);
-    if (!getProfile(ctx, profile)) throw badRequest('Unknown quality profile');
-    const asked = r.seasons ? (JSON.parse(r.seasons) as number[]) : null;
-    const had = existing ? (existing.seasons ? (JSON.parse(existing.seasons) as number[]) : null) : [];
-    const seasons = asked === null || had === null ? null : [...had, ...asked];
-    const row = await monitorTitle(ctx, { kind: r.kind, tmdbId: r.tmdbId, profileId: profile, seasons, addedBy: deciderId, rootId: rootId ?? (existing ? undefined : fourKRoot) }).catch((err: Error) => {
-      throw err.message === 'Unknown root folder' ? badRequest(err.message) : err;
-    });
-    // An existing title asked for in 4K switches to the 4K profile, so the next search upgrades it.
-    if (existing && r.fourK && existing.profileId !== profile) db().update(monitored).set({ profileId: profile }).where(eq(monitored.id, existing.id)).run();
-    db().update(requests).set({ status: 'approved', decidedByName: deciderName, decidedAt: Date.now(), monitoredId: row.id }).where(eq(requests.id, requestId)).run();
-    // Nobody needs telling about their own download.
-    if (r.requestedBy !== deciderId) requestApproved(ctx, r, deciderName);
-    const fresh = db().select().from(monitored).where(eq(monitored.id, row.id)).get() ?? row;
-    void autoSearch(ctx, fresh).catch((err) => app.log.warn({ err }, 'Search after approval failed'));
-    return fresh;
-  };
-
-  /** Adds the user to an open request ("me too") and returns it. */
-  const follow = (r: typeof requests.$inferSelect, userId: number) => {
-    if (r.requestedBy !== userId) db().insert(requestFollowers).values({ requestId: r.id, userId, createdAt: Date.now() }).onConflictDoNothing().run();
-    return { ...r, following: r.requestedBy !== userId };
-  };
-
   app.post('/api/requests', { config: { access: 'user' } }, async (req) => {
     // rootId only counts for managers, who skip approval; a user's request gets its folder when approved.
     const body = parse(
@@ -135,94 +97,7 @@ export async function arrRoutes(app: FastifyInstance) {
       }),
       req.body,
     );
-    const isManager = hasRole(req.user!.role, 'manager');
-    const me = db().select().from(users).where(eq(users.id, req.user!.id)).get();
-    if (body.fourK && !isManager && !me?.canRequest4k) throw forbidden("You can't request 4K. Ask an admin to allow it.");
-    const meta = await refreshMetadata(ctx, body.kind, body.tmdbId);
-    if (!meta) throw badRequest('Could not look up this title. Ask an admin to set a TMDB key.');
-    const avail = availabilityFor(ctx, body.kind, [{ tmdbId: body.tmdbId, releaseDate: meta.releaseDate }]).get(body.tmdbId)!;
-    if (avail.status === 'on_server' && body.kind === 'movie') {
-      // A 4K request still makes sense when the copy on the server isn't 4K.
-      const file = db().select().from(monitored).where(and(eq(monitored.kind, 'movie'), eq(monitored.tmdbId, body.tmdbId))).get()?.fileQuality ?? avail.resolution ?? null;
-      if (!body.fourK || (file && /2160|4k/i.test(file))) throw conflict(body.fourK ? 'This is already on the server in 4K' : 'This is already on the server');
-    }
-    const open = db()
-      .select()
-      .from(requests)
-      .where(and(eq(requests.kind, body.kind), eq(requests.tmdbId, body.tmdbId), eq(requests.fourK, body.fourK), inArray(requests.status, ['pending', 'approved'])))
-      .orderBy(desc(requests.createdAt))
-      .all();
-    // Seasons a show request asks for beyond the open ones (null: every season).
-    let seasons = body.seasons ?? null;
-    const quota = await quotaFor(ctx, req.user!);
-    const cost = async (list: number[] | null) => (body.kind === 'movie' ? 1 : list ? list.length : await showSeasonCount(ctx, body.tmdbId));
-    const checkQuota = async (list: number[] | null) => {
-      const problem = quotaProblem(quota, body.kind, await cost(list));
-      if (problem) throw new HttpError(429, problem, 'request_limit');
-    };
-    if (open.length) {
-      const covered = openSeasons(open);
-      // Someone already asked: this user follows that request instead, and hears when it's ready.
-      if (body.kind === 'movie' || covered === 'all') return follow(open[0]!, req.user!.id);
-      const extra = seasons === null ? null : seasons.filter((n) => !covered.includes(n));
-      if (extra?.length === 0) return follow(open[0]!, req.user!.id);
-      // Their own request still waiting for approval: one request with all the seasons is easier to approve than two.
-      const pending = open.find((r) => r.status === 'pending' && r.requestedBy === req.user!.id);
-      if (pending && !isManager) {
-        const merged = extra === null || pending.seasons === null ? null : [...new Set([...(JSON.parse(pending.seasons) as number[]), ...extra])].sort((a, b) => a - b);
-        // Only the new seasons count against the allowance; the waiting request already does.
-        if (extra !== null) await checkQuota(extra);
-        else if (quota.seasons.limit) {
-          const now = await showSeasonCount(ctx, body.tmdbId);
-          const problem = quotaProblem(quota, 'show', Math.max(0, now - (await cost(pending.seasons ? (JSON.parse(pending.seasons) as number[]) : null))));
-          if (problem) throw new HttpError(429, problem, 'request_limit');
-        }
-        db()
-          .update(requests)
-          .set({ seasons: merged ? JSON.stringify(merged) : null, ...(body.note ? { note: body.note } : {}) })
-          .where(eq(requests.id, pending.id))
-          .run();
-        audit(db(), req, 'request.seasons_added', { target: `${meta.title} (${meta.year ?? '?'})`, details: { seasons: extra } });
-        return db().select().from(requests).where(eq(requests.id, pending.id)).get();
-      }
-      seasons = extra;
-    }
-    await checkQuota(seasons);
-    // Admins can refuse requests for titles the household can already stream.
-    if (!isManager && ctx.settings.get('requests').streaming === 'block') {
-      const hit = await streamingFor(ctx, body.kind, body.tmdbId);
-      if (hit) throw conflict(`${meta.title} is on ${hit.providers.map((p) => p.name).join(', ')}, so it can't be requested. Ask a manager if you still need it.`);
-    }
-    const created = db()
-      .insert(requests)
-      .values({
-        kind: body.kind,
-        tmdbId: body.tmdbId,
-        title: meta.title,
-        year: meta.year,
-        posterPath: meta.posterPath,
-        seasons: seasons ? JSON.stringify(seasons) : null,
-        status: 'pending',
-        requestedBy: req.user!.id,
-        requestedByName: req.user!.displayName || req.user!.username,
-        createdAt: Date.now(),
-        fourK: body.fourK,
-        note: body.note || null,
-      })
-      .returning()
-      .get();
-    audit(db(), req, 'request.created', { target: `${meta.title} (${meta.year ?? '?'})${body.fourK ? ' in 4K' : ''}` });
-    notify(ctx, {
-      event: 'request.created',
-      title: 'New request',
-      message: `${created.requestedByName} requested ${meta.title}${meta.year ? ` (${meta.year})` : ''}${body.fourK ? ' in 4K' : ''}${body.note ? `: "${body.note}"` : ''}`,
-      data: { kind: body.kind, tmdbId: body.tmdbId, requestId: created.id, fourK: body.fourK },
-    });
-    // Managers and admins don't need anyone's approval, nor do users an admin trusts with this kind.
-    const trusted = body.kind === 'movie' ? me?.autoApproveMovies : me?.autoApproveShows;
-    if (isManager) await approve(created.id, undefined, req.user!.username, req.user!.id, body.rootId);
-    else if (trusted) await approve(created.id, undefined, 'Auto-approved', req.user!.id);
-    return db().select().from(requests).where(eq(requests.id, created.id)).get();
+    return submitRequest(ctx, req.user!, body, req);
   });
 
   app.post('/api/requests/:id/approve', { config: { access: 'manager' } }, async (req) => {
@@ -231,7 +106,7 @@ export async function arrRoutes(app: FastifyInstance) {
     const r = db().select().from(requests).where(eq(requests.id, id)).get();
     if (!r) throw notFound('Request not found');
     if (r.status !== 'pending') throw conflict(`Request is already ${r.status}`);
-    await approve(id, profileId, req.user!.username, req.user!.id, rootId);
+    await approveRequest(ctx, id, profileId, req.user!.username, req.user!.id, rootId);
     audit(db(), req, 'request.approved', { target: r.title });
     return db().select().from(requests).where(eq(requests.id, id)).get();
   });
@@ -365,10 +240,13 @@ export async function arrRoutes(app: FastifyInstance) {
         rootId: rootIdSchema.optional(),
         maxSizeMb: maxSizeSchema.optional(),
         largerFiles: z.boolean().optional(),
+        seriesType: z.enum(SERIES_TYPES).optional(),
+        keep: z.boolean().optional(),
       }),
       req.body,
     );
     const before = getMonitored(id);
+    if (body.seriesType && before.kind !== 'show') throw badRequest('Only shows have a series type');
     if (body.profileId && !getProfile(ctx, body.profileId)) throw badRequest('Unknown quality profile');
     if (body.rootId !== undefined && body.rootId !== (before.rootId ?? 'default')) {
       try {
@@ -384,6 +262,8 @@ export async function arrRoutes(app: FastifyInstance) {
       ...(body.seasons !== undefined ? { seasons: body.seasons ? JSON.stringify(body.seasons) : null } : {}),
       ...(body.maxSizeMb !== undefined ? { maxSizeMb: body.maxSizeMb } : {}),
       ...(body.largerFiles !== undefined ? { largerFiles: body.largerFiles } : {}),
+      ...(body.seriesType ? { seriesType: body.seriesType } : {}),
+      ...(body.keep !== undefined ? { keep: body.keep } : {}),
     };
     if (Object.keys(changes).length) db().update(monitored).set(changes).where(eq(monitored.id, id)).run();
     if (body.seasons !== undefined && before.kind === 'show') {

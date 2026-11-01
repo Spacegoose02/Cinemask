@@ -310,6 +310,19 @@ export function MediaManagementSettings() {
           onChange={(v) => d.set('bypassDelayAtCutoff', v)}
           hint="A release that already meets the quality profile's cutoff is grabbed at once."
         />
+        <h3 className="pt-2 font-medium">Seeding and stalled downloads</h3>
+        <p className="hint">With "Remove finished downloads" on (Folders above), torrents stay in the client until they reach the ratio or the time, whichever comes first. 0 turns each one off.</p>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Seed to ratio">
+            <input className="input w-28" type="number" min={0} step={0.1} value={d.values.seedRatio ?? 0} onChange={(e) => d.set('seedRatio', Number(e.target.value))} />
+          </Field>
+          <Field label="Or seed for (minutes)">
+            <input className="input w-28" type="number" min={0} value={d.values.seedMinutes ?? 0} onChange={(e) => d.set('seedMinutes', Number(e.target.value))} />
+          </Field>
+          <Field label="Give up when stalled for (minutes)" hint="No progress for this long: blocklist it and try another release. 0 is off.">
+            <input className="input w-28" type="number" min={0} value={d.values.stalledMinutes ?? 0} onChange={(e) => d.set('stalledMinutes', Number(e.target.value))} />
+          </Field>
+        </div>
         <Toggle
           label="Allow direct downloads from home-network addresses"
           checked={d.values.allowPrivateDirectUrls}

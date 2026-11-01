@@ -27,6 +27,7 @@ import { MediaDetailPage, type MediaDetail } from './pages/MediaDetail';
 import { MonitoredPage } from './pages/Monitored';
 import { SearchPage } from './pages/Search';
 import { IssuesPage } from './pages/Issues';
+import { StoragePage } from './pages/Storage';
 import { FileDetails } from './components/FileDetails';
 import { SettingsPage } from './pages/Settings';
 import { SetupPage } from './pages/Setup';
@@ -90,6 +91,7 @@ export function App() {
         <Route path="/collections/:id" element={<CollectionDetailPage />} />
         <Route path="/requests" element={<RequestsPage />} />
         <Route path="/issues" element={<IssuesPage />} />
+        <Route path="/storage" element={<StoragePage />} />
         <Route path="/movie-nights" element={<MovieNightsPage />} />
         <Route path="/games" element={<GamesPage />} />
         <Route path="/wrapped" element={<WrappedPage />} />

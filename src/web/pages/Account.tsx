@@ -8,6 +8,7 @@ import { signInWithPlex } from '../lib/plex';
 import { ApiKeys } from '../components/ApiKeys';
 import { ThemePicker } from '../components/ThemePicker';
 import { NotificationPrefs } from '../components/NotificationPrefs';
+import { WatchlistSync } from '../components/WatchlistSync';
 
 interface SessionRow {
   id: string;
@@ -55,6 +56,7 @@ export function AccountPage() {
     try {
       await signInWithPlex(true);
       setMsg({ kind: 'success', text: 'Plex account linked.' });
+      await qc.invalidateQueries({ queryKey: ['watchlist-me'] });
     } catch (e) {
       setMsg({ kind: 'error', text: (e as Error).message });
     }
@@ -67,6 +69,8 @@ export function AccountPage() {
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
 
       <NotificationPrefs />
+
+      <WatchlistSync />
 
       <section className="card space-y-3">
         <h2 className="font-semibold">Appearance</h2>

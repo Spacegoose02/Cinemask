@@ -9,6 +9,7 @@ import { HttpError } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { availabilityFor, cards, episodesOnServer, isReleased, mdblistClient, refreshMetadata, tmdbClient, watchInfo, type LibrarySync } from './service.js';
 import { localDay } from '../lib/dates.js';
+import { assertSuitable, forViewer, maxAgeOf, suitableSql } from '../kids/ratings.js';
 
 const kindParam = z.enum(MEDIA_KINDS);
 
@@ -46,12 +47,15 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
       }),
       req.query,
     );
+    const maxAge = maxAgeOf(ctx, req.user!.id);
     const where = and(
       q.kind ? eq(libraryItems.kind, q.kind) : undefined,
       q.q ? contains(libraryItems.title, q.q) : undefined,
       q.resolution ? eq(libraryItems.resolution, q.resolution) : undefined,
       q.library ? eq(libraryItems.library, q.library) : undefined,
       q.unmatched ? isNull(libraryItems.tmdbId) : undefined,
+      // Kids profiles only see titles rated for their age.
+      maxAge !== null ? inArray(libraryItems.mediaId, ctx.db.select({ id: media.id }).from(media).where(suitableSql(maxAge))) : undefined,
     );
     // Watched on any server counts as watched.
     const having = q.watched === 'watched' ? sql`max(coalesce(${libraryItems.viewCount}, 0)) > 0` : q.watched === 'unwatched' ? sql`max(coalesce(${libraryItems.viewCount}, 0)) = 0` : undefined;
@@ -135,13 +139,13 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
     if (tmdb.configured) {
       try {
         const r = await tmdb.searchMulti(q, page);
-        results = cards(ctx, r.results);
+        results = await forViewer(ctx, req.user!.id, cards(ctx, r.results));
         totalPages = r.total_pages;
       } catch (err) {
         error = (err as Error).message;
       }
     }
-    return { library: local, results, totalPages, error };
+    return { library: await forViewer(ctx, req.user!.id, local), results, totalPages, error };
   });
 
   /** How many cast members a title page shows. */
@@ -149,6 +153,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
 
   app.get('/api/media/:kind/:tmdbId', { config: { access: 'user' } }, async (req) => {
     const { kind, tmdbId } = parse(z.object({ kind: kindParam, tmdbId: z.coerce.number().int().positive() }), req.params);
+    await upstream(() => assertSuitable(ctx, req.user!.id, kind, tmdbId));
     const row = await upstream(() => refreshMetadata(ctx, kind, tmdbId));
     if (!row) throw new HttpError(404, 'Not found. Set a TMDB API key in Settings → Metadata to look up titles.', 'not_found');
     const availability = availabilityFor(ctx, kind, [{ tmdbId, releaseDate: row.releaseDate }]).get(tmdbId)!;
@@ -208,6 +213,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
 
   app.get('/api/media/show/:tmdbId/season/:season', { config: { access: 'user' } }, async (req) => {
     const { tmdbId, season } = parse(z.object({ tmdbId: z.coerce.number().int().positive(), season: z.coerce.number().int().min(0).max(500) }), req.params);
+    await upstream(() => assertSuitable(ctx, req.user!.id, 'show', tmdbId));
     const s = await upstream(() => tmdbClient(ctx).season(tmdbId, season));
     const eps = episodesOnServer(ctx, tmdbId);
     return {
@@ -235,7 +241,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
     const tmdb = tmdbClient(ctx);
     if (!tmdb.configured) return { results: [] };
     const r = await upstream(() => tmdb.trending(kind));
-    return { results: cards(ctx, r.results, kind === 'all' ? undefined : kind === 'movie' ? 'movie' : 'show') };
+    return { results: await forViewer(ctx, req.user!.id, cards(ctx, r.results, kind === 'all' ? undefined : kind === 'movie' ? 'movie' : 'show')) };
   });
 
   app.get('/api/discover/popular', { config: { access: 'user' } }, async (req) => {
@@ -243,7 +249,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
     const tmdb = tmdbClient(ctx);
     if (!tmdb.configured) return { results: [] };
     const r = await upstream(() => tmdb.popular(kind, page));
-    return { results: cards(ctx, r.results, kind === 'movie' ? 'movie' : 'show'), totalPages: r.total_pages };
+    return { results: await forViewer(ctx, req.user!.id, cards(ctx, r.results, kind === 'movie' ? 'movie' : 'show')), totalPages: r.total_pages };
   });
 
   app.get('/api/library/recent', { config: { access: 'user' } }, async (req) => {
@@ -277,7 +283,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
       const seen = byKey.get(key);
       if (!seen || (r.addedAt ?? 0) > (seen.addedAt ?? 0)) byKey.set(key, { ...(seen ?? r), addedAt: Math.max(r.addedAt ?? 0, seen?.addedAt ?? 0) });
     }
-    return { items: [...byKey.values()].sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0)).slice(0, 20) };
+    return { items: await forViewer(ctx, req.user!.id, [...byKey.values()].sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0)).slice(0, 20)) };
   });
 
   app.get('/api/library/sync', { config: { access: 'manager' } }, async () => opts.sync.status);

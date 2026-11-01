@@ -46,6 +46,23 @@ export class JellyfinClient implements MediaServerClient {
     await fetch(`${base}/Library/Refresh`, { method: 'POST', headers: { Authorization: `MediaBrowser Token="${this.apiKey}"` }, signal: AbortSignal.timeout(10_000) });
   }
 
+  /** Jellyfin's user accounts, for linking one to a Cinemask user (its favourites are their watchlist). */
+  async users(): Promise<{ id: string; name: string }[]> {
+    const users = await this.get<{ Id: string; Name: string }[]>('/Users');
+    return users.map((u) => ({ id: u.Id, name: u.Name }));
+  }
+
+  /** A user's favourite movies and shows, with their TMDB ids when Jellyfin knows them. */
+  async favorites(userId: string): Promise<{ kind: 'movie' | 'show'; title: string; tmdbId: number | null }[]> {
+    const r = await this.get<{ Items: { Name: string; Type: string; ProviderIds?: Record<string, string> }[] }>(
+      `/Users/${encodeURIComponent(userId)}/Items?Recursive=true&Filters=IsFavorite&IncludeItemTypes=Movie,Series&Fields=ProviderIds&Limit=500`,
+    );
+    return r.Items.map((i) => {
+      const tmdb = Number(i.ProviderIds?.Tmdb ?? i.ProviderIds?.tmdb);
+      return { kind: i.Type === 'Movie' ? ('movie' as const) : ('show' as const), title: i.Name, tmdbId: Number.isInteger(tmdb) && tmdb > 0 ? tmdb : null };
+    });
+  }
+
   /** Watched state lives per user in Jellyfin; read it as the first administrator, like Plex's server account. */
   private async adminUserId(): Promise<string | null> {
     try {

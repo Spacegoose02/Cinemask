@@ -17,6 +17,8 @@ interface UserRow {
   movieRequestLimit: number | null;
   seasonRequestLimit: number | null;
   canRequest4k: boolean;
+  maxAge: number | null;
+  jellyfinUserId: string | null;
   hasPassword: boolean;
   linked: { oidc: boolean; plex: boolean };
   locked: boolean;
@@ -24,6 +26,16 @@ interface UserRow {
 }
 
 /** A per-user request limit: empty means the default from Settings → Requests, 0 means none. Saved when the box loses focus. */
+/** Kids profile choices: the oldest rating allowed, with the US ratings that fit. */
+const AGE_LIMITS: [number | null, string][] = [
+  [null, 'No limit'],
+  [7, 'Up to 7 (G, TV-Y7, U)'],
+  [9, 'Up to 9 (PG, TV-PG)'],
+  [12, 'Up to 12 (12A)'],
+  [14, 'Up to 14 (PG-13, TV-14)'],
+  [16, 'Up to 16 (15, 16)'],
+];
+
 function LimitInput({ label, value, onSave }: { label: string; value: number | null; onSave: (v: number | null) => void }) {
   const [text, setText] = useState(value === null ? '' : String(value));
   return (
@@ -55,6 +67,7 @@ export function UserSettings() {
   const { me } = useAuth();
   const qc = useQueryClient();
   const users = useQuery({ queryKey: ['users'], queryFn: () => api<UserRow[]>('/api/users') });
+  const jfUsers = useQuery({ queryKey: ['jellyfin-users'], queryFn: () => api<{ users: { id: string; name: string }[] }>('/api/watchlist/jellyfin-users') });
   const [error, setError] = useState('');
   const [form, setForm] = useState({ username: '', password: '', role: 'user' as Role });
   const roles: Role[] = me?.isOwner ? ['user', 'manager', 'admin'] : ['user', 'manager'];
@@ -136,7 +149,30 @@ export function UserSettings() {
                         </div>
                         <LimitInput label="Movies" value={u.movieRequestLimit} onSave={(v) => patch(u.id, { movieRequestLimit: v })} />
                         <LimitInput label="Seasons" value={u.seasonRequestLimit} onSave={(v) => patch(u.id, { seasonRequestLimit: v })} />
+                        <label className="block pt-1" title="Kids profile: they only see and request titles rated for this age or younger. Unrated titles are hidden too.">
+                          <span className="text-muted">Kids profile</span>
+                          <select className="input mt-0.5 w-auto py-0.5 text-xs" value={u.maxAge ?? ''} onChange={(e) => patch(u.id, { maxAge: e.target.value === '' ? null : Number(e.target.value) })}>
+                            {AGE_LIMITS.map(([v, label]) => (
+                              <option key={label} value={v ?? ''}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                       </div>
+                    )}
+                    {editable && (jfUsers.data?.users.length ?? 0) > 0 && (
+                      <label className="mt-2 block text-xs" title="Their Jellyfin favourites count as their watchlist (Account → Watchlist).">
+                        <span className="text-muted">Jellyfin account</span>
+                        <select className="input mt-0.5 w-auto py-0.5 text-xs" value={u.jellyfinUserId ?? ''} onChange={(e) => patch(u.id, { jellyfinUserId: e.target.value || null })}>
+                          <option value="">None</option>
+                          {jfUsers.data!.users.map((j) => (
+                            <option key={j.id} value={j.id}>
+                              {j.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     )}
                   </td>
                   <td className="p-3 text-xs text-muted">{[u.hasPassword && 'password', u.linked.oidc && 'SSO', u.linked.plex && 'Plex'].filter(Boolean).join(', ') || 'none'}</td>

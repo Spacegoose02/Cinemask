@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray, or } from 'drizzle-orm';
 import { requestAvailable } from '../notify/events.js';
 import type { AppContext } from '../context.js';
 import { libraryEpisodes, libraryItems, matchOverrides, media, monitoredEpisodes, requests, type MediaKind, type ServerType } from '../db/schema.js';
@@ -9,7 +9,8 @@ import { JellyfinClient } from '../integrations/jellyfin.js';
 import type { MediaServerClient, ServerItem } from '../integrations/mediaserver.js';
 import { MdblistClient } from '../integrations/mdblist.js';
 import { PlexClient } from '../integrations/plex.js';
-import { pickTrailer, releaseDates, TmdbClient, type TmdbSearchResult } from '../integrations/tmdb.js';
+import { pickTrailer, releaseDates, TmdbClient, type TmdbMovie, type TmdbSearchResult, type TmdbShow } from '../integrations/tmdb.js';
+import { ageOf, certificationOf } from '../kids/ratings.js';
 
 export type Availability = 'on_server' | 'partial' | 'not_on_server' | 'not_available';
 
@@ -50,6 +51,10 @@ export async function refreshMetadata(ctx: AppContext, kind: MediaKind, tmdbId: 
   if (row && !force && row.metadataUpdatedAt && Date.now() - row.metadataUpdatedAt < METADATA_MAX_AGE) return row;
   if (!tmdb.configured) return row ?? null;
   const region = ctx.settings.get('metadata').region;
+  const rated = (k: MediaKind, t: TmdbMovie | TmdbShow) => {
+    const certification = certificationOf(k, t, region);
+    return { certification, minAge: ageOf(certification) };
+  };
   let values: Omit<typeof media.$inferInsert, 'id' | 'kind' | 'tmdbId'>;
   if (kind === 'movie') {
     const m = await tmdb.movie(tmdbId);
@@ -69,6 +74,7 @@ export async function refreshMetadata(ctx: AppContext, kind: MediaKind, tmdbId: 
       rating: m.vote_average,
       imdbId: m.imdb_id,
       trailerKey: pickTrailer(m.videos?.results),
+      ...rated('movie', m),
       metadataUpdatedAt: Date.now(),
     };
   } else {
@@ -89,6 +95,7 @@ export async function refreshMetadata(ctx: AppContext, kind: MediaKind, tmdbId: 
       imdbId: s.external_ids?.imdb_id ?? null,
       tvdbId: s.external_ids?.tvdb_id ?? null,
       trailerKey: pickTrailer(s.videos?.results),
+      ...rated('show', s),
       metadataUpdatedAt: Date.now(),
     };
   }
@@ -376,12 +383,13 @@ export class LibrarySync {
       const batch = this.ctx.db
         .select()
         .from(media)
-        .where(and(isNull(media.metadataUpdatedAt), tried.size ? notInArray(media.id, [...tried]) : undefined))
+        // Titles from before age ratings were kept are looked up again once, for kids profiles.
+        .where(and(or(isNull(media.metadataUpdatedAt), isNull(media.certification)), tried.size ? notInArray(media.id, [...tried]) : undefined))
         .limit(Math.min(8, limit - tried.size))
         .all();
       if (!batch.length) break;
       for (const m of batch) tried.add(m.id);
-      const results = await Promise.allSettled(batch.map((m) => refreshMetadata(this.ctx, m.kind, m.tmdbId)));
+      const results = await Promise.allSettled(batch.map((m) => refreshMetadata(this.ctx, m.kind, m.tmdbId, m.certification === null)));
       filled += results.filter((r) => r.status === 'fulfilled').length;
     }
     return filled;

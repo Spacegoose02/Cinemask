@@ -9,6 +9,7 @@ import { renderName } from '../arr/naming.js';
 import { parseRelease } from '../arr/parser.js';
 import { insideRoot } from '../lib/paths.js';
 import { listRoots, rootOf } from '../arr/roots.js';
+import { discard } from './recycle.js';
 
 export { insideRoot };
 
@@ -353,15 +354,14 @@ export type DeleteScope = { scope: 'movie' } | { scope: 'show' } | { scope: 'sea
  * Deletes files for a movie, a whole show, a season or one episode. With unmonitor the app
  * also stops looking for them, otherwise they are searched for again.
  */
-export function deleteFiles(ctx: AppContext, row: MonitoredRow, what: DeleteScope, unmonitor: boolean): { deleted: number; freed: number } {
+export function deleteFiles(ctx: AppContext, row: MonitoredRow, what: DeleteScope, unmonitor: boolean, by?: string): { deleted: number; freed: number } {
   const root = rootFor(ctx, row);
   let deleted = 0;
   let freed = 0;
   const remove = (p: string) => {
     assertInside(root, p);
     if (fs.existsSync(p)) {
-      freed += sizeOf(p) ?? 0;
-      fs.rmSync(p);
+      freed += discard(ctx, root, p, { kind: row.kind, tmdbId: row.tmdbId, title: row.title, reason: 'Deleted', by });
       deleted++;
     }
     pruneEmpty(root, path.dirname(p));
@@ -394,20 +394,12 @@ export function deleteFiles(ctx: AppContext, row: MonitoredRow, what: DeleteScop
 }
 
 /** Deletes a title's whole folder (extras and subtitles included). Used when removing a title with "delete files". */
-export function deleteFolder(ctx: AppContext, row: MonitoredRow): number {
+export function deleteFolder(ctx: AppContext, row: MonitoredRow, by?: string, reason = 'Removed'): number {
   const root = rootFor(ctx, row);
   const folder = row.path;
   if (!folder || !fs.existsSync(folder)) return 0;
   assertInside(root, folder);
-  let freed = 0;
-  const walk = (dir: string) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, e.name);
-      if (e.isDirectory()) walk(full);
-      else if (e.isFile()) freed += sizeOf(full) ?? 0;
-    }
-  };
-  walk(folder);
-  fs.rmSync(folder, { recursive: true });
-  return freed;
+  // Never the media folder itself.
+  if (path.resolve(folder) === path.resolve(root)) throw new Error('Refusing to delete the whole media folder');
+  return discard(ctx, root, folder, { kind: row.kind, tmdbId: row.tmdbId, title: row.title, reason, by });
 }

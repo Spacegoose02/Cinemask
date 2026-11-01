@@ -85,7 +85,19 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
         continue;
       }
       if (item.status !== 'completed') {
-        ctx.db.update(downloads).set({ status: item.status, progress: item.progress }).where(eq(downloads.id, d.id)).run();
+        // Progress that hasn't moved for too long: give up on this release and try another.
+        const moved = item.progress > d.progress + 0.0001 || d.progressAt === null || item.status !== 'downloading';
+        const stalledFor = ctx.settings.get('downloading').stalledMinutes;
+        if (!moved && stalledFor && item.status === 'downloading' && Date.now() - d.progressAt! > stalledFor * 60_000) {
+          await client.remove(item.id, true).catch(() => undefined);
+          await failDownload(ctx, d.id, `Stalled: no progress for ${stalledFor >= 120 ? `${Math.round(stalledFor / 60)} hours` : `${stalledFor} minutes`}`);
+          continue;
+        }
+        ctx.db
+          .update(downloads)
+          .set({ status: item.status, progress: item.progress, ...(moved ? { progressAt: Date.now() } : {}) })
+          .where(eq(downloads.id, d.id))
+          .run();
         liveStats.set(d.id, { speed: item.status === 'downloading' ? (item.speed ?? null) : 0, eta: item.eta ?? null });
         continue;
       }
@@ -130,8 +142,10 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
           const row = ctx.db.select().from(monitored).where(eq(monitored.id, d.monitoredId)).get();
           if (row) void autoTrailer(ctx, row).catch(() => undefined);
           if (ctx.settings.get('media').removeCompletedDownloads) {
+            // Torrents with a seeding goal stay until it's met (see cleanUpSeeding).
+            if (d.protocol === 'torrent' && seedGoal(ctx) && !seedingDone(ctx, item)) ctx.db.update(downloads).set({ seeding: true }).where(eq(downloads.id, d.id)).run();
             // With hardlinks the library copy survives; with copy/move the client data is no longer needed.
-            await client.remove(item.id, ctx.settings.get('media').importMode !== 'hardlink').catch(() => undefined);
+            else await client.remove(item.id, ctx.settings.get('media').importMode !== 'hardlink').catch(() => undefined);
           }
         }
       } catch (err) {
@@ -140,6 +154,52 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
     }
   }
   if (imported) await refreshMediaServers(ctx);
+}
+
+/** Is there a seeding goal for torrents at all? */
+const seedGoal = (ctx: AppContext) => {
+  const s = ctx.settings.get('downloading');
+  return s.seedRatio > 0 || s.seedMinutes > 0;
+};
+
+/** Has a torrent seeded enough: the ratio or the time, whichever comes first. */
+export function seedingDone(ctx: AppContext, item: Pick<ClientItem, 'ratio' | 'seedingSeconds'>, importedAt?: number | null): boolean {
+  const s = ctx.settings.get('downloading');
+  if (s.seedRatio > 0 && item.ratio !== undefined && item.ratio >= s.seedRatio) return true;
+  // Clients that don't report seeding time count from the import.
+  const seconds = item.seedingSeconds ?? (importedAt ? (Date.now() - importedAt) / 1000 : undefined);
+  if (s.seedMinutes > 0 && seconds !== undefined && seconds >= s.seedMinutes * 60) return true;
+  return !seedGoal(ctx);
+}
+
+/** Removes imported torrents from their client once they've seeded enough. */
+export async function cleanUpSeeding(ctx: AppContext): Promise<number> {
+  const rows = ctx.db.select().from(downloads).where(and(eq(downloads.seeding, true), isNotNull(downloads.clientId))).all();
+  let removed = 0;
+  for (const cid of [...new Set(rows.map((r) => r.clientId!))]) {
+    const c = ctx.db.select().from(downloadClients).where(eq(downloadClients.id, cid)).get();
+    const mine = rows.filter((r) => r.clientId === cid);
+    if (!c) {
+      for (const r of mine) ctx.db.update(downloads).set({ seeding: false }).where(eq(downloads.id, r.id)).run();
+      continue;
+    }
+    const client = createClient({ type: c.type as DownloadClientType, name: c.name, url: c.url, username: c.username, password: openSecret(ctx, c.password) });
+    let items: ClientItem[];
+    try {
+      const categories = [...new Set(mine.map((x) => x.category ?? c.category))];
+      items = (await Promise.all(categories.map((cat, i) => client.list(cat, i === 0 ? mine.filter((x) => x.downloadId).map((x) => x.downloadId!) : [])))).flat();
+    } catch {
+      continue;
+    }
+    for (const r of mine) {
+      const item = items.find((i) => (r.downloadId && i.id.toLowerCase() === r.downloadId.toLowerCase()) || i.tags.includes(`mm-${r.id}`));
+      if (item && !seedingDone(ctx, item, r.importedAt)) continue;
+      if (item) await client.remove(item.id, ctx.settings.get('media').importMode !== 'hardlink').catch(() => undefined);
+      ctx.db.update(downloads).set({ seeding: false }).where(eq(downloads.id, r.id)).run();
+      removed++;
+    }
+  }
+  return removed;
 }
 
 /** Marks a download failed, blocklists the release, and looks for another one. */

@@ -112,6 +112,11 @@ export function Layout({ children }: { children: ReactNode }) {
         </NavLink>
       )}
       {isManager && (
+        <NavLink to="/storage" className={linkClass}>
+          Storage
+        </NavLink>
+      )}
+      {isManager && (
         <NavLink to="/youtube" className={linkClass}>
           YouTube
         </NavLink>

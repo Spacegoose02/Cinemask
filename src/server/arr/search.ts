@@ -62,12 +62,20 @@ function queriesFor(ctx: AppContext, row: MonitoredRow, target: Target): SearchQ
     ];
   }
   const seasons = [...new Set((target.episodes ?? []).map((e) => e.season))];
-  return seasons.flatMap((season) => {
+  // Anime is filed by absolute number ("Show - 112"), which a season search doesn't find.
+  const anime: SearchQuery[] =
+    row.seriesType === 'anime'
+      ? (target.episodes ?? [])
+          .filter((e) => e.absolute)
+          .slice(0, 4)
+          .map((e) => ({ type: 'search' as const, q: `${queryText(row.title)} ${String(e.absolute).padStart(2, '0')}`, categories: [...CATEGORIES.tv, ...CATEGORIES.anime] }))
+      : [];
+  return [...anime, ...seasons.flatMap((season) => {
     const eps = (target.episodes ?? []).filter((e) => e.season === season);
     const base = { type: 'tvsearch' as const, q: queryText(row.title), tvdbId: m?.tvdbId, categories: CATEGORIES.tv };
     // Ask for single episodes when only a few are missing; otherwise ask for the season (catches packs too).
     return eps.length <= 2 ? eps.map((e) => ({ ...base, season, episode: e.episode })) : [{ ...base, season }];
-  });
+  })];
 }
 
 const GB = 1024 ** 3;
@@ -205,13 +213,14 @@ function dateQueries(ctx: AppContext, row: MonitoredRow, target: Target): Search
 
 /** Every episode of a season (or just one) as a manual-search target, for when nothing in it is wanted. */
 function seasonEpisodes(ctx: AppContext, monitoredId: number, season: number, episode?: number): NonNullable<Target['episodes']> {
-  if (episode !== undefined) return [{ season, episode, currentQuality: null }];
   const eps = ctx.db
-    .select({ episode: monitoredEpisodes.episode })
+    .select({ episode: monitoredEpisodes.episode, absolute: monitoredEpisodes.absoluteNumber })
     .from(monitoredEpisodes)
     .where(and(eq(monitoredEpisodes.monitoredId, monitoredId), eq(monitoredEpisodes.season, season)))
-    .all();
-  return (eps.length ? eps : [{ episode: 1 }]).map((e) => ({ season, episode: e.episode, currentQuality: null }));
+    .all()
+    .filter((e) => episode === undefined || e.episode === episode);
+  const list: { episode: number; absolute?: number | null }[] = eps.length ? eps : [{ episode: episode ?? 1 }];
+  return list.map((e) => ({ season, episode: e.episode, absolute: e.absolute ?? null, currentQuality: null }));
 }
 
 export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter): Promise<SearchResult> {
@@ -240,7 +249,7 @@ export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter
   let judged = judge();
   // Nothing by season and episode: news and talk shows (Dateline, 20/20) are often filed by air date instead,
   // even when some of their episodes do carry SxxEyy names.
-  if (row.kind === 'show' && !judged.some((d) => d.accepted)) {
+  if (row.kind === 'show' && row.seriesType !== 'anime' && !judged.some((d) => d.accepted)) {
     await run(dateQueries(ctx, row, target));
     judged = judge();
   }
