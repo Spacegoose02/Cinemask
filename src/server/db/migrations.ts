@@ -616,6 +616,62 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       CREATE INDEX game_rounds_user_idx ON game_rounds(user_id, finished_at);
     `,
   },
+  {
+    id: 21,
+    name: 'request limits, 4K requests, notes and followers',
+    sql: `
+      ALTER TABLE users ADD COLUMN movie_request_limit INTEGER;
+      ALTER TABLE users ADD COLUMN season_request_limit INTEGER;
+      ALTER TABLE users ADD COLUMN can_request_4k INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE requests ADD COLUMN four_k INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE requests ADD COLUMN note TEXT;
+      CREATE TABLE request_followers (
+        request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (request_id, user_id)
+      );
+      CREATE INDEX request_followers_user_idx ON request_followers(user_id);
+      CREATE INDEX requests_user_idx ON requests(requested_by, created_at);
+    `,
+  },
+  {
+    id: 22,
+    name: 'push subscriptions and notification choices',
+    sql: `
+      ALTER TABLE users ADD COLUMN notify_prefs TEXT;
+      CREATE TABLE push_subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint TEXT NOT NULL UNIQUE,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        device TEXT,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER
+      );
+      CREATE INDEX push_subscriptions_user_idx ON push_subscriptions(user_id);
+    `,
+  },
+  {
+    id: 23,
+    name: 'custom formats',
+    sql: `
+      CREATE TABLE custom_formats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        rules TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      ALTER TABLE quality_profiles ADD COLUMN format_scores TEXT NOT NULL DEFAULT '{}';
+      ALTER TABLE quality_profiles ADD COLUMN min_format_score INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE quality_profiles ADD COLUMN upgrade_until_format_score INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE monitored ADD COLUMN file_release TEXT;
+      ALTER TABLE monitored ADD COLUMN file_format_score INTEGER;
+      ALTER TABLE monitored_episodes ADD COLUMN file_release TEXT;
+      ALTER TABLE monitored_episodes ADD COLUMN file_format_score INTEGER;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

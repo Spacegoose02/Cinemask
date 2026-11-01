@@ -23,6 +23,14 @@ export const users = sqliteTable('users', {
   // A user's requests of that kind download without a manager's approval.
   autoApproveMovies: integer('auto_approve_movies', { mode: 'boolean' }).notNull().default(false),
   autoApproveShows: integer('auto_approve_shows', { mode: 'boolean' }).notNull().default(false),
+  /** Movies this user may request per period (Settings → Requests). Null uses the default; 0 means no limit. */
+  movieRequestLimit: integer('movie_request_limit'),
+  /** Show seasons this user may request per period. Null uses the default; 0 means no limit. */
+  seasonRequestLimit: integer('season_request_limit'),
+  /** May ask for titles in 4K (managers always can). */
+  canRequest4k: integer('can_request_4k', { mode: 'boolean' }).notNull().default(false),
+  /** JSON NotifyPrefs (notify/personal.ts): push, email and the events turned off. Null means the defaults. */
+  notifyPrefs: text('notify_prefs'),
 });
 
 export const sessions = sqliteTable(
@@ -170,6 +178,20 @@ export const qualityProfiles = sqliteTable('quality_profiles', {
   /** 'any', or an ISO 639-1 code such as 'en'. Releases in other languages are skipped. */
   language: text('language').notNull().default('any'),
   createdAt: integer('created_at').notNull(),
+  /** JSON { [customFormatId]: score }. */
+  formatScores: text('format_scores').notNull().default('{}'),
+  /** Releases scoring below this are not grabbed automatically. */
+  minFormatScore: integer('min_format_score').notNull().default(0),
+  /** Keep upgrading a file at the cutoff quality until its format score reaches this. 0 turns it off. */
+  upgradeUntilFormatScore: integer('upgrade_until_format_score').notNull().default(0),
+});
+
+/** Named release rules (HDR, Atmos, a release group…) that quality profiles score. See arr/formats.ts. */
+export const customFormats = sqliteTable('custom_formats', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull().unique(),
+  rules: text('rules').notNull(), // JSON FormatRule[]
+  createdAt: integer('created_at').notNull(),
 });
 
 /** A movie or show the app keeps an eye on: searches for it, downloads and upgrades it. */
@@ -198,6 +220,9 @@ export const monitored = sqliteTable(
     maxSizeMb: integer('max_size_mb'),
     /** Doubles the default size limit for this title (when maxSizeMb is null). */
     largerFiles: integer('larger_files', { mode: 'boolean' }).notNull().default(false),
+    /** The release the file came from, and its custom format score when it was imported. */
+    fileRelease: text('file_release'),
+    fileFormatScore: integer('file_format_score'),
   },
   (t) => [uniqueIndex('monitored_kind_tmdb').on(t.kind, t.tmdbId)],
 );
@@ -229,6 +254,8 @@ export const monitoredEpisodes = sqliteTable(
     fileQuality: text('file_quality'),
     /** TMDB's episode_type: "standard", "mid_season" or "finale". */
     episodeType: text('episode_type'),
+    fileRelease: text('file_release'),
+    fileFormatScore: integer('file_format_score'),
   },
   (t) => [uniqueIndex('monitored_episode_key').on(t.monitoredId, t.season, t.episode)],
 );
@@ -253,8 +280,27 @@ export const requests = sqliteTable(
     reason: text('reason'),
     monitoredId: integer('monitored_id').references(() => monitored.id, { onDelete: 'set null' }),
     createdAt: integer('created_at').notNull(),
+    /** Asked for in 4K: approval uses the 4K profile and folder from Settings → Requests. */
+    fourK: integer('four_k', { mode: 'boolean' }).notNull().default(false),
+    /** A short note from the requester, such as "the 2005 one, not the remake". */
+    note: text('note'),
   },
-  (t) => [index('requests_status_idx').on(t.status)],
+  (t) => [index('requests_status_idx').on(t.status), index('requests_user_idx').on(t.requestedBy, t.createdAt)],
+);
+
+/** People who want the same title as an open request ("me too"); they hear when it's ready. */
+export const requestFollowers = sqliteTable(
+  'request_followers',
+  {
+    requestId: integer('request_id')
+      .notNull()
+      .references(() => requests.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.requestId, t.userId] }), index('request_followers_user_idx').on(t.userId)],
 );
 
 export const indexers = sqliteTable('indexers', {
@@ -586,4 +632,23 @@ export const gameRounds = sqliteTable(
     finishedAt: integer('finished_at'),
   },
   (t) => [index('game_rounds_user_idx').on(t.userId, t.finishedAt)],
+);
+
+/** A browser or phone where someone turned on notifications (Web Push). */
+export const pushSubscriptions = sqliteTable(
+  'push_subscriptions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull().unique(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    /** A label for Account, like "Chrome on Android". */
+    device: text('device'),
+    createdAt: integer('created_at').notNull(),
+    lastUsedAt: integer('last_used_at'),
+  },
+  (t) => [index('push_subscriptions_user_idx').on(t.userId)],
 );

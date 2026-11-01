@@ -10,6 +10,7 @@ import { searchProfile } from './profiles.js';
 import { parseRelease, titlesMatch } from './parser.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { rootOf } from './roots.js';
+import { listFormats } from './formats.js';
 import { notify } from '../notify/service.js';
 
 export function enabledIndexers(ctx: AppContext): IndexerConfig[] {
@@ -103,7 +104,37 @@ export function defaultMaxSize(ctx: AppContext, row: Pick<MonitoredRow, 'kind' |
 
 /** How releases are judged for a title, from settings and the title's own size limit. */
 export function decideOptions(ctx: AppContext, row: Pick<MonitoredRow, 'kind' | 'maxSizeMb' | 'tmdbId' | 'largerFiles'>): DecideOptions {
-  return { skipCam: ctx.settings.get('downloading').skipCamReleases, maxSize: maxSizeFor(ctx, row) };
+  const s = ctx.settings.get('downloading');
+  return {
+    skipCam: s.skipCamReleases,
+    maxSize: maxSizeFor(ctx, row),
+    delay: { usenet: s.usenetDelayMinutes, torrent: s.torrentDelayMinutes, bypassAtCutoff: s.bypassDelayAtCutoff },
+    preferredProtocol: s.preferredProtocol,
+    formats: listFormats(ctx),
+  };
+}
+
+const delayedSearches = new Map<number, NodeJS.Timeout>();
+
+/**
+ * When the best releases are only being held back by the delay profile, searches the title again
+ * once the delay is over (a missed one is picked up by the regular missing search after a restart).
+ */
+export function retryAfterDelay(ctx: AppContext, row: MonitoredRow, decisions: Decision[]) {
+  if (decisions.some((d) => d.accepted)) return;
+  const at = Math.min(...decisions.map((d) => d.delayedUntil ?? Infinity));
+  if (!Number.isFinite(at)) return;
+  clearTimeout(delayedSearches.get(row.id));
+  const timer = setTimeout(
+    () => {
+      delayedSearches.delete(row.id);
+      const fresh = ctx.db.select().from(monitored).where(eq(monitored.id, row.id)).get();
+      if (fresh?.monitored) void autoSearch(ctx, fresh).catch(() => undefined);
+    },
+    Math.max(1000, at - Date.now() + 5000),
+  );
+  timer.unref();
+  delayedSearches.set(row.id, timer);
 }
 
 const gb = (n: number) => `${(n / GB).toFixed(n < 10 * GB ? 1 : 0)} GB`;
@@ -302,6 +333,7 @@ export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter
   const { decisions, errors } = await searchMonitored(ctx, row, filter);
   const notes: string[] = [];
   const grabbed = await grabBest(ctx, row, decisions, notes);
+  retryAfterDelay(ctx, row, decisions);
   if (grabbed) return { grabbed, errors, message: `Grabbed ${grabbed === 1 ? 'a release' : `${grabbed} releases`} for ${label}. It's on Downloads.` };
   if (notes.length) return { grabbed, errors, message: `Nothing grabbed for ${label}. ${[...new Set(notes)].join(' ')}` };
   if (!decisions.length) return { grabbed, errors, message: `No releases found for ${label}.` };

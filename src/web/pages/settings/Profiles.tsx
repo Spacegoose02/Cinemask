@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Alert, Field, Toggle } from '../../components/ui';
 import { api } from '../../lib/api';
+import { CustomFormats, useFormats } from './CustomFormats';
 
 const QUALITIES = [
   'SDTV', 'DVD', 'WEBRip-480p', 'WEBDL-480p', 'HDTV-720p', 'WEBRip-720p', 'WEBDL-720p', 'Bluray-720p', 'HDTV-1080p', 'WEBRip-1080p', 'WEBDL-1080p', 'Bluray-1080p',
@@ -19,6 +20,9 @@ interface Profile {
   cutoff: string;
   upgradesAllowed: boolean;
   language: string;
+  formatScores: Record<string, number>;
+  minFormatScore: number;
+  upgradeUntilFormatScore: number;
 }
 
 export function ProfileSettings() {
@@ -26,6 +30,7 @@ export function ProfileSettings() {
   const list = useQuery({ queryKey: ['profiles'], queryFn: () => api<Profile[]>('/api/profiles') });
   const [edit, setEdit] = useState<Omit<Profile, 'id'> & { id?: number }>();
   const [error, setError] = useState('');
+  const formats = useFormats();
 
   const save = async () => {
     if (!edit) return;
@@ -75,7 +80,7 @@ export function ProfileSettings() {
           ))}
         </ul>
       </section>
-      <button className="btn-secondary" onClick={() => setEdit({ name: '', qualities: ['WEBDL-1080p', 'Bluray-1080p'], cutoff: 'Bluray-1080p', upgradesAllowed: true, language: 'any' })}>
+      <button className="btn-secondary" onClick={() => setEdit({ name: '', qualities: ['WEBDL-1080p', 'Bluray-1080p'], cutoff: 'Bluray-1080p', upgradesAllowed: true, language: 'any', formatScores: {}, minFormatScore: 0, upgradeUntilFormatScore: 0 })}>
         New profile
       </button>
       {edit && (
@@ -116,6 +121,35 @@ export function ProfileSettings() {
               ))}
             </select>
           </Field>
+          {!!formats.data?.formats.length && (
+            <div className="space-y-3">
+              <div>
+                <div className="label">Format scores</div>
+                <p className="hint">Releases matching a format get its score; the total decides between releases of the same quality. A big negative score keeps a format out.</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {formats.data.formats.map((f) => (
+                  <label key={f.id} className="flex items-center justify-between gap-2 text-sm">
+                    <span>{f.name}</span>
+                    <input
+                      className="input w-28"
+                      type="number"
+                      value={edit.formatScores[String(f.id)] ?? 0}
+                      onChange={(e) => setEdit({ ...edit, formatScores: { ...edit.formatScores, [String(f.id)]: Number(e.target.value) || 0 } })}
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Minimum format score" hint="Releases scoring less aren't grabbed automatically.">
+                  <input className="input w-28" type="number" value={edit.minFormatScore} onChange={(e) => setEdit({ ...edit, minFormatScore: Number(e.target.value) || 0 })} />
+                </Field>
+                <Field label="Keep upgrading until the score reaches" hint="At the cutoff quality, a release with a higher score still replaces the file until this score. 0 turns it off.">
+                  <input className="input w-28" type="number" min={0} value={edit.upgradeUntilFormatScore} onChange={(e) => setEdit({ ...edit, upgradeUntilFormatScore: Math.max(0, Number(e.target.value) || 0) })} />
+                </Field>
+              </div>
+            </div>
+          )}
           <div className="flex gap-2">
             <button className="btn-primary" onClick={save} disabled={!edit.name || !edit.qualities.length}>
               Save profile
@@ -126,6 +160,7 @@ export function ProfileSettings() {
           </div>
         </section>
       )}
+      <CustomFormats profiles={list.data ?? []} />
     </div>
   );
 }

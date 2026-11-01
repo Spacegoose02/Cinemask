@@ -14,10 +14,35 @@ interface UserRow {
   disabled: boolean;
   autoApproveMovies: boolean;
   autoApproveShows: boolean;
+  movieRequestLimit: number | null;
+  seasonRequestLimit: number | null;
+  canRequest4k: boolean;
   hasPassword: boolean;
   linked: { oidc: boolean; plex: boolean };
   locked: boolean;
   lastLoginAt: number | null;
+}
+
+/** A per-user request limit: empty means the default from Settings → Requests, 0 means none. Saved when the box loses focus. */
+function LimitInput({ label, value, onSave }: { label: string; value: number | null; onSave: (v: number | null) => void }) {
+  const [text, setText] = useState(value === null ? '' : String(value));
+  return (
+    <label className="flex items-center gap-1.5">
+      <input
+        className="input w-16 px-2 py-0.5 text-xs"
+        inputMode="numeric"
+        placeholder="default"
+        aria-label={`${label} request limit`}
+        value={text}
+        onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ''))}
+        onBlur={() => {
+          const next = text === '' ? null : Math.min(1000, Number(text));
+          if (next !== value) onSave(next);
+        }}
+      />
+      {label}
+    </label>
+  );
 }
 
 const ROLE_HELP: Record<Role, string> = {
@@ -103,6 +128,14 @@ export function UserSettings() {
                         <label className="flex items-center gap-1.5">
                           <input type="checkbox" checked={u.autoApproveShows} onChange={(e) => patch(u.id, { autoApproveShows: e.target.checked })} /> Shows
                         </label>
+                        <label className="flex items-center gap-1.5" title="They can tick 4K when requesting. Set the 4K profile and folder in Settings → Requests.">
+                          <input type="checkbox" checked={u.canRequest4k} onChange={(e) => patch(u.id, { canRequest4k: e.target.checked })} /> Can request 4K
+                        </label>
+                        <div className="pt-1 text-muted" title="Empty uses the default from Settings → Requests. 0 means no limit.">
+                          Request limit
+                        </div>
+                        <LimitInput label="Movies" value={u.movieRequestLimit} onSave={(v) => patch(u.id, { movieRequestLimit: v })} />
+                        <LimitInput label="Seasons" value={u.seasonRequestLimit} onSave={(v) => patch(u.id, { seasonRequestLimit: v })} />
                       </div>
                     )}
                   </td>

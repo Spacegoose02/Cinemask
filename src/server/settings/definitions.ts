@@ -237,6 +237,34 @@ export const SETTINGS = {
         .array(z.object({ minutes: z.number().int().min(1).max(600), gb: z.number().min(0.1).max(1000) }))
         .max(10)
         .default([]),
+      /** Delay profile: which protocol wins when both have a fitting release. */
+      preferredProtocol: z.enum(['any', 'usenet', 'torrent']).default('any'),
+      /** Wait this long after a release appears before grabbing it automatically, so a better one can turn up. */
+      usenetDelayMinutes: z.number().int().min(0).max(10080).default(0),
+      torrentDelayMinutes: z.number().int().min(0).max(10080).default(0),
+      /** Grab straight away, delay or not, when the release already meets the profile's cutoff. */
+      bypassDelayAtCutoff: z.boolean().default(true),
+    }),
+    secrets: [],
+  },
+  requests: {
+    schema: z.object({
+      /** How many movies and show seasons each user may request per period. 0 means no limit. Managers have none. */
+      movieLimit: z.number().int().min(0).max(1000).default(0),
+      seasonLimit: z.number().int().min(0).max(1000).default(0),
+      limitDays: z.number().int().min(1).max(90).default(7),
+      /** Profile and library folder an approved 4K request uses. Null and '' fall back to the defaults. */
+      fourKMovieProfile: z.number().int().positive().nullable().default(null),
+      fourKShowProfile: z.number().int().positive().nullable().default(null),
+      fourKMovieRoot: z.string().regex(/^([a-z0-9-]{1,40})?$/).default(''),
+      fourKShowRoot: z.string().regex(/^([a-z0-9-]{1,40})?$/).default(''),
+      /**
+       * Titles already on a streaming service the household has: say so before a request ("warn"),
+       * refuse requests from users ("block"), or say nothing ("off").
+       */
+      streaming: z.enum(['off', 'warn', 'block']).default('warn'),
+      /** TMDB provider ids of the household's services. Empty means any subscription service counts. */
+      streamingProviders: z.array(z.number().int().positive()).max(50).default([]),
     }),
     secrets: [],
   },
@@ -275,13 +303,51 @@ export const SETTINGS = {
   },
   notifications: {
     schema: z.object({
+      /** Sends the chosen events to the shared channels below. Personal push and email are set per person. */
       enabled: z.boolean().default(false),
       /** Where events are POSTed as JSON, e.g. a Home Assistant webhook: http://homeassistant:8123/api/webhook/<id> */
       webhookUrl: httpUrl.default(''),
-      events: z.array(z.enum(NOTIFY_EVENTS)).max(NOTIFY_EVENTS.length).default(['request.created', 'request.available', 'download.failed', 'download.warning', 'health.problem', 'movie_night.created', 'movie_night.reminder']),
+      /** A Discord channel webhook (Channel settings → Integrations → Webhooks). */
+      discordWebhookUrl: httpUrl.default(''),
+      /** A Telegram bot token from @BotFather, and the chat (or group) id it posts to. */
+      telegramBotToken: z.string().trim().max(200).default(''),
+      telegramChatId: z.string().trim().max(100).regex(/^(-?\d+|@[\w]{3,})?$/, 'A chat id like 123456789 or -100…, or @channelname').default(''),
+      /** A full ntfy topic URL, such as https://ntfy.sh/cinemask-family, with an optional access token. */
+      ntfyUrl: httpUrl.default(''),
+      ntfyToken: z.string().max(500).default(''),
+      /** A Gotify server and an application token. */
+      gotifyUrl: httpUrl.default(''),
+      gotifyToken: z.string().max(500).default(''),
+      /** Pushover: your user (or group) key and an application token. */
+      pushoverUser: z.string().trim().max(100).default(''),
+      pushoverToken: z.string().max(100).default(''),
+      events: z.array(z.enum(NOTIFY_EVENTS)).max(NOTIFY_EVENTS.length).default(['request.created', 'request.available', 'download.failed', 'download.warning', 'health.problem', 'movie_night.created', 'movie_night.reminder', 'issue.created']),
     }),
-    // The webhook id in the URL is what authorises calls to it.
-    secrets: ['webhookUrl'],
+    // URLs with ids in them (webhooks, ntfy topics) are what authorise calls, so they're secrets too.
+    secrets: ['webhookUrl', 'discordWebhookUrl', 'telegramBotToken', 'ntfyUrl', 'ntfyToken', 'gotifyToken', 'pushoverUser', 'pushoverToken'],
+  },
+  email: {
+    schema: z.object({
+      /** Lets people get their notifications by email (Account → Notifications). */
+      enabled: z.boolean().default(false),
+      host: z.string().trim().max(255).regex(/^[\w.-]*$/, 'A host name like smtp.example.com').default(''),
+      port: z.number().int().min(1).max(65535).default(587),
+      /** "starttls" upgrades a plain connection (port 587); "tls" is encrypted from the start (port 465). */
+      security: z.enum(['starttls', 'tls', 'none']).default('starttls'),
+      username: z.string().max(255).default(''),
+      password: z.string().max(500).default(''),
+      from: z.union([z.literal(''), z.email().max(254)]).default(''),
+      fromName: z.string().trim().max(100).default('Cinemask'),
+    }),
+    secrets: ['password'],
+  },
+  /** The keys browsers use to check that push notifications come from this server. Made on first start. */
+  webpush: {
+    schema: z.object({
+      publicKey: z.string().max(200).default(''),
+      privateKey: z.string().max(200).default(''),
+    }),
+    secrets: ['privateKey'],
   },
   extras: {
     schema: z.object({

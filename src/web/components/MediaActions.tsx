@@ -49,6 +49,8 @@ interface ReleaseRow {
   rejections: string[];
   /** Size per movie or episode when over the size limit. */
   oversize: number | null;
+  formatScore?: number;
+  formats?: string[];
   /** The status of this release's download when it was already sent for this title. */
   grabbed: string | null;
 }
@@ -319,6 +321,11 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
                   <div className="text-xs text-muted">
                     {r.indexer} · {r.protocol} · {r.languages.join(', ')}
                   </div>
+                  {!!r.formats?.length && (
+                    <div className="text-xs text-muted">
+                      {r.formats.join(' · ')} {r.formatScore ? `(${r.formatScore > 0 ? '+' : ''}${r.formatScore})` : ''}
+                    </div>
+                  )}
                   {!r.accepted && <div className="text-xs text-danger">{r.rejections.join('; ')}</div>}
                   {r.oversize !== null && <div className="text-xs text-warning">Over the size limit ({formatBytes(r.oversize)}{season ? ' per episode' : ''})</div>}
                   <GrabbedNote now={sentNow[r.guid]} before={r.grabbed} />
@@ -348,6 +355,48 @@ export function ManualSearch({ monitoredId, onClose, initialSeason, episode }: {
         {res.data && !res.data.releases.length && <p className="p-2 text-muted">No releases found.</p>}
       </div>
     </Modal>
+  );
+}
+
+interface QuotaPart {
+  limit: number;
+  used: number;
+  remaining: number | null;
+}
+
+interface RequestQuota {
+  days: number;
+  movies: QuotaPart;
+  seasons: QuotaPart;
+  exempt: boolean;
+  canRequest4k: boolean;
+}
+
+interface StreamingHit {
+  providers: { id: number; name: string; logoPath: string | null }[];
+  region: string;
+  link: string | null;
+}
+
+/** "3 of 5 movie requests left this week", when there's a limit. */
+function QuotaLine({ quota, kind }: { quota: RequestQuota; kind: 'movie' | 'show' }) {
+  const part = kind === 'movie' ? quota.movies : quota.seasons;
+  if (quota.exempt || !part.limit) return null;
+  const period = quota.days === 7 ? 'this week' : `in ${quota.days} days`;
+  return (
+    <p className={`mt-3 text-xs ${part.remaining ? 'text-muted' : 'text-danger'}`}>
+      {part.remaining} of {part.limit} {kind === 'movie' ? 'movie' : 'season'} requests left {period}.
+    </p>
+  );
+}
+
+/** "Streaming on Netflix", with the services' logos. */
+function StreamingNote({ hit }: { hit: StreamingHit }) {
+  return (
+    <span className="flex items-center gap-1.5 self-center text-sm text-muted">
+      {hit.providers.slice(0, 3).map((p) => p.logoPath && <img key={p.id} src={`https://image.tmdb.org/t/p/w45${p.logoPath}`} alt="" className="h-5 w-5 rounded" />)}
+      Streaming on {hit.providers.map((p) => p.name).join(', ')}
+    </span>
   );
 }
 
@@ -381,6 +430,10 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: () => api<Profile[]>('/api/profiles'), enabled: isManager });
   const [requesting, setRequesting] = useState(false);
   const [seasons, setSeasons] = useState<number[] | null>(null);
+  const [fourK, setFourK] = useState(false);
+  const [note, setNote] = useState('');
+  const quota = useQuery({ queryKey: ['request-quota'], queryFn: () => api<RequestQuota>('/api/requests/quota') });
+  const streaming = useQuery({ queryKey: ['streaming', m.kind, m.tmdbId], queryFn: () => api<{ mode: string; hit: StreamingHit | null }>(`/api/requests/streaming/${m.kind}/${m.tmdbId}`), staleTime: 60 * 60 * 1000 });
   const [manual, setManual] = useState(false);
   const [posters, setPosters] = useState(false);
   const [folderSize, setFolderSize] = useState(false);
@@ -406,7 +459,13 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   };
 
   // A user an admin trusts with this kind gets an approved request straight away.
-  const requested = (r: unknown) => ((r as { status?: string } | null)?.status === 'approved' ? 'Added and searching.' : 'Requested. A manager will review it.');
+  const requested = (r: unknown) => {
+    const row = r as { status?: string; following?: boolean } | null;
+    if (row?.following) return "Someone already asked for this, so you've been added to their request. You'll hear when it's ready.";
+    return row?.status === 'approved' ? 'Added and searching.' : 'Requested. A manager will review it.';
+  };
+  const hit = streaming.data?.hit ?? null;
+  const blocked = !isManager && streaming.data?.mode === 'block' && !!hit;
   const mon = lookup.data?.monitored;
   const req = lookup.data?.request;
   const fullyAvailable = m.availability.status === 'on_server';
@@ -429,7 +488,12 @@ export function MediaActions({ m }: { m: MediaDetail }) {
       {/* Users can ask for a title even when it's already monitored but not on the server yet. */}
       {(!mon || !isManager) && canRequest && (
         <>
-          <button className="btn-primary" onClick={() => (m.kind === 'show' ? (setSeasons(null), setRequesting(true)) : isManager && !chosenRoot ? setAsking('download') : download(chosenRoot))}>
+          <button
+            className="btn-primary"
+            disabled={blocked}
+            title={blocked ? `On ${hit!.providers.map((p) => p.name).join(', ')}, so it can't be requested` : undefined}
+            onClick={() => (m.kind === 'show' || !isManager ? (setSeasons(null), setFourK(false), setNote(''), setRequesting(true)) : !chosenRoot ? setAsking('download') : download(chosenRoot))}
+          >
             {isManager ? 'Download' : open || req?.status === 'available' ? 'Request more seasons' : 'Request'}
           </button>
         </>
@@ -443,6 +507,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           {fullyAvailable ? 'Monitor for upgrades' : 'Monitor only'}
         </button>
       )}
+      {hit && <StreamingNote hit={hit} />}
       {req && req.status !== 'declined' && (!mon || !isManager) && <span className="self-center text-sm text-muted">Requested by {req.requestedByName} · {req.status}</span>}
       {req?.status === 'declined' && !open && <span className="self-center text-sm text-danger">Request declined{req.reason ? `: ${req.reason}` : ''}</span>}
       {mon && isManager && 'profileId' in mon && (
@@ -500,23 +565,53 @@ export function MediaActions({ m }: { m: MediaDetail }) {
       {posters && <PosterPicker kind={m.kind} tmdbId={m.tmdbId} onClose={() => setPosters(false)} />}
       {requesting && (
         <Modal title={`Request ${m.title}`} onClose={() => setRequesting(false)}>
-          <p className="mb-3 text-sm text-muted">Pick the seasons you want.</p>
-          <SeasonPicker seasons={m.seasons} value={picked} onChange={setSeasons} requested={requestedSeasons} />
+          {m.kind === 'show' && (
+            <>
+              <p className="mb-3 text-sm text-muted">Pick the seasons you want.</p>
+              <SeasonPicker seasons={m.seasons} value={picked} onChange={setSeasons} requested={requestedSeasons} />
+            </>
+          )}
+          {hit && (
+            <p className="mt-3 rounded-md border border-border bg-surface-2 p-2 text-sm">
+              Already on <strong>{hit.providers.map((p) => p.name).join(', ')}</strong>. You may not need to request it.
+            </p>
+          )}
           {isManager && roots.length > 1 && (
             <label className="mt-3 block">
               <span className="label">Library</span>
               <RootPicker roots={roots} value={chosenRoot} onChange={setRootId} />
             </label>
           )}
+          {!isManager && quota.data?.canRequest4k && (
+            <label className="mt-3 flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={fourK} onChange={(e) => setFourK(e.target.checked)} /> Request in 4K
+            </label>
+          )}
+          {!isManager && (
+            <label className="mt-3 block">
+              <span className="label">Note for the manager (optional)</span>
+              <input className="input" maxLength={300} value={note} placeholder="Like: the 2005 one, not the remake" onChange={(e) => setNote(e.target.value)} />
+            </label>
+          )}
+          {quota.data && <QuotaLine quota={quota.data} kind={m.kind} />}
           <button
             className="btn-primary mt-4"
-            disabled={!picked.length || (isManager && !chosenRoot)}
+            disabled={(m.kind === 'show' && !picked.length) || (isManager && !chosenRoot)}
             onClick={async () => {
-              await run(() => api('/api/requests', { body: { kind: 'show', tmdbId: m.tmdbId, seasons: picked, ...(isManager ? { rootId: chosenRoot } : {}) } }), requested);
+              const body = {
+                kind: m.kind,
+                tmdbId: m.tmdbId,
+                ...(m.kind === 'show' ? { seasons: picked } : {}),
+                ...(isManager ? { rootId: chosenRoot } : { fourK, note: note.trim() || undefined }),
+              };
+              await run(() => api('/api/requests', { body }), requested);
+              await qc.invalidateQueries({ queryKey: ['request-quota'] });
               setRequesting(false);
             }}
           >
-            {isManager ? 'Download' : 'Request'} {picked.length} season{picked.length === 1 ? '' : 's'}
+            {isManager ? 'Download' : 'Request'}
+            {m.kind === 'show' ? ` ${picked.length} season${picked.length === 1 ? '' : 's'}` : ''}
+            {fourK ? ' in 4K' : ''}
           </button>
         </Modal>
       )}

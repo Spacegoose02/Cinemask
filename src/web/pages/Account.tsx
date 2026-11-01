@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth';
 import { signInWithPlex } from '../lib/plex';
 import { ApiKeys } from '../components/ApiKeys';
 import { ThemePicker } from '../components/ThemePicker';
+import { NotificationPrefs } from '../components/NotificationPrefs';
 
 interface SessionRow {
   id: string;
@@ -64,6 +65,8 @@ export function AccountPage() {
       <h1 className="text-2xl font-semibold">Account</h1>
       <LoadError queries={[sessions]} />
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+
+      <NotificationPrefs />
 
       <section className="card space-y-3">
         <h2 className="font-semibold">Appearance</h2>

@@ -4,7 +4,11 @@ import { audit } from '../audit/log.js';
 import { hasRole } from '../auth/guard.js';
 import { books, downloads, libraryItems, monitored, requests } from '../db/schema.js';
 import { calendar } from '../calendar/service.js';
-import { sendWebhook } from '../notify/service.js';
+import { z } from 'zod';
+import { cleanError, configuredChannels, sendTo, SHARED_CHANNELS } from '../notify/channels.js';
+import { parse } from '../lib/validate.js';
+
+const CHANNEL_NAMES = { webhook: 'the webhook', discord: 'Discord', telegram: 'Telegram', ntfy: 'ntfy', gotify: 'Gotify', pushover: 'Pushover' } as const;
 import { badRequest } from '../lib/errors.js';
 import { buildOpenApi } from './openapi.js';
 import { localDay } from '../lib/dates.js';
@@ -44,15 +48,17 @@ export async function apiRoutes(app: FastifyInstance) {
     };
   });
 
+  /** Sends a test to one shared channel (the webhook unless another is named), with what's saved now. */
   app.post('/api/notifications/test', { config: { access: 'admin' } }, async (req) => {
+    const { channel } = parse(z.object({ channel: z.enum(SHARED_CHANNELS).default('webhook') }), req.body ?? {});
     const s = ctx.settings.get('notifications');
-    if (!s.webhookUrl) throw badRequest('Save a webhook URL first');
+    if (!configuredChannels(s).includes(channel)) throw badRequest(channel === 'webhook' ? 'Save a webhook URL first' : `Fill in and save the ${CHANNEL_NAMES[channel]} settings first`);
     try {
-      await sendWebhook(s.webhookUrl, { event: 'health.problem', title: 'Test from Cinemask', message: 'If you can read this, the webhook works.', data: { test: true } });
+      await sendTo(ctx, channel, s, { event: 'health.problem', title: 'Test from Cinemask', message: `If you can read this, ${channel === 'webhook' ? 'the webhook' : CHANNEL_NAMES[channel]} works.`, data: { test: true }, url: '/' });
     } catch (err) {
-      return { ok: false, message: (err as Error).name === 'TimeoutError' ? 'The webhook timed out' : (err as Error).message.replace(/https?:\/\/\S+/g, '(webhook)') };
+      return { ok: false, message: cleanError(err).replace(/^It timed out$/, `The ${channel === 'webhook' ? 'webhook' : CHANNEL_NAMES[channel]} timed out`) };
     }
-    audit(ctx.db, req, 'notifications.tested');
-    return { ok: true, message: 'Sent a test event' };
+    audit(ctx.db, req, 'notifications.tested', { target: channel });
+    return { ok: true, message: channel === 'webhook' ? 'Sent a test event' : `Sent a test to ${CHANNEL_NAMES[channel]}` };
   });
 }
