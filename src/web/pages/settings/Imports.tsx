@@ -101,10 +101,128 @@ function ImportSection({ source }: { source: Source }) {
   );
 }
 
+interface PlanSource {
+  source: Source;
+  name: string;
+  configured: boolean;
+  error?: string;
+  add?: number;
+  update?: number;
+  skip?: number;
+  profiles?: { name: string; mapsTo: string | null }[];
+  manual?: string[];
+  users?: { create: string[]; existing: string[] };
+}
+
+interface Migration {
+  running: boolean;
+  step: string;
+  steps: { source: string; result: string }[];
+  finishedAt: number | null;
+}
+
+/** Dry run, then everything in one go. */
+function MoveEverything() {
+  const qc = useQueryClient();
+  const [plan, setPlan] = useState<PlanSource[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const status = useQuery({
+    queryKey: ['import', 'all'],
+    queryFn: () => api<Migration | null>('/api/import/all'),
+    refetchInterval: (q) => (q.state.data?.running ? 2000 : false),
+  });
+  const dryRun = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      setPlan((await api<{ sources: PlanSource[] }>('/api/import/plan')).sources);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const go = async () => {
+    setError('');
+    try {
+      await api('/api/import/all', { body: {} });
+      await qc.invalidateQueries({ queryKey: ['import'] });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const m = status.data;
+  return (
+    <section className="card space-y-4">
+      <h2 className="font-semibold">Move everything over</h2>
+      <p className="text-sm text-muted">
+        Fill in the ones you use below and press Test on each (that saves them), then check what would happen with a dry run. Nothing changes until you press Move everything. It brings Overseerr's people over as users (they sign in with Plex, and keep their request limits), then Radarr's movies, Sonarr's shows and
+        Overseerr's requests.
+      </p>
+      <div className="flex flex-wrap gap-3">
+        <button className="btn-secondary" disabled={busy} onClick={() => void dryRun()}>
+          {busy ? 'Checking…' : 'Dry run'}
+        </button>
+        <button className="btn-primary" disabled={m?.running} onClick={() => void go()}>
+          {m?.running ? `Moving: ${m.step}…` : 'Move everything'}
+        </button>
+      </div>
+      {error && <Alert>{error}</Alert>}
+      {plan && (
+        <div className="space-y-3 text-sm">
+          {plan.map((p) => (
+            <div key={p.source}>
+              <div className="font-medium">{p.name}</div>
+              {!p.configured ? (
+                <p className="text-muted">Not set up; skipped.</p>
+              ) : p.error ? (
+                <p className="text-danger">{p.error}</p>
+              ) : (
+                <ul className="list-disc pl-5 text-muted">
+                  {p.source !== 'overseerr' && (
+                    <li>
+                      {p.add} to add, {p.update} already here (their monitored state is copied), {p.skip} skipped
+                    </li>
+                  )}
+                  {p.source === 'overseerr' && <li>{p.add} requests (ones already here are skipped)</li>}
+                  {p.users && (
+                    <li>
+                      {p.users.create.length} new users{p.users.create.length ? ` (${p.users.create.slice(0, 8).join(', ')}${p.users.create.length > 8 ? '…' : ''})` : ''}, {p.users.existing.length} already here
+                    </li>
+                  )}
+                  {p.profiles?.map((x) => (
+                    <li key={x.name}>
+                      Profile “{x.name}” → {x.mapsTo ? `“${x.mapsTo}”` : 'your default profile (no profile here has that name)'}
+                    </li>
+                  ))}
+                  {p.manual?.map((x) => (
+                    <li key={x}>By hand: {x}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {m && !m.running && m.steps.length > 0 && (
+        <ul className="list-disc pl-5 text-sm text-muted">
+          {m.steps.map((s) => (
+            <li key={s.source}>
+              {s.source}: {s.result}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function ImportSettings() {
   return (
     <div className="max-w-2xl space-y-6">
       <p className="text-sm text-muted">Moving over from Radarr, Sonarr or Overseerr? Import what they manage. You can run an import again any time; titles and requests already here are kept as they are.</p>
+      <MoveEverything />
       <ImportSection source="radarr" />
       <ImportSection source="sonarr" />
       <ImportSection source="overseerr" />
