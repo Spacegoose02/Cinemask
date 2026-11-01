@@ -3,7 +3,7 @@ import { Alert } from '../../components/ui';
 import { api } from '../../lib/api';
 
 /** Runs a saved-settings connection test. Save first, since tests use stored values. */
-export function TestButton({ service, beforeTest, endpoint, label }: { service: string; beforeTest?: () => Promise<void>; endpoint?: string; label?: string }) {
+export function TestButton({ service, beforeTest, endpoint, label, body }: { service: string; beforeTest?: () => Promise<void>; endpoint?: string; label?: string; body?: object }) {
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
   return (
@@ -17,7 +17,7 @@ export function TestButton({ service, beforeTest, endpoint, label }: { service: 
           setResult(null);
           try {
             await beforeTest?.();
-            setResult(await api<{ ok: boolean; message: string }>(endpoint ?? `/api/integrations/${service}/test`, { method: 'POST' }));
+            setResult(await api<{ ok: boolean; message: string }>(endpoint ?? `/api/integrations/${service}/test`, body ? { body } : { method: 'POST' }));
           } catch (e) {
             setResult({ ok: false, message: (e as Error).message });
           } finally {

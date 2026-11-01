@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, or } from 'drizzle-orm';
 import { notify } from '../notify/service.js';
+import { requestApproved, requestDeclined } from '../notify/events.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
@@ -107,6 +108,8 @@ export async function arrRoutes(app: FastifyInstance) {
     // An existing title asked for in 4K switches to the 4K profile, so the next search upgrades it.
     if (existing && r.fourK && existing.profileId !== profile) db().update(monitored).set({ profileId: profile }).where(eq(monitored.id, existing.id)).run();
     db().update(requests).set({ status: 'approved', decidedByName: deciderName, decidedAt: Date.now(), monitoredId: row.id }).where(eq(requests.id, requestId)).run();
+    // Nobody needs telling about their own download.
+    if (r.requestedBy !== deciderId) requestApproved(ctx, r, deciderName);
     const fresh = db().select().from(monitored).where(eq(monitored.id, row.id)).get() ?? row;
     void autoSearch(ctx, fresh).catch((err) => app.log.warn({ err }, 'Search after approval failed'));
     return fresh;
@@ -240,6 +243,7 @@ export async function arrRoutes(app: FastifyInstance) {
     if (r.status !== 'pending') throw conflict(`Request is already ${r.status}`);
     db().update(requests).set({ status: 'declined', reason: reason ?? null, decidedByName: req.user!.username, decidedAt: Date.now() }).where(eq(requests.id, id)).run();
     audit(db(), req, 'request.declined', { target: r.title });
+    requestDeclined(ctx, r, req.user!.displayName || req.user!.username, reason ?? null);
     return { ok: true };
   });
 

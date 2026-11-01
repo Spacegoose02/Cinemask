@@ -635,6 +635,24 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       CREATE INDEX requests_user_idx ON requests(requested_by, created_at);
     `,
   },
+  {
+    id: 22,
+    name: 'push subscriptions and notification choices',
+    sql: `
+      ALTER TABLE users ADD COLUMN notify_prefs TEXT;
+      CREATE TABLE push_subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint TEXT NOT NULL UNIQUE,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        device TEXT,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER
+      );
+      CREATE INDEX push_subscriptions_user_idx ON push_subscriptions(user_id);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

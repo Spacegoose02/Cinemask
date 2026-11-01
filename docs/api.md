@@ -23,7 +23,7 @@ Keys are never accepted in the query string, since URLs end up in logs.
 | **Read-only** keys can only send `GET`. | Safe for dashboards. |
 | Keys never reach account, session, key, settings, user or backup endpoints. Each endpoint's reference entry says whether keys can use it. | A leaked key can't take over the install. |
 | Only a hash of each key is stored. A new key is shown once. | A database leak doesn't leak working keys. |
-| Admins see and revoke every key in **Settings → API and webhooks**, and can turn keys off entirely. | One switch stops all scripts. |
+| Admins see and revoke every key in **Settings → API**, and can turn keys off entirely. | One switch stops all scripts. |
 
 ## Examples
 

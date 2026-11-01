@@ -29,6 +29,8 @@ export const users = sqliteTable('users', {
   seasonRequestLimit: integer('season_request_limit'),
   /** May ask for titles in 4K (managers always can). */
   canRequest4k: integer('can_request_4k', { mode: 'boolean' }).notNull().default(false),
+  /** JSON NotifyPrefs (notify/personal.ts): push, email and the events turned off. Null means the defaults. */
+  notifyPrefs: text('notify_prefs'),
 });
 
 export const sessions = sqliteTable(
@@ -611,4 +613,23 @@ export const gameRounds = sqliteTable(
     finishedAt: integer('finished_at'),
   },
   (t) => [index('game_rounds_user_idx').on(t.userId, t.finishedAt)],
+);
+
+/** A browser or phone where someone turned on notifications (Web Push). */
+export const pushSubscriptions = sqliteTable(
+  'push_subscriptions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull().unique(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    /** A label for Account, like "Chrome on Android". */
+    device: text('device'),
+    createdAt: integer('created_at').notNull(),
+    lastUsedAt: integer('last_used_at'),
+  },
+  (t) => [index('push_subscriptions_user_idx').on(t.userId)],
 );

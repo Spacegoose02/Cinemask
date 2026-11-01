@@ -72,7 +72,7 @@ What `/api/stats` returns:
 ## 3. Events from Cinemask
 
 1. In Home Assistant, create an automation with a **Webhook** trigger. Note its webhook id, for example `cinemask-events`, and leave **Only accessible from the local network** on if Cinemask is on your LAN.
-2. In Cinemask, open **Settings → API and webhooks**, tick **Send webhook events**, set the URL to `http://homeassistant.local:8123/api/webhook/cinemask-events`, choose the events, and press **Save and send a test**.
+2. In Cinemask, open **Settings → Notifications**, tick **Send events to the shared channels**, set the webhook URL to `http://homeassistant.local:8123/api/webhook/cinemask-events`, choose the events, and press **Save and send a test**.
 
 Each event is a JSON POST:
 

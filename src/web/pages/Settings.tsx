@@ -16,6 +16,7 @@ import { MediaManagementSettings } from './settings/MediaManagement';
 import { MetadataSettings } from './settings/Metadata';
 import { ProfileSettings } from './settings/Profiles';
 import { RequestSettings } from './settings/Requests';
+import { NotificationSettings } from './settings/Notifications';
 import { SignInSettings } from './settings/SignIn';
 import { UserSettings } from './settings/Users';
 
@@ -33,7 +34,8 @@ const TABS = [
   { path: 'requests', label: 'Requests', element: <RequestSettings /> },
   { path: 'users', label: 'Users', element: <UserSettings /> },
   { path: 'sign-in', label: 'Sign-in', element: <SignInSettings /> },
-  { path: 'api', label: 'API and webhooks', element: <ApiSettings /> },
+  { path: 'notifications', label: 'Notifications', element: <NotificationSettings /> },
+  { path: 'api', label: 'API', element: <ApiSettings /> },
   { path: 'backups', label: 'Backups', element: <BackupSettings /> },
   { path: 'health', label: 'Health', element: <HealthSettings /> },
   { path: 'activity', label: 'Activity log', element: <ActivitySettings /> },

@@ -4,12 +4,18 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Changed
+- The webhook moved from Settings → API and webhooks (now **API**) to the new **Settings → Notifications**. The "send events" switch there now covers every shared channel.
+
 ### Added
 - **Request limits.** Settings → Requests sets how many movies and show seasons each user can request every so many days (declined requests don't count, managers have no limit), and Settings → Users can give anyone their own limit. The request dialog shows "3 of 5 left this week", and going over says how many are left.
 - **See how a request is doing.** Approved requests on Requests say where they've got to: not out yet (with the expected date), looking for a copy, downloading with a progress bar and time left, adding to the library, or how many episodes are ready.
 - **4K requests.** People an admin allows (Settings → Users → Can request 4K) can tick "Request in 4K". An approved 4K request uses the 4K profile and folder from Settings → Requests; a title already on the server moves to the 4K profile so it's upgraded.
 - **"Already streaming".** Title pages say when a title is on a streaming service, and the request dialog mentions it. Settings → Requests can pick the household's services and stop users requesting titles already on them.
 - **Delay profile.** Settings → Media management can prefer Usenet or torrents and wait a while after a release appears before grabbing it automatically, so a better one has time to turn up (releases already at the cutoff can skip the wait). Manual search still grabs at once.
+- **Notifications on your phone and computer.** Account → Notifications turns on notifications for each device (on iPhone, once Cinemask is on the Home Screen), with a test button and a list of devices. Everyone picks what they hear about: their requests approved, declined or ready (people who said "me too" hear too), movie nights, and for managers and admins new requests, failed downloads and health problems.
+- **Email notifications.** With an SMTP server in Settings → Notifications, people can also get their notifications by email, at an address they set themselves.
+- **Discord, Telegram, ntfy, Gotify and Pushover**, alongside the webhook, in the new Settings → Notifications tab, each with its own test button. Messages link back to the title in Cinemask when Settings → General has the public URL.
 - **Request notes and "me too".** Users can add a short note to a request. Asking for something someone else already requested adds you to their request instead of making a second one: it shows on your Requests with "Stop following", and the request shows how many others want it.
 
 ## [0.30.0] - 2026-10-31
