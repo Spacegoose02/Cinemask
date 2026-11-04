@@ -4,6 +4,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- **Upgrade button.** Movie and show pages have **Upgrade** next to the quality profile (and each season has one under Files): it finds a better release for the profile picked there and replaces the file on disk once it's downloaded. It works even with automatic upgrades turned off, and judges the file by what it really is: the worst of the recorded quality, its release name and what Plex or Jellyfin report, so a file the server shows as SD is upgraded even if it was recorded as 1080p.
+- **Request upgrade.** Users without download rights get **Request upgrade** on titles already on the server: they can pick a quality profile (4K ones only with the 4K permission), the seasons for a show, and a note. It goes to Requests marked "Upgrade" for a manager to approve, counts toward request limits, and others asking for the same thing follow it. Approving it moves the title to the chosen profile and runs the upgrade.
+
+### Fixed
+- **SD releases taken for 1080p.** A release with no resolution in its name ("Movie.2026.WEB.h264-GRP", which scene rules use for SD) was read as 1080p, so HD profiles grabbed SD copies. It's now read as SD (remuxes stay 1080p).
+- **Widescreen films on Jellyfin** were reported a step too low (a 1920×800 film as 720p, a cropped 720p one as SD), since only the height was read. The width now counts too.
+
 ## [0.31.0] - 2026-11-01
 
 ### Changed

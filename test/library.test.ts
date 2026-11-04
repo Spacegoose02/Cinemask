@@ -296,3 +296,31 @@ describe('library posters', () => {
     expect(lib).toEqual([{ tmdb_id: 1000, poster_path: null }]);
   });
 });
+
+describe('Jellyfin resolution', () => {
+  it('counts the width, so widescreen 1080p and cropped 720p films are not taken for lower', async () => {
+    const { JellyfinClient } = await import('../src/server/integrations/jellyfin.js');
+    const video = (Width: number, Height: number) => [{ Type: 'Video', Width, Height }];
+    fakeFetch({
+      [`${JELLYFIN}/Users`]: () => [],
+      [`${JELLYFIN}/Items`]: (url: URL) =>
+        url.searchParams.get('IncludeItemTypes') === 'Episode'
+          ? { Items: [] }
+          : {
+              Items: [
+                { Id: 'a', Type: 'Movie', Name: 'Scope 1080p', MediaStreams: video(1920, 800) },
+                { Id: 'b', Type: 'Movie', Name: 'Scope 720p', MediaStreams: video(1280, 536) },
+                { Id: 'c', Type: 'Movie', Name: 'DVD', MediaStreams: video(720, 480) },
+                { Id: 'd', Type: 'Movie', Name: 'Scope 4K', MediaStreams: video(3840, 1600) },
+              ],
+            },
+    });
+    const items = await new JellyfinClient(JELLYFIN, 'k').fetchLibrary();
+    expect(items.map((i) => [i.title, i.resolution])).toEqual([
+      ['Scope 1080p', '1080p'],
+      ['Scope 720p', '720p'],
+      ['DVD', 'SD'],
+      ['Scope 4K', '2160p'],
+    ]);
+  });
+});

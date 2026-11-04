@@ -4,8 +4,9 @@ import { libraryEpisodes, libraryItems, media, monitored, monitoredEpisodes, mon
 import { bestResolution } from '../integrations/http.js';
 import { refreshMetadata, tmdbClient } from '../library/service.js';
 import type { Target } from './decision.js';
-import { belowCutoff, defaultProfileId, searchProfile } from './profiles.js';
-import { qualityFor } from './quality.js';
+import { belowCutoff, defaultProfileId, searchProfile, type Profile } from './profiles.js';
+import { parseRelease } from './parser.js';
+import { qualityFor, qualityRank } from './quality.js';
 import { assertRoot } from './roots.js';
 import { localDay } from '../lib/dates.js';
 
@@ -128,6 +129,51 @@ export function wantedTarget(ctx: AppContext, row: MonitoredRow, filter?: Search
       currentFormatScore: e.fileQuality ? e.fileFormatScore : null,
     }))
     .filter((e) => !e.currentQuality || (!filter?.missingOnly && belowCutoff(profile, e.currentQuality, e.currentFormatScore)));
+  return eps.length ? { kind: 'show', title: row.title, year: row.year, episodes: eps } : null;
+}
+
+/** The lowest of the qualities given (ignoring unknowns), or null when none is known. */
+function worstQuality(...qs: (string | null | undefined)[]): string | null {
+  const known = qs.filter((q): q is string => !!q && q !== 'Unknown');
+  return known.length ? known.reduce((a, b) => (qualityRank(b) < qualityRank(a) ? b : a)) : null;
+}
+
+/**
+ * What the file on disk really is, as far as anyone can tell: the worst of the quality recorded at
+ * import, its release name read again (older versions took "Movie.2026.WEB" for 1080p), and what
+ * the media server reports. An Upgrade judges against this, so a file the server sees as SD can be
+ * replaced even when it was recorded as 1080p.
+ */
+function actualQuality(recorded: string | null, release: string | null, onServer: string | null | undefined): string | null {
+  return worstQuality(recorded, release ? parseRelease(release).quality : null, onServer);
+}
+
+/**
+ * The files an Upgrade would replace: ones on disk (or on a media server) below the profile's
+ * cutoff, judged by actualQuality. Unlike wantedTarget it ignores the upgrade switches (the button
+ * is the say-so), unmonitored episodes and missing files. Null when nothing can be upgraded.
+ */
+export function upgradeTarget(ctx: AppContext, row: MonitoredRow, profile: Profile, filter?: SearchFilter): Target | null {
+  const p = { ...profile, upgradesAllowed: true };
+  if (row.kind === 'movie') {
+    const current = actualQuality(row.fileQuality, row.fileRelease, serverQuality(ctx, 'movie', row.tmdbId) as string | null);
+    // The recorded score only counts while the recorded quality is the real one.
+    const score = row.fileQuality && current === row.fileQuality ? row.fileFormatScore : null;
+    if (!current || !belowCutoff(p, current, score)) return null;
+    return { kind: 'movie', title: row.title, year: row.year, currentQuality: current, currentFormatScore: score };
+  }
+  const onServer = serverQuality(ctx, 'show', row.tmdbId) as Map<string, string>;
+  const eps = ctx.db
+    .select()
+    .from(monitoredEpisodes)
+    .where(eq(monitoredEpisodes.monitoredId, row.id))
+    .all()
+    .filter((e) => (filter?.season === undefined ? e.season > 0 : e.season === filter.season) && (filter?.episode === undefined || e.episode === filter.episode))
+    .map((e) => {
+      const current = actualQuality(e.fileQuality, e.fileRelease, onServer.get(`${e.season}:${e.episode}`));
+      return { season: e.season, episode: e.episode, airDate: e.airDate, currentQuality: current, currentFormatScore: e.fileQuality && current === e.fileQuality ? e.fileFormatScore : null };
+    })
+    .filter((e) => e.currentQuality && belowCutoff(p, e.currentQuality, e.currentFormatScore));
   return eps.length ? { kind: 'show', title: row.title, year: row.year, episodes: eps } : null;
 }
 

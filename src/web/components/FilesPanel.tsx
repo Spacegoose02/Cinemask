@@ -276,10 +276,10 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
     }
   };
   // A Search button's result shows under the season or episode it was pressed on, not at the top.
-  const search = async (key: string, body: { season: number; episode?: number }) => {
+  const search = async (key: string, body: { season: number; episode?: number }, action: 'search' | 'upgrade' = 'search') => {
     setRowMsg({ key, kind: 'info', text: 'Searching…' });
     try {
-      const r = await api<{ grabbed: number; message: string; errors: string[] }>(`/api/monitored/${mon.id}/search`, { body });
+      const r = await api<{ grabbed: number; message: string; errors: string[] }>(`/api/monitored/${mon.id}/${action}`, { body });
       setRowMsg({ key, kind: r.grabbed ? 'success' : 'info', text: r.message, errors: r.errors });
       await refresh();
     } catch (e) {
@@ -400,6 +400,11 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
                     <button className="btn-secondary" onClick={() => setManual({ season: s })}>
                       Manual
                     </button>
+                    {have > 0 && (
+                      <button className="btn-secondary" title="Replaces this season's files that are below the quality profile's cutoff with better releases" onClick={() => void search(`s${s}`, { season: s }, 'upgrade')}>
+                        Upgrade
+                      </button>
+                    )}
                     {have > 0 && (
                       <button className="btn-secondary" onClick={() => setDeleting({ scope: 'season', season: s, label: `season ${s} files` })}>
                         Delete
