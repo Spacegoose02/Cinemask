@@ -23,6 +23,7 @@ interface RequestRow {
   reason: string | null;
   createdAt: number;
   fourK: boolean;
+  upgrade?: boolean;
   note: string | null;
   /** How many others asked for the same thing. */
   followers: number;
@@ -139,7 +140,8 @@ export function RequestsPage() {
               </Link>
               <div className="text-xs text-muted">
                 {r.kind === 'movie' ? 'Movie' : `Series${r.seasons ? ` · seasons ${(JSON.parse(r.seasons) as number[]).join(', ')}` : ''}`}
-                {r.fourK && <span className="ml-1 rounded border border-accent px-1 text-[10px] font-semibold text-accent">4K</span>} · requested by {r.requestedByName}
+                {r.fourK && <span className="ml-1 rounded border border-accent px-1 text-[10px] font-semibold text-accent">4K</span>}
+                {r.upgrade && <span className="ml-1 rounded border border-accent px-1 text-[10px] font-semibold text-accent">Upgrade</span>} · requested by {r.requestedByName}
                 {r.followers > 0 && ` and ${r.followers} other${r.followers === 1 ? '' : 's'}`} · {formatDate(r.createdAt)}
               </div>
               {r.note && <div className="text-sm italic text-muted">“{r.note}”</div>}

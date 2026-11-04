@@ -10,6 +10,8 @@ import { Alert } from './ui';
 interface Profile {
   id: number;
   name: string;
+  qualities?: string[];
+  cutoff?: string;
 }
 
 interface Lookup {
@@ -30,6 +32,8 @@ interface Lookup {
   request: { id: number; status: string; requestedByName: string | null; reason: string | null } | null;
   /** Pending or approved requests: the seasons they cover between them, or 'all'. */
   openRequest: { seasons: number[] | 'all' } | null;
+  /** An upgrade someone asked for that isn't done yet. */
+  openUpgrade?: { status: string; requestedByName: string | null; mine: boolean } | null;
   /** Managers: the title's folder on disk and the root folder it's in. */
   folder?: string | null;
   folderRoot?: string;
@@ -422,12 +426,73 @@ function ChooseFolder({ title, action, roots, onClose, onChosen }: { title: stri
   );
 }
 
+/** A user's ask for a better copy of something on the server, in a quality profile they pick. */
+function RequestUpgrade({ m, profiles, onClose, onSent }: { m: MediaDetail; profiles: Profile[]; onClose: () => void; onSent: (r: unknown) => void }) {
+  const [profileId, setProfileId] = useState<number | ''>('');
+  const onServerSeasons = m.seasons.filter((s) => s.seasonNumber > 0 && s.onServer > 0);
+  const [seasons, setSeasons] = useState<number[]>(onServerSeasons.map((s) => s.seasonNumber));
+  const [note, setNote] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const body = { kind: m.kind, tmdbId: m.tmdbId, upgrade: true, ...(profileId ? { profileId } : {}), ...(m.kind === 'show' ? { seasons } : {}), note: note.trim() || undefined };
+      onSent(await api('/api/requests', { body }));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const current = m.availability.resolution;
+  return (
+    <Modal title={`Request a better copy of ${m.title}`} onClose={onClose}>
+      <div className="space-y-3">
+        {error && <Alert>{error}</Alert>}
+        <p className="text-sm text-muted">{current ? `It's on the server in ${current}. ` : ''}A manager approves it, then a better release replaces the file.</p>
+        <label className="block">
+          <span className="label">Quality</span>
+          <select className="input" value={profileId} onChange={(e) => setProfileId(e.target.value ? Number(e.target.value) : '')} aria-label="Quality wanted">
+            <option value="">Let the manager choose</option>
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {m.kind === 'show' && onServerSeasons.length > 0 && (
+          <fieldset className="space-y-1">
+            <legend className="label">Seasons</legend>
+            {onServerSeasons.map((s) => (
+              <label key={s.seasonNumber} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={seasons.includes(s.seasonNumber)} onChange={(e) => setSeasons(e.target.checked ? [...seasons, s.seasonNumber] : seasons.filter((x) => x !== s.seasonNumber))} />
+                {s.name}
+              </label>
+            ))}
+          </fieldset>
+        )}
+        <label className="block">
+          <span className="label">Note for the manager (optional)</span>
+          <input className="input" maxLength={300} value={note} placeholder="Like: it's blurry, or the sound is out of sync" onChange={(e) => setNote(e.target.value)} />
+        </label>
+        <button className="btn-primary" disabled={busy || (m.kind === 'show' && onServerSeasons.length > 0 && !seasons.length)} onClick={send}>
+          {busy ? 'Sending…' : 'Request upgrade'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 export function MediaActions({ m }: { m: MediaDetail }) {
   const { me } = useAuth();
   const qc = useQueryClient();
   const isManager = hasRole(me, 'manager');
   const lookup = useQuery({ queryKey: ['lookup', m.kind, m.tmdbId], queryFn: () => api<Lookup>(`/api/monitored/lookup/${m.kind}/${m.tmdbId}`) });
-  const profiles = useQuery({ queryKey: ['profiles'], queryFn: () => api<Profile[]>('/api/profiles'), enabled: isManager });
+  const profiles = useQuery({ queryKey: ['profiles'], queryFn: () => api<Profile[]>('/api/profiles') });
+  const [askingUpgrade, setAskingUpgrade] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [seasons, setSeasons] = useState<number[] | null>(null);
   const [fourK, setFourK] = useState(false);
@@ -469,6 +534,9 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   const mon = lookup.data?.monitored;
   const req = lookup.data?.request;
   const fullyAvailable = m.availability.status === 'on_server';
+  // Something is there to upgrade: on a media server (even partly), or a file Cinemask imported.
+  const onServer = fullyAvailable || m.availability.status === 'partial' || !!mon?.fileQuality || (m.kind === 'show' && m.seasons.some((s) => s.onServer > 0));
+  const upgradeAsk = lookup.data?.openUpgrade ?? null;
   const open = lookup.data?.openRequest ?? null;
   const requestedSeasons = open && open.seasons !== 'all' ? open.seasons : [];
   // Seasons someone could still ask for: not all on a server yet, and not already asked for.
@@ -507,6 +575,18 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           {fullyAvailable ? 'Monitor for upgrades' : 'Monitor only'}
         </button>
       )}
+      {!isManager && onServer && !upgradeAsk && (
+        <button className="btn-secondary" title="Ask a manager for a better copy, such as 1080p instead of SD" onClick={() => setAskingUpgrade(true)}>
+          Request upgrade
+        </button>
+      )}
+      {!isManager && upgradeAsk && (
+        <span className="self-center text-sm text-muted">
+          Upgrade {upgradeAsk.status === 'pending' ? 'requested' : 'on its way'}
+          {upgradeAsk.requestedByName && !upgradeAsk.mine ? ` by ${upgradeAsk.requestedByName}` : ''}
+        </span>
+      )}
+      {isManager && upgradeAsk?.status === 'pending' && <span className="self-center text-sm text-muted">Upgrade requested by {upgradeAsk.requestedByName}</span>}
       {hit && <StreamingNote hit={hit} />}
       {req && req.status !== 'declined' && (!mon || !isManager) && <span className="self-center text-sm text-muted">Requested by {req.requestedByName} · {req.status}</span>}
       {req?.status === 'declined' && !open && <span className="self-center text-sm text-danger">Request declined{req.reason ? `: ${req.reason}` : ''}</span>}
@@ -521,7 +601,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
               await refresh();
               // Ask before searching; if nothing better turns up, nothing changes.
               if (res.upgradeCandidates > 0 && confirm(`${res.upgradeCandidates} file(s) could be upgraded under this profile. Search for better releases now?`)) {
-                await run(() => api(`/api/monitored/${mon.id}/search`, { body: {} }), 'Searching for upgrades. Existing files stay unless a better release is found.');
+                await run(() => api<{ message: string }>(`/api/monitored/${mon.id}/upgrade`, { body: {} }), (r) => (r as { message: string }).message);
               }
             }}
           >
@@ -534,6 +614,15 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           <button className="btn-secondary" onClick={() => run(() => api<{ message: string }>(`/api/monitored/${mon.id}/search`, { body: {} }), (r) => (r as { message: string }).message)}>
             Search now
           </button>
+          {onServer && (
+            <button
+              className="btn-secondary"
+              title="Finds a better release for the quality profile picked here and replaces the file on disk when it's downloaded"
+              onClick={() => run(() => api<{ message: string }>(`/api/monitored/${mon.id}/upgrade`, { body: {} }), (r) => (r as { message: string }).message)}
+            >
+              Upgrade
+            </button>
+          )}
           <button className="btn-secondary" onClick={() => setManual(true)}>
             Manual search
           </button>
@@ -628,6 +717,20 @@ export function MediaActions({ m }: { m: MediaDetail }) {
             setAsking(null);
             setRootId(root);
             void (asking === 'download' ? download(root) : monitorOnly(root));
+          }}
+        />
+      )}
+      {askingUpgrade && (
+        <RequestUpgrade
+          m={m}
+          profiles={(profiles.data ?? []).filter((p) => quota.data?.canRequest4k || !p.qualities?.some((q) => q.endsWith('2160p')))}
+          onClose={() => setAskingUpgrade(false)}
+          onSent={async (r) => {
+            setAskingUpgrade(false);
+            const row = r as { following?: boolean } | null;
+            setMsg({ kind: 'success', text: row?.following ? "Someone already asked for an upgrade, so you've been added to their request." : 'Upgrade requested. A manager will review it.' });
+            await refresh();
+            await qc.invalidateQueries({ queryKey: ['request-quota'] });
           }}
         />
       )}

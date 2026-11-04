@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { requestAvailable } from '../notify/events.js';
 import { notify } from '../notify/service.js';
 import fs from 'node:fs';
@@ -148,6 +148,8 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
   const mode = opts.mode;
   const dl = ctx.db.select().from(downloads).where(eq(downloads.id, downloadId)).get();
   if (!dl?.monitoredId) throw new Error('This download is not linked to a movie or show');
+  // Grabbed by an Upgrade: someone asked for this file to replace the one on disk.
+  const replace = opts.replace || dl.replaceFile;
   const stored = ctx.db.select().from(monitored).where(eq(monitored.id, dl.monitoredId)).get();
   if (!stored) throw new Error('The movie or show was removed');
   // Moved to another library since (BingeBandit's Move, say): the upgrade goes where the title is now.
@@ -190,7 +192,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     const name = naming.renameFiles ? renderName(naming.movieFile, { movieTitle: row.title, year: row.year, quality, tmdbId: row.tmdbId }) : path.parse(file).name;
     const dest = path.join(folder, `${name}${path.extname(file).toLowerCase()}`);
     if (!inside(root, dest)) throw new Error('Refusing to write outside the movies folder');
-    if (!opts.replace && row.filePath && row.fileQuality && qualityRank(row.fileQuality) >= qualityRank(quality) && !betterFormat(row.fileQuality, row.fileFormatScore, quality)) {
+    if (!replace && row.filePath && row.fileQuality && qualityRank(row.fileQuality) >= qualityRank(quality) && !betterFormat(row.fileQuality, row.fileFormatScore, quality)) {
       result.skipped.push(`${path.basename(file)}: existing file is as good or better`);
     } else {
       placeFile(file, dest, mode ?? mediaSettings.importMode);
@@ -222,7 +224,7 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
         continue;
       }
       const quality = parsed.quality !== 'Unknown' ? parsed.quality : (dl.quality ?? 'Unknown');
-      if (!opts.replace && epRows.every((e) => e.fileQuality && qualityRank(e.fileQuality) >= qualityRank(quality) && !betterFormat(e.fileQuality, e.fileFormatScore, quality))) {
+      if (!replace && epRows.every((e) => e.fileQuality && qualityRank(e.fileQuality) >= qualityRank(quality) && !betterFormat(e.fileQuality, e.fileFormatScore, quality))) {
         result.skipped.push(`${path.basename(file)}: existing file is as good or better`);
         continue;
       }
@@ -243,9 +245,20 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
 
   if (result.imported.length) {
     ctx.db.update(downloads).set({ status: 'imported', importedAt: Date.now(), outputPath: sourcePath, error: null }).where(eq(downloads.id, dl.id)).run();
-    if (row.kind === 'movie') {
-      const open = ctx.db.select().from(requests).where(and(eq(requests.monitoredId, row.id), eq(requests.status, 'approved'))).all();
-      ctx.db.update(requests).set({ status: 'available' }).where(and(eq(requests.monitoredId, row.id), eq(requests.status, 'approved'))).run();
+    // A movie's file answers every approved request for it. A show's upgrade request is done once
+    // the last upgrade download for it is in (its other requests wait for the library sync).
+    const othersUpgrading = () =>
+      ctx.db
+        .select()
+        .from(downloads)
+        .where(and(eq(downloads.monitoredId, row.id), eq(downloads.replaceFile, true), inArray(downloads.status, ['held', 'queued', 'downloading', 'paused', 'completed', 'importing'])))
+        .all()
+        .some((d) => d.id !== dl.id);
+    const done = row.kind === 'movie' ? undefined : dl.replaceFile && !othersUpgrading() ? eq(requests.upgrade, true) : null;
+    if (done !== null) {
+      const which = and(eq(requests.monitoredId, row.id), eq(requests.status, 'approved'), done);
+      const open = ctx.db.select().from(requests).where(which).all();
+      ctx.db.update(requests).set({ status: 'available' }).where(which).run();
       for (const r of open) requestAvailable(ctx, r);
     }
     notify(ctx, { event: 'download.imported', title: 'Download imported', message: `${row.title}${row.year ? ` (${row.year})` : ''} is ready to watch`, data: { kind: row.kind, tmdbId: row.tmdbId, release: dl.title } });

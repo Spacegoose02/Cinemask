@@ -295,6 +295,8 @@ export class LibrarySync {
   private markRequestsAvailable() {
     const approved = this.ctx.db.select().from(requests).where(eq(requests.status, 'approved')).all();
     for (const r of approved) {
+      // An upgrade was on the server all along; it's done when the better file is imported.
+      if (r.upgrade) continue;
       const status = availabilityFor(this.ctx, r.kind, [{ tmdbId: r.tmdbId }]).get(r.tmdbId)!.status;
       if (status !== 'on_server') continue;
       if (r.kind === 'show' && !requestedEpisodesHere(this.ctx, r)) continue;

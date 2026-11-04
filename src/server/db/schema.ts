@@ -284,6 +284,10 @@ export const requests = sqliteTable(
     fourK: integer('four_k', { mode: 'boolean' }).notNull().default(false),
     /** A short note from the requester, such as "the 2005 one, not the remake". */
     note: text('note'),
+    /** Asks for a better copy of something already on the server; approval runs an upgrade search. */
+    upgrade: integer('upgrade', { mode: 'boolean' }).notNull().default(false),
+    /** For upgrades: the quality profile the requester asked for (the manager can pick another). */
+    profileId: integer('profile_id'),
   },
   (t) => [index('requests_status_idx').on(t.status), index('requests_user_idx').on(t.requestedBy, t.createdAt)],
 );
@@ -366,6 +370,8 @@ export const downloads = sqliteTable(
     destination: text('destination'),
     /** A release over the size limit waiting for someone to confirm it (status "held"): the release, sealed, since its link can carry an indexer key. */
     heldRelease: text('held_release'),
+    /** Grabbed by an Upgrade: the import replaces the file on disk even if it looks as good. */
+    replaceFile: integer('replace_file', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [index('downloads_status_idx').on(t.status)],
 );

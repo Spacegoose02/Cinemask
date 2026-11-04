@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, or } from 'drizzle-orm';
 import { notify } from '../notify/service.js';
 import { requestApproved, requestDeclined } from '../notify/events.js';
 import type { FastifyInstance } from 'fastify';
@@ -20,7 +20,7 @@ import { defaultProfileId, getProfile, listProfiles } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
 import { formatBody, getFormat, listFormats, PRESETS } from './formats.js';
-import { autoSearch, confirmHeld, defaultMaxSize, explainedSearch, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
+import { autoSearch, confirmHeld, defaultMaxSize, explainedSearch, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored, upgradeSearch } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats, refreshMediaServers } from './tracker.js';
 import { deleteImportable, importFolders, listImportable, manualImport } from './manual.js';
@@ -90,9 +90,31 @@ export async function arrRoutes(app: FastifyInstance) {
     return { mode, hit: await streamingFor(ctx, p.kind, p.tmdbId) };
   });
 
+  /**
+   * Approving an upgrade request: the title moves to the chosen profile (the manager's pick, else the
+   * requester's) and an Upgrade runs for the seasons asked about. A title only on a media server so
+   * far starts being monitored, so its file can be replaced.
+   */
+  const approveUpgrade = async (r: typeof requests.$inferSelect, profileId: number | undefined, deciderName: string, deciderId: number) => {
+    const existing = db().select().from(monitored).where(and(eq(monitored.kind, r.kind), eq(monitored.tmdbId, r.tmdbId))).get();
+    const profile = profileId ?? (r.profileId && getProfile(ctx, r.profileId) ? r.profileId : null) ?? existing?.profileId ?? defaultProfileId(ctx, r.kind);
+    if (!getProfile(ctx, profile)) throw badRequest('Unknown quality profile');
+    const asked = r.seasons ? (JSON.parse(r.seasons) as number[]) : null;
+    const row = existing
+      ? db().update(monitored).set({ profileId: profile }).where(eq(monitored.id, existing.id)).returning().get()
+      : await monitorTitle(ctx, { kind: r.kind, tmdbId: r.tmdbId, profileId: profile, seasons: asked, addedBy: deciderId });
+    db().update(requests).set({ status: 'approved', decidedByName: deciderName, decidedAt: Date.now(), monitoredId: row.id }).where(eq(requests.id, r.id)).run();
+    if (r.requestedBy !== deciderId) requestApproved(ctx, r, deciderName);
+    void (async () => {
+      for (const season of asked ?? [undefined]) await upgradeSearch(ctx, row, season === undefined ? {} : { season }, deciderId);
+    })().catch((err) => app.log.warn({ err }, 'Upgrade after approval failed'));
+    return row;
+  };
+
   const approve = async (requestId: number, profileId: number | undefined, deciderName: string, deciderId: number, rootId?: string) => {
     const r = db().select().from(requests).where(eq(requests.id, requestId)).get();
     if (!r) throw notFound('Request not found');
+    if (r.upgrade) return approveUpgrade(r, profileId, deciderName, deciderId);
     // A title that's already monitored keeps its profile, and gains the requested seasons. A 4K request moves it to the 4K profile.
     const existing = db().select().from(monitored).where(and(eq(monitored.kind, r.kind), eq(monitored.tmdbId, r.tmdbId))).get();
     const rs = ctx.settings.get('requests');
@@ -132,14 +154,70 @@ export async function arrRoutes(app: FastifyInstance) {
         rootId: rootIdSchema.optional(),
         fourK: z.boolean().default(false),
         note: z.string().trim().max(300).optional(),
+        /** A better copy of something already on the server, under profileId (or the title's own profile). */
+        upgrade: z.boolean().default(false),
+        profileId: z.number().int().positive().optional(),
       }),
       req.body,
     );
     const isManager = hasRole(req.user!.role, 'manager');
     const me = db().select().from(users).where(eq(users.id, req.user!.id)).get();
     if (body.fourK && !isManager && !me?.canRequest4k) throw forbidden("You can't request 4K. Ask an admin to allow it.");
+    if (body.profileId !== undefined && !body.upgrade) throw badRequest('A quality profile can only be picked for an upgrade');
     const meta = await refreshMetadata(ctx, body.kind, body.tmdbId);
     if (!meta) throw badRequest('Could not look up this title. Ask an admin to set a TMDB key.');
+    if (body.upgrade) {
+      if (body.fourK) throw badRequest('Pick a 4K quality profile for a 4K upgrade');
+      const profile = body.profileId !== undefined ? getProfile(ctx, body.profileId) : null;
+      if (body.profileId !== undefined && !profile) throw badRequest('Unknown quality profile');
+      // Picking a 4K profile is asking for 4K, which needs the same permission as a 4K request.
+      if (profile && !isManager && !me?.canRequest4k && profile.qualities.some((q) => q.endsWith('2160p'))) throw forbidden("You can't ask for 4K. Ask an admin to allow it.");
+      const row = db().select().from(monitored).where(and(eq(monitored.kind, body.kind), eq(monitored.tmdbId, body.tmdbId))).get();
+      const avail = availabilityFor(ctx, body.kind, [{ tmdbId: body.tmdbId, releaseDate: meta.releaseDate }]).get(body.tmdbId)!;
+      const hasFile = row?.filePath || (row?.kind === 'show' && db().select({ id: monitoredEpisodes.id }).from(monitoredEpisodes).where(and(eq(monitoredEpisodes.monitoredId, row.id), isNotNull(monitoredEpisodes.filePath))).get());
+      if (avail.status !== 'on_server' && !hasFile) throw conflict("This isn't on the server yet, so there's nothing to upgrade. Request it instead.");
+      const openUpgrade = db()
+        .select()
+        .from(requests)
+        .where(and(eq(requests.kind, body.kind), eq(requests.tmdbId, body.tmdbId), eq(requests.upgrade, true), inArray(requests.status, ['pending', 'approved'])))
+        .orderBy(desc(requests.createdAt))
+        .get();
+      if (openUpgrade && !isManager) return follow(openUpgrade, req.user!.id);
+      const seasons = body.kind === 'show' ? (body.seasons ?? null) : null;
+      const quota = await quotaFor(ctx, req.user!);
+      const problem = quotaProblem(quota, body.kind, body.kind === 'movie' ? 1 : seasons ? seasons.length : await showSeasonCount(ctx, body.tmdbId));
+      if (problem) throw new HttpError(429, problem, 'request_limit');
+      const created = db()
+        .insert(requests)
+        .values({
+          kind: body.kind,
+          tmdbId: body.tmdbId,
+          title: meta.title,
+          year: meta.year,
+          posterPath: meta.posterPath,
+          seasons: seasons ? JSON.stringify(seasons) : null,
+          status: 'pending',
+          requestedBy: req.user!.id,
+          requestedByName: req.user!.displayName || req.user!.username,
+          createdAt: Date.now(),
+          note: body.note || null,
+          upgrade: true,
+          profileId: profile?.id ?? null,
+        })
+        .returning()
+        .get();
+      const wanted = profile ? ` to ${profile.name}` : '';
+      audit(db(), req, 'request.created', { target: `${meta.title} (${meta.year ?? '?'}): upgrade${wanted}` });
+      notify(ctx, {
+        event: 'request.created',
+        title: 'New upgrade request',
+        message: `${created.requestedByName} asked for a better copy of ${meta.title}${meta.year ? ` (${meta.year})` : ''}${wanted}${body.note ? `: "${body.note}"` : ''}`,
+        data: { kind: body.kind, tmdbId: body.tmdbId, requestId: created.id, upgrade: true },
+      });
+      // Managers can download, so theirs goes straight through; nobody is auto-approved for upgrades.
+      if (isManager) await approve(created.id, undefined, req.user!.username, req.user!.id);
+      return db().select().from(requests).where(eq(requests.id, created.id)).get();
+    }
     const avail = availabilityFor(ctx, body.kind, [{ tmdbId: body.tmdbId, releaseDate: meta.releaseDate }]).get(body.tmdbId)!;
     if (avail.status === 'on_server' && body.kind === 'movie') {
       // A 4K request still makes sense when the copy on the server isn't 4K.
@@ -149,7 +227,7 @@ export async function arrRoutes(app: FastifyInstance) {
     const open = db()
       .select()
       .from(requests)
-      .where(and(eq(requests.kind, body.kind), eq(requests.tmdbId, body.tmdbId), eq(requests.fourK, body.fourK), inArray(requests.status, ['pending', 'approved'])))
+      .where(and(eq(requests.kind, body.kind), eq(requests.tmdbId, body.tmdbId), eq(requests.fourK, body.fourK), eq(requests.upgrade, false), inArray(requests.status, ['pending', 'approved'])))
       .orderBy(desc(requests.createdAt))
       .all();
     // Seasons a show request asks for beyond the open ones (null: every season).
@@ -315,18 +393,25 @@ export async function arrRoutes(app: FastifyInstance) {
     const row = db().select().from(monitored).where(and(eq(monitored.kind, p.kind), eq(monitored.tmdbId, p.tmdbId))).get();
     // The newest request, declined ones too so the person who asked can see why.
     const request = db().select().from(requests).where(and(eq(requests.kind, p.kind), eq(requests.tmdbId, p.tmdbId))).orderBy(desc(requests.createdAt)).get();
-    const open = db()
+    const openAll = db()
       .select()
       .from(requests)
       .where(and(eq(requests.kind, p.kind), eq(requests.tmdbId, p.tmdbId), inArray(requests.status, ['pending', 'approved'])))
       .all();
+    const open = openAll.filter((r) => !r.upgrade);
+    const upgrade = openAll.find((r) => r.upgrade);
     const manager = hasRole(req.user!.role, 'manager');
     // Where it is on disk, for managers: its folder, or one found in the media folders.
     const disk = manager ? titleOnDisk(ctx, p.kind, p.tmdbId) : null;
     const folder = manager ? (disk?.path ?? null) : undefined;
     // The root folder it's in on disk, for the Move button.
     const folderRoot = manager && disk ? (disk.rootId ?? 'default') : undefined;
-    return { monitored: row && manager ? monitoredView(row) : row ? { id: row.id, monitored: row.monitored } : null, request: request ?? null, openRequest: open.length ? { seasons: openSeasons(open) } : null, folder, folderRoot };
+    return { monitored: row && manager ? monitoredView(row) : row ? { id: row.id, monitored: row.monitored } : null, request: request ?? null, openRequest: open.length ? { seasons: openSeasons(open) } : null,
+      // An upgrade someone asked for and that isn't done yet, so the button can say so.
+      openUpgrade: upgrade ? { status: upgrade.status, requestedByName: upgrade.requestedByName, mine: upgrade.requestedBy === req.user!.id } : null,
+      folder,
+      folderRoot,
+    };
   });
 
   app.post('/api/monitored', { config: { access: 'manager' } }, async (req) => {
@@ -444,6 +529,34 @@ export async function arrRoutes(app: FastifyInstance) {
     const row = getMonitored(id);
     const { grabbed, message, errors } = await explainedSearch(ctx, { ...row, monitored: true }, f);
     audit(db(), req, 'monitored.searched', { target: row.title, details: { grabbed, ...f } });
+    return { grabbed, message, errors };
+  });
+
+  /**
+   * Upgrade: grabs a better release under the title's profile (or the one given, which becomes the
+   * title's profile) and replaces the file on disk when it's imported. Managers only: users ask
+   * through POST /api/requests with upgrade: true.
+   */
+  app.post('/api/monitored/:id/upgrade', { config: { access: 'manager' } }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const f = parse(z.object({ season: z.number().int().min(0).optional(), episode: z.number().int().min(0).optional(), profileId: z.number().int().positive().optional() }), req.body ?? {});
+    let row = getMonitored(id);
+    if (f.episode !== undefined && f.season === undefined) throw badRequest('Pick the season too');
+    if (f.profileId !== undefined && f.profileId !== row.profileId) {
+      if (!getProfile(ctx, f.profileId)) throw badRequest('Unknown quality profile');
+      row = db().update(monitored).set({ profileId: f.profileId }).where(eq(monitored.id, id)).returning().get();
+    }
+    const { grabbed, message, errors } = await upgradeSearch(ctx, row, { season: f.season, episode: f.episode }, req.user!.id);
+    // Upgrade requests for this title are answered by this, the way a download answers a request.
+    if (grabbed) {
+      const pending = db().select().from(requests).where(and(eq(requests.monitoredId, id), eq(requests.upgrade, true), eq(requests.status, 'pending'))).all();
+      const byTitle = db().select().from(requests).where(and(eq(requests.kind, row.kind), eq(requests.tmdbId, row.tmdbId), eq(requests.upgrade, true), eq(requests.status, 'pending'))).all();
+      for (const r of [...new Map([...pending, ...byTitle].map((x) => [x.id, x])).values()]) {
+        db().update(requests).set({ status: 'approved', decidedByName: req.user!.username, decidedAt: Date.now(), monitoredId: id }).where(eq(requests.id, r.id)).run();
+        if (r.requestedBy !== req.user!.id) requestApproved(ctx, r, req.user!.username);
+      }
+    }
+    audit(db(), req, 'monitored.upgraded', { target: row.title, details: { grabbed, profileId: row.profileId, season: f.season, episode: f.episode } });
     return { grabbed, message, errors };
   });
 
