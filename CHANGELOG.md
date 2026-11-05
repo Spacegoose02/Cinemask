@@ -4,6 +4,18 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-04
+
+### Added
+- **Upgrade button.** Movie and show pages have **Upgrade** next to the quality profile (and each season has one under Files): it finds a better release for the profile picked there and replaces the file on disk once it's downloaded. It works even with automatic upgrades turned off, and judges the file by what it really is: the worst of the recorded quality, its release name and what Plex or Jellyfin report, so a file the server shows as SD is upgraded even if it was recorded as 1080p.
+- **Request upgrade.** Users without download rights get **Request upgrade** on titles already on the server: they can pick a quality profile (4K ones only with the 4K permission), the seasons for a show, and a note. It goes to Requests marked "Upgrade" for a manager to approve, counts toward request limits, and others asking for the same thing follow it. Approving it moves the title to the chosen profile and runs the upgrade.
+
+### Fixed
+- **SD releases taken for 1080p.** A release with no resolution in its name ("Movie.2026.WEB.h264-GRP", which scene rules use for SD) was read as 1080p, so HD profiles grabbed SD copies. It's now read as SD (remuxes stay 1080p).
+- **Widescreen films on Jellyfin** were reported a step too low (a 1920×800 film as 720p, a cropped 720p one as SD), since only the height was read. The width now counts too.
+
+## [0.31.0] - 2026-11-01
+
 ### Changed
 - The webhook moved from Settings → API and webhooks (now **API**) to the new **Settings → Notifications**. The "send events" switch there now covers every shared channel.
 
@@ -30,6 +42,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **Works with apps made for Radarr and Sonarr.** Overseerr, Jellyseerr, LunaSea, nzb360 and Home Assistant can use Cinemask as their Radarr and Sonarr, with the URL base `/api/compat/radarr` or `/api/compat/sonarr` and a manager's API key (see docs/api.md).
 - **Interface languages.** Account → Language picks English, Español, Français, Deutsch or Nederlands (or follows the browser), saved to the account. The menu, the settings tabs and the Account page are translated so far; everything else still shows in English until it's translated, one screen at a time (`src/web/locales`).
 - **Request notes and "me too".** Users can add a short note to a request. Asking for something someone else already requested adds you to their request instead of making a second one: it shows on your Requests with "Stop following", and the request shows how many others want it.
+
+### Fixed
+- **Back goes back to where you were.** Back restores the scroll position of the page you left (once its data has loaded), and new pages open at the top. Discover keeps its filters in the address, and the status filters on Requests and book requests stay as you left them.
 
 ## [0.30.0] - 2026-10-31
 

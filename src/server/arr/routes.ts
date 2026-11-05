@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gte, inArray, or } from 'drizzle-orm';
-import { requestDeclined } from '../notify/events.js';
+import { requestApproved, requestDeclined } from '../notify/events.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
@@ -20,7 +20,7 @@ import { defaultProfileId, getProfile, listProfiles } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
 import { formatBody, getFormat, listFormats, PRESETS } from './formats.js';
-import { autoSearch, confirmHeld, defaultMaxSize, explainedSearch, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored } from './search.js';
+import { autoSearch, confirmHeld, defaultMaxSize, explainedSearch, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored, upgradeSearch } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats, refreshMediaServers } from './tracker.js';
 import { deleteImportable, importFolders, listImportable, manualImport } from './manual.js';
@@ -94,6 +94,9 @@ export async function arrRoutes(app: FastifyInstance) {
         rootId: rootIdSchema.optional(),
         fourK: z.boolean().default(false),
         note: z.string().trim().max(300).optional(),
+        /** A better copy of something already on the server, under profileId (or the title's own profile). */
+        upgrade: z.boolean().default(false),
+        profileId: z.number().int().positive().optional(),
       }),
       req.body,
     );
@@ -190,18 +193,25 @@ export async function arrRoutes(app: FastifyInstance) {
     const row = db().select().from(monitored).where(and(eq(monitored.kind, p.kind), eq(monitored.tmdbId, p.tmdbId))).get();
     // The newest request, declined ones too so the person who asked can see why.
     const request = db().select().from(requests).where(and(eq(requests.kind, p.kind), eq(requests.tmdbId, p.tmdbId))).orderBy(desc(requests.createdAt)).get();
-    const open = db()
+    const openAll = db()
       .select()
       .from(requests)
       .where(and(eq(requests.kind, p.kind), eq(requests.tmdbId, p.tmdbId), inArray(requests.status, ['pending', 'approved'])))
       .all();
+    const open = openAll.filter((r) => !r.upgrade);
+    const upgrade = openAll.find((r) => r.upgrade);
     const manager = hasRole(req.user!.role, 'manager');
     // Where it is on disk, for managers: its folder, or one found in the media folders.
     const disk = manager ? titleOnDisk(ctx, p.kind, p.tmdbId) : null;
     const folder = manager ? (disk?.path ?? null) : undefined;
     // The root folder it's in on disk, for the Move button.
     const folderRoot = manager && disk ? (disk.rootId ?? 'default') : undefined;
-    return { monitored: row && manager ? monitoredView(row) : row ? { id: row.id, monitored: row.monitored } : null, request: request ?? null, openRequest: open.length ? { seasons: openSeasons(open) } : null, folder, folderRoot };
+    return { monitored: row && manager ? monitoredView(row) : row ? { id: row.id, monitored: row.monitored } : null, request: request ?? null, openRequest: open.length ? { seasons: openSeasons(open) } : null,
+      // An upgrade someone asked for and that isn't done yet, so the button can say so.
+      openUpgrade: upgrade ? { status: upgrade.status, requestedByName: upgrade.requestedByName, mine: upgrade.requestedBy === req.user!.id } : null,
+      folder,
+      folderRoot,
+    };
   });
 
   app.post('/api/monitored', { config: { access: 'manager' } }, async (req) => {
@@ -324,6 +334,34 @@ export async function arrRoutes(app: FastifyInstance) {
     const row = getMonitored(id);
     const { grabbed, message, errors } = await explainedSearch(ctx, { ...row, monitored: true }, f);
     audit(db(), req, 'monitored.searched', { target: row.title, details: { grabbed, ...f } });
+    return { grabbed, message, errors };
+  });
+
+  /**
+   * Upgrade: grabs a better release under the title's profile (or the one given, which becomes the
+   * title's profile) and replaces the file on disk when it's imported. Managers only: users ask
+   * through POST /api/requests with upgrade: true.
+   */
+  app.post('/api/monitored/:id/upgrade', { config: { access: 'manager' } }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const f = parse(z.object({ season: z.number().int().min(0).optional(), episode: z.number().int().min(0).optional(), profileId: z.number().int().positive().optional() }), req.body ?? {});
+    let row = getMonitored(id);
+    if (f.episode !== undefined && f.season === undefined) throw badRequest('Pick the season too');
+    if (f.profileId !== undefined && f.profileId !== row.profileId) {
+      if (!getProfile(ctx, f.profileId)) throw badRequest('Unknown quality profile');
+      row = db().update(monitored).set({ profileId: f.profileId }).where(eq(monitored.id, id)).returning().get();
+    }
+    const { grabbed, message, errors } = await upgradeSearch(ctx, row, { season: f.season, episode: f.episode }, req.user!.id);
+    // Upgrade requests for this title are answered by this, the way a download answers a request.
+    if (grabbed) {
+      const pending = db().select().from(requests).where(and(eq(requests.monitoredId, id), eq(requests.upgrade, true), eq(requests.status, 'pending'))).all();
+      const byTitle = db().select().from(requests).where(and(eq(requests.kind, row.kind), eq(requests.tmdbId, row.tmdbId), eq(requests.upgrade, true), eq(requests.status, 'pending'))).all();
+      for (const r of [...new Map([...pending, ...byTitle].map((x) => [x.id, x])).values()]) {
+        db().update(requests).set({ status: 'approved', decidedByName: req.user!.username, decidedAt: Date.now(), monitoredId: id }).where(eq(requests.id, r.id)).run();
+        if (r.requestedBy !== req.user!.id) requestApproved(ctx, r, req.user!.username);
+      }
+    }
+    audit(db(), req, 'monitored.upgraded', { target: row.title, details: { grabbed, profileId: row.profileId, season: f.season, episode: f.episode } });
     return { grabbed, message, errors };
   });
 

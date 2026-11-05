@@ -89,7 +89,7 @@ export async function fixIssue(ctx: AppContext, issue: Issue, action: 'replace' 
     const already = ctx.db.select().from(blocklist).where(and(eq(blocklist.monitoredId, row.id), eq(blocklist.releaseTitle, t))).get();
     if (!already) ctx.db.insert(blocklist).values({ monitoredId: row.id, releaseTitle: t, reason: `Reported: ${ISSUE_LABELS[issue.type]}`, createdAt: Date.now() }).run();
   }
-  const r = await explainedSearch(ctx, row, { ...scope, replace: true }, { replaceFile: true, issueId: issue.id });
+  const r = await explainedSearch(ctx, row, { ...scope, replace: true }, { replace: true, issueId: issue.id });
   if (!r.grabbed) return { ok: false, message: `${releases.length ? 'Blocklisted the copy that was there. ' : ''}${r.message}` };
   ctx.db.update(issues).set({ status: 'fixing', resolution: 'Downloading a different copy', resolvedByName: by, updatedAt: Date.now() }).where(eq(issues.id, issue.id)).run();
   return { ok: true, message: `${releases.length ? 'Blocklisted the copy that was there and grabbed' : 'Grabbed'} a different one. The report is marked fixed once it's imported.` };

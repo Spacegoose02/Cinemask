@@ -1,9 +1,9 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { audit } from '../audit/log.js';
 import type { SessionUser } from '../auth/sessions.js';
 import type { AppContext } from '../context.js';
-import { monitored, requestFollowers, requests, users, type MediaKind } from '../db/schema.js';
+import { monitored, monitoredEpisodes, requestFollowers, requests, users, type MediaKind } from '../db/schema.js';
 import { hasRole } from '../auth/guard.js';
 import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/errors.js';
 import { availabilityFor, refreshMetadata } from '../library/service.js';
@@ -11,7 +11,7 @@ import { notify } from '../notify/service.js';
 import { requestApproved } from '../notify/events.js';
 import { monitorTitle } from '../arr/monitor.js';
 import { defaultProfileId, getProfile } from '../arr/profiles.js';
-import { autoSearch } from '../arr/search.js';
+import { autoSearch, upgradeSearch } from '../arr/search.js';
 import { assertSuitable } from '../kids/ratings.js';
 import { quotaFor, quotaProblem, showSeasonCount, streamingFor } from './rules.js';
 
@@ -23,11 +23,34 @@ export function openSeasons(open: { seasons: string | null }[]): number[] | 'all
   return [...new Set(open.flatMap((r) => JSON.parse(r.seasons!) as number[]))].sort((a, b) => a - b);
 }
 
+/**
+ * Approving an upgrade request: the title moves to the chosen profile (the manager's pick, else the
+ * requester's) and an Upgrade runs for the seasons asked about. A title only on a media server so
+ * far starts being monitored, so its file can be replaced.
+ */
+async function approveUpgrade(ctx: AppContext, r: RequestRow, profileId: number | undefined, deciderName: string, deciderId: number) {
+  const db = ctx.db;
+  const existing = db.select().from(monitored).where(and(eq(monitored.kind, r.kind), eq(monitored.tmdbId, r.tmdbId))).get();
+  const profile = profileId ?? (r.profileId && getProfile(ctx, r.profileId) ? r.profileId : null) ?? existing?.profileId ?? defaultProfileId(ctx, r.kind);
+  if (!getProfile(ctx, profile)) throw badRequest('Unknown quality profile');
+  const asked = r.seasons ? (JSON.parse(r.seasons) as number[]) : null;
+  const row = existing
+    ? db.update(monitored).set({ profileId: profile }).where(eq(monitored.id, existing.id)).returning().get()
+    : await monitorTitle(ctx, { kind: r.kind, tmdbId: r.tmdbId, profileId: profile, seasons: asked, addedBy: deciderId });
+  db.update(requests).set({ status: 'approved', decidedByName: deciderName, decidedAt: Date.now(), monitoredId: row.id }).where(eq(requests.id, r.id)).run();
+  if (r.requestedBy !== deciderId) requestApproved(ctx, r, deciderName);
+  void (async () => {
+    for (const season of asked ?? [undefined]) await upgradeSearch(ctx, row, season === undefined ? {} : { season }, deciderId);
+  })().catch(() => undefined);
+  return row;
+}
+
 /** Approves a request: monitors the title (or adds the seasons) and starts a search. */
 export async function approveRequest(ctx: AppContext, requestId: number, profileId: number | undefined, deciderName: string, deciderId: number, rootId?: string) {
   const db = ctx.db;
   const r = db.select().from(requests).where(eq(requests.id, requestId)).get();
   if (!r) throw notFound('Request not found');
+  if (r.upgrade) return approveUpgrade(ctx, r, profileId, deciderName, deciderId);
   // A title that's already monitored keeps its profile, and gains the requested seasons. A 4K request moves it to the 4K profile.
   const existing = db.select().from(monitored).where(and(eq(monitored.kind, r.kind), eq(monitored.tmdbId, r.tmdbId))).get();
   const rs = ctx.settings.get('requests');
@@ -64,6 +87,9 @@ export interface RequestInput {
   rootId?: string;
   fourK?: boolean;
   note?: string;
+  /** A better copy of something already on the server, under profileId (or the title's own profile). */
+  upgrade?: boolean;
+  profileId?: number;
   /** Where it came from, for the audit log ("watchlist"). */
   via?: string;
 }
@@ -79,9 +105,62 @@ export async function submitRequest(ctx: AppContext, user: SessionUser, input: R
   const isManager = hasRole(user.role, 'manager');
   const me = db.select().from(users).where(eq(users.id, user.id)).get();
   if (fourK && !isManager && !me?.canRequest4k) throw forbidden("You can't request 4K. Ask an admin to allow it.");
+  if (input.profileId !== undefined && !input.upgrade) throw badRequest('A quality profile can only be picked for an upgrade');
   const meta = await refreshMetadata(ctx, input.kind, input.tmdbId);
   if (!meta) throw badRequest('Could not look up this title. Ask an admin to set a TMDB key.');
   await assertSuitable(ctx, user.id, input.kind, input.tmdbId);
+  if (input.upgrade) {
+    if (fourK) throw badRequest('Pick a 4K quality profile for a 4K upgrade');
+    const profile = input.profileId !== undefined ? getProfile(ctx, input.profileId) : null;
+    if (input.profileId !== undefined && !profile) throw badRequest('Unknown quality profile');
+    // Picking a 4K profile is asking for 4K, which needs the same permission as a 4K request.
+    if (profile && !isManager && !me?.canRequest4k && profile.qualities.some((q) => q.endsWith('2160p'))) throw forbidden("You can't ask for 4K. Ask an admin to allow it.");
+    const row = db.select().from(monitored).where(and(eq(monitored.kind, input.kind), eq(monitored.tmdbId, input.tmdbId))).get();
+    const avail = availabilityFor(ctx, input.kind, [{ tmdbId: input.tmdbId, releaseDate: meta.releaseDate }]).get(input.tmdbId)!;
+    const hasFile = row?.filePath || (row?.kind === 'show' && db.select({ id: monitoredEpisodes.id }).from(monitoredEpisodes).where(and(eq(monitoredEpisodes.monitoredId, row.id), isNotNull(monitoredEpisodes.filePath))).get());
+    if (avail.status !== 'on_server' && !hasFile) throw conflict("This isn't on the server yet, so there's nothing to upgrade. Request it instead.");
+    const openUpgrade = db
+      .select()
+      .from(requests)
+      .where(and(eq(requests.kind, input.kind), eq(requests.tmdbId, input.tmdbId), eq(requests.upgrade, true), inArray(requests.status, ['pending', 'approved'])))
+      .orderBy(desc(requests.createdAt))
+      .get();
+    if (openUpgrade && !isManager) return followRequest(ctx, openUpgrade, user.id);
+    const seasons = input.kind === 'show' ? (input.seasons ?? null) : null;
+    const quota = await quotaFor(ctx, user);
+    const problem = quotaProblem(quota, input.kind, input.kind === 'movie' ? 1 : seasons ? seasons.length : await showSeasonCount(ctx, input.tmdbId));
+    if (problem) throw new HttpError(429, problem, 'request_limit');
+    const created = db
+      .insert(requests)
+      .values({
+        kind: input.kind,
+        tmdbId: input.tmdbId,
+        title: meta.title,
+        year: meta.year,
+        posterPath: meta.posterPath,
+        seasons: seasons ? JSON.stringify(seasons) : null,
+        status: 'pending',
+        requestedBy: user.id,
+        requestedByName: user.displayName || user.username,
+        createdAt: Date.now(),
+        note: input.note || null,
+        upgrade: true,
+        profileId: profile?.id ?? null,
+      })
+      .returning()
+      .get();
+    const wanted = profile ? ` to ${profile.name}` : '';
+    audit(db, req, 'request.created', { target: `${meta.title} (${meta.year ?? '?'}): upgrade${wanted}`, user });
+    notify(ctx, {
+      event: 'request.created',
+      title: 'New upgrade request',
+      message: `${created.requestedByName} asked for a better copy of ${meta.title}${meta.year ? ` (${meta.year})` : ''}${wanted}${input.note ? `: "${input.note}"` : ''}`,
+      data: { kind: input.kind, tmdbId: input.tmdbId, requestId: created.id, upgrade: true },
+    });
+    // Managers can download, so theirs goes straight through; nobody is auto-approved for upgrades.
+    if (isManager) await approveRequest(ctx, created.id, undefined, user.username, user.id);
+    return db.select().from(requests).where(eq(requests.id, created.id)).get()!;
+  }
   const avail = availabilityFor(ctx, input.kind, [{ tmdbId: input.tmdbId, releaseDate: meta.releaseDate }]).get(input.tmdbId)!;
   if (avail.status === 'on_server' && input.kind === 'movie') {
     // A 4K request still makes sense when the copy on the server isn't 4K.
@@ -91,7 +170,7 @@ export async function submitRequest(ctx: AppContext, user: SessionUser, input: R
   const open = db
     .select()
     .from(requests)
-    .where(and(eq(requests.kind, input.kind), eq(requests.tmdbId, input.tmdbId), eq(requests.fourK, fourK), inArray(requests.status, ['pending', 'approved'])))
+    .where(and(eq(requests.kind, input.kind), eq(requests.tmdbId, input.tmdbId), eq(requests.fourK, fourK), eq(requests.upgrade, false), inArray(requests.status, ['pending', 'approved'])))
     .orderBy(desc(requests.createdAt))
     .all();
   // Seasons a show request asks for beyond the open ones (null: every season).

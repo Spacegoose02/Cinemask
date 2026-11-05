@@ -487,6 +487,76 @@ describe('request → download → import', () => {
     expect((await owner.req('POST', `/api/monitored/${m.id}/search`, {})).json().grabbed).toBe(1);
   });
 
+  /** A movie with a file on disk, recorded as `recorded` but really from the `release` given. */
+  const movieOnDisk = async (profile: string, recorded: string, release: string) => {
+    const m = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, profileId: await profileId(profile), search: false })).json();
+    const folder = path.join(media, 'movies', 'Paddington (2014)');
+    fs.mkdirSync(folder, { recursive: true });
+    const old = path.join(folder, 'old.mkv');
+    fs.writeFileSync(old, 'sd video');
+    t.app.ctx.dbHandle.sqlite.prepare('UPDATE monitored SET path = ?, file_path = ?, file_quality = ?, file_release = ? WHERE id = ?').run(folder, old, recorded, release, m.id);
+    return { id: m.id as number, folder, old };
+  };
+
+  it('Upgrade replaces a file that is really SD with a release for the profile, even when it was recorded as HD', async () => {
+    // Grabbed by an older version, which read "WEB" with no resolution as 1080p: recorded at the cutoff.
+    const m = await movieOnDisk('HD-1080p', 'Bluray-1080p', 'Paddington.2014.WEB.h264-OLD');
+    expect((await owner.req('POST', `/api/monitored/${m.id}/search`, {})).json().grabbed).toBe(0);
+    // Upgrades turned off don't stop an Upgrade someone asked for.
+    await owner.req('PUT', '/api/settings/downloading', { upgrades: false });
+    const res = (await owner.req('POST', `/api/monitored/${m.id}/upgrade`, {})).json();
+    expect(res.grabbed).toBe(1);
+    expect(res.message).toContain('now WEBDL-480p');
+    expect(grabbed()).toEqual(['Paddington.2014.1080p.BluRay.x264-SPARKS']);
+
+    // The import replaces the old file though the recorded quality was the same.
+    const folder = path.join(dl, 'Paddington.2014.1080p.BluRay.x264-SPARKS');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'paddington.2014.1080p.bluray.x264-sparks.mkv'), 'hd video');
+    qbitTorrents = [{ hash: 'h1', name: 'Paddington', progress: 1, state: 'stalledUP', size: 5, content_path: folder, save_path: dl, tags: 'mm-1' }];
+    await trackDownloads(t.app.ctx);
+    expect(fs.existsSync(path.join(m.folder, 'Paddington (2014) - Bluray-1080p.mkv'))).toBe(true);
+    expect(fs.existsSync(m.old)).toBe(false);
+    const row = t.app.ctx.dbHandle.sqlite.prepare('SELECT file_quality, file_release FROM monitored WHERE id = ?').get(m.id);
+    expect(row).toEqual({ file_quality: 'Bluray-1080p', file_release: 'Paddington.2014.1080p.BluRay.x264-SPARKS' });
+
+    // Now at the cutoff for real: nothing more to upgrade.
+    expect((await owner.req('POST', `/api/monitored/${m.id}/upgrade`, {})).json()).toMatchObject({ grabbed: 0, message: expect.stringContaining('Nothing to upgrade') });
+  });
+
+  it('Upgrade can switch the profile first, and only managers can run it', async () => {
+    const m = await movieOnDisk('SD', 'DVD', 'Paddington.2014.DVDRip.XviD-OLD');
+    expect((await kid.req('POST', `/api/monitored/${m.id}/upgrade`, {})).statusCode).toBe(403);
+    expect(added).toHaveLength(0);
+    const res = (await owner.req('POST', `/api/monitored/${m.id}/upgrade`, { profileId: await profileId('HD-1080p') })).json();
+    expect(res.grabbed).toBe(1);
+    expect((await owner.req('GET', `/api/monitored/lookup/movie/116149`)).json().monitored.profileId).toBe(await profileId('HD-1080p'));
+  });
+
+  it('a user without download rights requests an upgrade, and a manager approves it', async () => {
+    // Nothing on the server: there is nothing to upgrade.
+    expect((await kid.req('POST', '/api/requests', { kind: 'movie', tmdbId: 116149, upgrade: true })).statusCode).toBe(409);
+    await movieOnDisk('SD', 'DVD', 'Paddington.2014.DVDRip.XviD-OLD');
+    // A profile only goes with an upgrade, and a 4K one needs the 4K permission.
+    expect((await kid.req('POST', '/api/requests', { kind: 'movie', tmdbId: 116149, profileId: await profileId('HD-1080p') })).statusCode).toBe(400);
+    expect((await kid.req('POST', '/api/requests', { kind: 'movie', tmdbId: 116149, upgrade: true, profileId: await profileId('Ultra-HD') })).statusCode).toBe(403);
+
+    const r = (await kid.req('POST', '/api/requests', { kind: 'movie', tmdbId: 116149, upgrade: true, profileId: await profileId('HD-1080p'), note: 'it is blurry' })).json();
+    expect(r).toMatchObject({ status: 'pending', upgrade: true });
+    expect(added).toHaveLength(0);
+    expect((await kid.req('GET', '/api/monitored/lookup/movie/116149')).json().openUpgrade).toMatchObject({ status: 'pending', mine: true });
+    // Asking again follows the open request instead of adding another.
+    expect((await kid.req('POST', '/api/requests', { kind: 'movie', tmdbId: 116149, upgrade: true })).json().id).toBe(r.id);
+    // Users can't approve, nor skip approval by calling the manager's route.
+    expect((await kid.req('POST', `/api/requests/${r.id}/approve`, {})).statusCode).toBe(403);
+
+    expect((await owner.req('POST', `/api/requests/${r.id}/approve`, {})).json().status).toBe('approved');
+    await vi.waitFor(() => expect(added).toHaveLength(1));
+    expect(grabbed()).toEqual(['Paddington.2014.1080p.BluRay.x264-SPARKS']);
+    expect(t.app.ctx.dbHandle.sqlite.prepare('SELECT replace_file FROM downloads').get()).toEqual({ replace_file: 1 });
+    expect((await owner.req('GET', `/api/monitored/lookup/movie/116149`)).json().monitored.profileId).toBe(await profileId('HD-1080p'));
+  });
+
   it('grabs a season pack for a show and imports each episode with the naming format', async () => {
     await owner.req('PUT', '/api/settings/naming', { seasonFolder: 'Season {season}', episodeFile: '{Series Title} - S{season:00}E{episode:00} - {Episode Title}' });
     await owner.req('POST', '/api/monitored', { kind: 'show', tmdbId: 82728, search: true });

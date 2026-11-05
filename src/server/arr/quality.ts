@@ -33,7 +33,9 @@ export function qualityRank(id: string | null | undefined): number {
 
 export function qualityFor(resolution: string | null, source: string | null): QualityId {
   if (!resolution && !source) return 'Unknown';
-  const res = resolution ?? (source === 'dvd' || source === 'tv' ? 'SD' : '1080p');
+  // Scene rules leave the resolution out of SD releases ("Movie.2026.WEB.h264-GRP" is SD), so a
+  // release without one is SD. Only a remux, which is never SD, is taken as 1080p.
+  const res = resolution ?? (source === 'remux' ? '1080p' : 'SD');
   const src = source ?? 'webdl';
   if (res === 'SD') {
     if (src === 'dvd' || src === 'bluray' || src === 'remux') return 'DVD';

@@ -674,11 +674,19 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
   },
   {
     id: 24,
+    name: 'upgrades and upgrade requests',
+    sql: `
+      ALTER TABLE requests ADD COLUMN upgrade INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE requests ADD COLUMN profile_id INTEGER;
+      ALTER TABLE downloads ADD COLUMN replace_file INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    id: 25,
     name: 'file details, problem reports and replacement downloads',
     sql: `
       ALTER TABLE monitored ADD COLUMN file_info TEXT;
       ALTER TABLE monitored_episodes ADD COLUMN file_info TEXT;
-      ALTER TABLE downloads ADD COLUMN replace_file INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE downloads ADD COLUMN issue_id INTEGER;
       CREATE TABLE issues (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -704,7 +712,7 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
     `,
   },
   {
-    id: 25,
+    id: 26,
     name: 'watchlists, kids profiles, series types, seeding and the storage manager',
     sql: `
       ALTER TABLE users ADD COLUMN plex_token TEXT;
@@ -745,7 +753,7 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
     `,
   },
   {
-    id: 26,
+    id: 27,
     name: 'interface language',
     sql: `
       ALTER TABLE users ADD COLUMN language TEXT;

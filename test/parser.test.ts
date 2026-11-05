@@ -17,6 +17,12 @@ describe('release parser', () => {
     ['Movie.Title.2020.MULTi.1080p.WEB.H264.PROPER-GRP', { title: 'Movie Title', languages: ['multi'], proper: true }],
     ['Some.Old.Movie.1985.DVDRip.XviD', { title: 'Some Old Movie', year: 1985, quality: 'DVD' }],
     ['No.Quality.Info.2021', { title: 'No Quality Info', year: 2021, quality: 'Unknown' }],
+    // Scene SD releases leave the resolution out; they were once taken for 1080p and grabbed for HD profiles.
+    ['Primetime.2026.WEB.h264-GRP', { title: 'Primetime', year: 2026, quality: 'WEBDL-480p' }],
+    ['Primetime.2026.WEBRip.x264-GRP', { quality: 'WEBRip-480p' }],
+    ['Primetime.2026.BDRip.XviD-GRP', { quality: 'DVD' }],
+    ['Show.S01E01.HDTV.x264-GRP', { quality: 'SDTV' }],
+    ['Primetime.2026.BluRay.REMUX.AVC-GRP', { quality: 'Remux-1080p' }],
     // A language word in the title isn't the release's language; after it, it is.
     ['The.French.Dispatch.2021.1080p.WEB-DL', { title: 'The French Dispatch', languages: ['en'] }],
     ['My.Big.Fat.Greek.Wedding.2002.1080p.BluRay', { title: 'My Big Fat Greek Wedding', languages: ['en'] }],

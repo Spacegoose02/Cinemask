@@ -5,8 +5,8 @@ import { media } from '../db/schema.js';
 import { bestDecision, byPreference, decide, type DecideOptions, type Decision, type Target } from './decision.js';
 import { createClient } from './clients.js';
 import { CATEGORIES, searchIndexer, type IndexerConfig, type Release, type SearchQuery } from './indexers.js';
-import { wantedTarget, type MonitoredRow, type SearchFilter } from './monitor.js';
-import { searchProfile } from './profiles.js';
+import { upgradeTarget, wantedTarget, type MonitoredRow, type SearchFilter } from './monitor.js';
+import { getProfile, searchProfile, type Profile } from './profiles.js';
 import { parseRelease, titlesMatch } from './parser.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { rootOf } from './roots.js';
@@ -223,9 +223,17 @@ function seasonEpisodes(ctx: AppContext, monitoredId: number, season: number, ep
   return list.map((e) => ({ season, episode: e.episode, absolute: e.absolute ?? null, currentQuality: null }));
 }
 
-export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter): Promise<SearchResult> {
-  const profile = searchProfile(ctx, row.profileId);
-  const target = wantedTarget(ctx, { ...row, monitored: true }, filter) ?? {
+/** For an Upgrade: what to look for and under which profile, instead of what's wanted. */
+export interface SearchOverride {
+  target: Target;
+  profile: Profile;
+  /** Release names already on disk, which are never "better" than themselves. */
+  exclude?: Set<string>;
+}
+
+export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter, override?: SearchOverride): Promise<SearchResult> {
+  const profile = override?.profile ?? searchProfile(ctx, row.profileId);
+  const target = override?.target ?? wantedTarget(ctx, { ...row, monitored: true }, filter) ?? {
     kind: row.kind,
     title: row.title,
     year: row.year,
@@ -244,7 +252,12 @@ export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter
   };
   const bl = blocked(ctx, row.id);
   const opts = decideOptions(ctx, row);
-  const judge = () => [...new Map(all.map((r) => [r.title, r])).values()].map((r) => decide(r, target, profile, bl, opts));
+  const judge = () =>
+    [...new Map(all.map((r) => [r.title, r])).values()].map((r) => {
+      const d = decide(r, target, profile, bl, opts);
+      if (!override?.exclude?.has(r.title)) return d;
+      return { ...d, accepted: false, delayedUntil: null, rejections: [...d.rejections, 'This is the file already on disk'] };
+    });
   await run(queriesFor(ctx, row, target));
   let judged = judge();
   // Nothing by season and episode: news and talk shows (Dateline, 20/20) are often filed by air date instead,
@@ -275,18 +288,7 @@ export function pickClient(ctx: AppContext, protocol: 'torrent' | 'usenet') {
 }
 
 /** Sends a release to a download client and records it for tracking and import. */
-/** Marks a grab as a replacement for the file already there, made to fix a problem report. */
-export interface GrabTag {
-  replaceFile?: boolean;
-  issueId?: number | null;
-}
-
-export async function grab(
-  ctx: AppContext,
-  release: Release,
-  row: MonitoredRow | null,
-  opts: { covers?: Decision['covers']; userId?: number | null; quality?: string; warning?: string | null; destination?: string | null } & GrabTag,
-) {
+export async function grab(ctx: AppContext, release: Release, row: MonitoredRow | null, opts: { covers?: Decision['covers']; userId?: number | null; quality?: string; warning?: string | null; destination?: string | null; replace?: boolean; issueId?: number | null }) {
   const picked = pickClient(ctx, release.protocol);
   if (!picked) throw new Error(`No ${release.protocol === 'torrent' ? 'torrent' : 'Usenet'} download client is set up`);
   // A root folder can have its own category (e.g. "kids-tv"), so the client files it separately.
@@ -309,7 +311,7 @@ export async function grab(
       destination: opts.destination ?? null,
       addedBy: opts.userId ?? null,
       addedAt: Date.now(),
-      replaceFile: opts.replaceFile ?? false,
+      replaceFile: opts.replace ?? false,
       issueId: opts.issueId ?? null,
     })
     .returning()
@@ -346,7 +348,7 @@ function scopeLabel(row: MonitoredRow, filter?: SearchFilter) {
  * An automatic search that also says why nothing was grabbed (nothing wanted, nothing found, every
  * release rejected, already downloading, or the download client refused it), for the Search buttons.
  */
-export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter, tag?: GrabTag): Promise<{ grabbed: number; message: string; errors: string[] }> {
+export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter, tag?: GrabExtras): Promise<{ grabbed: number; message: string; errors: string[] }> {
   const label = scopeLabel(row, filter);
   if (!wantedTarget(ctx, row, filter)) {
     if (filter?.missingOnly) return { grabbed: 0, errors: [], message: `Nothing missing for ${label}: ${row.kind === 'show' ? 'every monitored episode that has aired has a file' : 'it has a file'}.` };
@@ -370,7 +372,7 @@ export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter
  * Grabs the best accepted decisions without overlapping what's already downloading. When notes is
  * given, the reason each accepted release was not grabbed is added to it.
  */
-export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: Decision[], notes?: string[], tag?: GrabTag): Promise<number> {
+export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: Decision[], notes?: string[], grabOpts: GrabExtras = {}): Promise<number> {
   const active = activeDownloads(ctx, row.id);
   if (row.kind === 'movie') {
     if (active.length) {
@@ -380,7 +382,7 @@ export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: De
     const best = bestDecision(decisions);
     if (!best) return 0;
     try {
-      await grabWithWarning(ctx, row, best, tag);
+      await grabWithWarning(ctx, row, best, grabOpts);
     } catch (err) {
       if (best.oversize !== null && ctx.settings.get('downloading').oversize === 'skip') {
         notes?.push('Only releases over the size limit were found, and Settings → Media management skips those.');
@@ -406,7 +408,7 @@ export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: De
       continue;
     }
     try {
-      await grabWithWarning(ctx, row, d, tag);
+      await grabWithWarning(ctx, row, d, grabOpts);
       keys.forEach((k) => taken.add(k));
       grabbed++;
     } catch (err) {
@@ -417,25 +419,34 @@ export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: De
   return grabbed;
 }
 
+/** Who a grab is for, and whether its import replaces the file on disk (an Upgrade). */
+export interface GrabExtras {
+  userId?: number | null;
+  /** Replaces the file on disk even if it looks as good (an Upgrade, or a fix for a problem report). */
+  replace?: boolean;
+  /** The problem report this download fixes; it's marked fixed once the download is imported. */
+  issueId?: number | null;
+}
+
 /**
  * Grabs an automatic pick. One over the size limit (only picked when nothing smaller was found) is
  * grabbed with a warning, held for a manager to confirm, or skipped (Settings → Media management).
  */
-async function grabWithWarning(ctx: AppContext, row: MonitoredRow, d: Decision, tag?: GrabTag) {
+async function grabWithWarning(ctx: AppContext, row: MonitoredRow, d: Decision, extras: GrabExtras = {}) {
   const warning = d.oversize !== null ? oversizeWarning(ctx, row, d) : null;
   const mode = ctx.settings.get('downloading').oversize;
   if (warning && mode === 'skip') throw new Error('Only releases over the size limit were found');
   if (warning && mode === 'ask') {
-    holdRelease(ctx, d, row, warning, tag);
+    holdRelease(ctx, d, row, warning, extras);
     notify(ctx, { event: 'download.warning', title: 'Confirm a big download', message: `${row.title}: ${warning} It waits on Downloads until you confirm it.`, data: { kind: row.kind, tmdbId: row.tmdbId, release: d.release.title } });
     return;
   }
-  await grab(ctx, d.release, row, { covers: d.covers, quality: d.parsed.quality, warning, ...tag });
+  await grab(ctx, d.release, row, { covers: d.covers, quality: d.parsed.quality, warning, ...extras });
   if (warning) notify(ctx, { event: 'download.warning', title: 'Download over the size limit', message: `${row.title}: ${warning}`, data: { kind: row.kind, tmdbId: row.tmdbId, release: d.release.title } });
 }
 
 /** Records an oversize pick as "held" on Downloads; nothing is sent to a client until it's confirmed. */
-function holdRelease(ctx: AppContext, d: Decision, row: MonitoredRow, warning: string, tag?: GrabTag) {
+function holdRelease(ctx: AppContext, d: Decision, row: MonitoredRow, warning: string, extras: GrabExtras = {}) {
   ctx.db
     .insert(downloads)
     .values({
@@ -449,9 +460,10 @@ function holdRelease(ctx: AppContext, d: Decision, row: MonitoredRow, warning: s
       status: 'held',
       warning,
       heldRelease: sealSecret(ctx, JSON.stringify(d.release)),
+      addedBy: extras.userId ?? null,
       addedAt: Date.now(),
-      replaceFile: tag?.replaceFile ?? false,
-      issueId: tag?.issueId ?? null,
+      replaceFile: extras.replace ?? false,
+      issueId: extras.issueId ?? null,
     })
     .run();
 }
@@ -465,7 +477,39 @@ export async function confirmHeld(ctx: AppContext, id: number, userId: number | 
   const release = JSON.parse(openSecret(ctx, held.heldRelease)) as Release;
   const covers = held.episodes ? (JSON.parse(held.episodes) as NonNullable<Decision['covers']>) : undefined;
   // The held row stays until the client has the release, so a failed send can be tried again.
-  const newId = await grab(ctx, release, row, { covers, quality: held.quality ?? undefined, warning: held.warning, userId, replaceFile: held.replaceFile, issueId: held.issueId });
+  const newId = await grab(ctx, release, row, { covers, quality: held.quality ?? undefined, warning: held.warning, userId, replace: held.replaceFile, issueId: held.issueId });
   ctx.db.delete(downloads).where(eq(downloads.id, id)).run();
   return newId;
+}
+
+/**
+ * Upgrade: looks for a better copy of what's on disk under the title's profile and grabs it; the
+ * import replaces the old file. It runs even with upgrades turned off (the button is the say-so),
+ * and judges files by what they really are (see upgradeTarget), not only what was recorded.
+ */
+export async function upgradeSearch(ctx: AppContext, row: MonitoredRow, filter: SearchFilter = {}, userId: number | null = null): Promise<{ grabbed: number; message: string; errors: string[] }> {
+  const label = scopeLabel(row, filter);
+  const base = getProfile(ctx, row.profileId);
+  if (!base) return { grabbed: 0, errors: [], message: 'The quality profile is missing. Pick another one.' };
+  const profile = { ...base, upgradesAllowed: true };
+  const target = upgradeTarget(ctx, row, profile, filter);
+  if (!target) return { grabbed: 0, errors: [], message: `Nothing to upgrade: ${label} has no file below the "${profile.name}" cutoff (${profile.cutoff}).` };
+  // The release already on disk isn't an upgrade of itself.
+  const exclude = new Set<string>();
+  if (row.kind === 'movie') {
+    if (row.fileRelease) exclude.add(row.fileRelease);
+  } else {
+    for (const e of ctx.db.select({ r: monitoredEpisodes.fileRelease }).from(monitoredEpisodes).where(eq(monitoredEpisodes.monitoredId, row.id)).all()) if (e.r) exclude.add(e.r);
+  }
+  const { decisions, errors } = await searchMonitored(ctx, row, filter, { target, profile, exclude });
+  const notes: string[] = [];
+  const grabbed = await grabBest(ctx, row, decisions, notes, { userId, replace: true });
+  const from = target.kind === 'movie' ? ` (now ${target.currentQuality})` : '';
+  if (grabbed) return { grabbed, errors, message: `Upgrading ${label}${from}: grabbed ${grabbed === 1 ? 'a release' : `${grabbed} releases`}. The old file is replaced when it's imported. Follow it on Downloads.` };
+  if (notes.length) return { grabbed, errors, message: `Nothing grabbed for ${label}. ${[...new Set(notes)].join(' ')}` };
+  if (!decisions.length) return { grabbed, errors, message: `No releases found for ${label}.` };
+  const counts = new Map<string, number>();
+  for (const d of decisions) for (const r of new Set(d.rejections)) counts.set(r, (counts.get(r) ?? 0) + 1);
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  return { grabbed, errors, message: `Found ${decisions.length} release(s) for ${label}, but none is a better fit for "${profile.name}"${from}${top ? `: ${top[0]} (${top[1]})` : ''}. Manual search shows each one and why.` };
 }

@@ -8,7 +8,7 @@ interface JfItem {
   ProductionYear?: number;
   DateCreated?: string;
   ProviderIds?: Record<string, string>;
-  MediaStreams?: { Type: string; Height?: number }[];
+  MediaStreams?: { Type: string; Height?: number; Width?: number }[];
   SeriesId?: string;
   ParentIndexNumber?: number;
   IndexNumber?: number;
@@ -21,8 +21,14 @@ const plays = (i: JfItem) => ({
   lastViewedAt: i.UserData?.LastPlayedDate ? Date.parse(i.UserData.LastPlayedDate) : null,
 });
 
+/**
+ * The video's height as its resolution class goes: a widescreen 1080p film is 1920×800, so the
+ * width counts too (as 16:9), or it would pass for 720p, and a cropped 720p one for SD.
+ */
 function height(item: JfItem): number | undefined {
-  return item.MediaStreams?.find((s) => s.Type === 'Video')?.Height;
+  const v = item.MediaStreams?.find((s) => s.Type === 'Video');
+  if (!v?.Height && !v?.Width) return undefined;
+  return Math.max(v.Height ?? 0, Math.round(((v.Width ?? 0) * 9) / 16));
 }
 
 export class JellyfinClient implements MediaServerClient {
