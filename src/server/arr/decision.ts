@@ -10,7 +10,7 @@ export interface Target {
   altTitles?: string[];
   year: number | null;
   /** For shows: the episodes still wanted, with the quality already on disk (if any). */
-  episodes?: { season: number; episode: number; currentQuality: string | null; airDate?: string | null; currentFormatScore?: number | null }[];
+  episodes?: { season: number; episode: number; currentQuality: string | null; airDate?: string | null; currentFormatScore?: number | null; absolute?: number | null }[];
   /** For movies: quality already on disk. */
   currentQuality?: string | null;
   /** For movies: the custom format score of the file on disk, when known. */
@@ -68,6 +68,12 @@ export function decide(release: Release, target: Target, profile: Profile, block
       const ep = (target.episodes ?? []).find((e) => e.airDate === parsed.airDate);
       if (ep) covers = { season: ep.season, episodes: [ep.episode] };
       else rejections.push(`No wanted episode aired on ${parsed.airDate}`);
+    } else if (parsed.season === null && parsed.absolute.length) {
+      // Anime numbered from the first episode: "Show - 112" is whichever season that falls in.
+      const hits = parsed.absolute.map((n) => (target.episodes ?? []).find((e) => e.absolute === n)).filter((e): e is NonNullable<typeof e> => Boolean(e));
+      const season = hits[0]?.season;
+      if (season === undefined) rejections.push(`No wanted episode numbered ${parsed.absolute.join('-')}`);
+      else covers = { season, episodes: hits.filter((e) => e.season === season).map((e) => e.episode) };
     } else if (parsed.season === null) rejections.push('No season or episode in the name');
     else {
       const wantedInSeason = (target.episodes ?? []).filter((e) => e.season === parsed.season);

@@ -35,6 +35,14 @@ describe('importing from Radarr, Sonarr and Overseerr', () => {
       [`${SONARR}/api/v3/qualityprofile`]: () => [{ id: 1, name: 'HD-1080p' }],
       // An older Sonarr: no TMDB id, so it's looked up by TVDB id.
       [`${SONARR}/api/v3/series`]: () => [{ title: 'Bluey', tvdbId: 353546, monitored: true, qualityProfileId: 1, seasons: [{ seasonNumber: 0, monitored: false }, { seasonNumber: 1, monitored: true }] }],
+      [`${RADARR}/api/v3/downloadclient`]: () => [{ id: 1, name: 'qBit', implementation: 'QBittorrent', enable: true }],
+      [`${RADARR}/api/v3/indexer`]: () => [{ id: 1, name: 'NZBgeek', implementation: 'Newznab' }],
+      [`${OVERSEERR}/api/v1/user`]: () => ({
+        results: [
+          { id: 1, email: 'kid@example.com', displayName: 'Kid' },
+          { id: 2, plexUsername: 'Stranger', plexId: 4242, email: 's@example.com', movieQuotaLimit: 5, tvQuotaLimit: 2 },
+        ],
+      }),
       [`${OVERSEERR}/api/v1/request`]: () => ({
         pageInfo: { results: 3 },
         results: [
@@ -104,5 +112,41 @@ describe('importing from Radarr, Sonarr and Overseerr', () => {
       ['Bluey', 'available', 'stranger'],
       ['Paddington', 'pending', 'kid'],
     ]);
+  });
+
+  it('shows a dry run first, changing nothing, then moves everything over in one pass', async () => {
+    const kid = await createUser(owner, 'kid', 'user');
+    t.app.ctx.dbHandle.sqlite.prepare('UPDATE users SET email = ? WHERE id = ?').run('kid@example.com', kid.id);
+    await owner.req('PUT', '/api/settings/radarr', { url: RADARR, apiKey: 'r' });
+    await owner.req('PUT', '/api/settings/sonarr', { url: SONARR, apiKey: 's' });
+    await owner.req('PUT', '/api/settings/overseerr', { url: OVERSEERR, apiKey: 'o' });
+    const plan = (await owner.req('GET', '/api/import/plan')).json() as { sources: Record<string, unknown>[] };
+    expect(plan.sources[0]).toMatchObject({ source: 'radarr', add: 1, update: 0, skip: 1, profiles: [{ name: 'Any', mapsTo: 'Any' }] });
+    expect((plan.sources[0]!.manual as string[]).join(' ')).toMatch(/qBit.*NZBgeek/);
+    expect(plan.sources[1]).toMatchObject({ source: 'sonarr', add: 1, profiles: [{ name: 'HD-1080p', mapsTo: 'HD-1080p' }] });
+    expect(plan.sources[2]).toMatchObject({ source: 'overseerr', add: 3, users: { create: ['Stranger'], existing: ['Kid'] } });
+    // Nothing changed.
+    expect((await owner.req('GET', '/api/requests')).json()).toEqual([]);
+    expect((await owner.req('GET', '/api/users')).json()).toHaveLength(2);
+
+    await owner.req('POST', '/api/import/all');
+    await vi.waitFor(async () => expect((await owner.req('GET', '/api/import/all')).json().running).toBe(false));
+    const done = (await owner.req('GET', '/api/import/all')).json() as { steps: { source: string; result: string }[] };
+    expect(done.steps.map((s) => s.source)).toEqual(['Overseerr users', 'Radarr', 'Sonarr', 'Overseerr']);
+    const people = (await owner.req('GET', '/api/users')).json() as { id: number; username: string; movieRequestLimit: number | null; linked: { plex: boolean } }[];
+    expect(people.find((p) => p.username === 'stranger')).toMatchObject({ movieRequestLimit: 5, linked: { plex: true } });
+    // The stranger's request now belongs to the new account (matched by Plex account).
+    const reqs = (await owner.req('GET', '/api/requests')).json() as { title: string; requestedBy: number | null }[];
+    expect(reqs.find((r) => r.title === 'Bluey')!.requestedBy).toBe(people.find((p) => p.username === 'stranger')!.id);
+    expect((await owner.req('GET', '/api/monitored')).statusCode).toBe(200);
+  });
+
+  it('keeps the dry run and the one-pass migration for admins', async () => {
+    const m = await createUser(owner, 'mgr', 'manager');
+    const c = new Client(t.app);
+    await c.login('mgr', m.password);
+    expect((await c.req('GET', '/api/import/plan')).statusCode).toBe(403);
+    expect((await c.req('POST', '/api/import/all')).statusCode).toBe(403);
+    expect((await owner.req('POST', '/api/import/all')).statusCode).toBe(400);
   });
 });

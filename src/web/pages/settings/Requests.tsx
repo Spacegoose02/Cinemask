@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Field } from '../../components/ui';
+import { Field, Toggle } from '../../components/ui';
 import { useRootFolders } from '../../components/MediaActions';
 import { api } from '../../lib/api';
 import { useSettingsSection } from '../../lib/settings';
@@ -14,10 +14,11 @@ interface Provider {
 /** Settings → Requests: limits, 4K requests and the "already streaming" rule. */
 export function RequestSettings() {
   const r = useSettingsSection('requests');
+  const iss = useSettingsSection('issues');
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: () => api<{ id: number; name: string }[]>('/api/profiles') });
   const roots = useRootFolders(true).data?.roots ?? [];
   const providers = useQuery({ queryKey: ['discover-options', 'movie'], queryFn: () => api<{ providers: Provider[]; region: string }>('/api/discover/options?kind=movie') });
-  if (r.loading) return null;
+  if (r.loading || iss.loading) return null;
   const chosen = (r.values.streamingProviders ?? []) as number[];
   const toggleProvider = (id: number) => r.set('streamingProviders', chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id]);
 
@@ -104,6 +105,17 @@ export function RequestSettings() {
         </div>
       </section>
       <SaveBar onSave={r.save} saving={r.saving} message={r.message} />
+
+      <section className="card space-y-4">
+        <h2 className="font-semibold">Problem reports</h2>
+        <Toggle
+          label="Fix reports automatically"
+          checked={iss.values.autoFix}
+          onChange={(v) => iss.set('autoFix', v)}
+          hint="Wrong language, poor picture, won't play or wrong episode: blocklist that copy and download a different one straight away. Missing subtitles: fetch them. Otherwise reports wait for a manager on Problems."
+        />
+        <SaveBar onSave={iss.save} saving={iss.saving} message={iss.message} />
+      </section>
     </div>
   );
 }

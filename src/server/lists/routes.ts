@@ -6,6 +6,7 @@ import { listItems, lists, MEDIA_KINDS } from '../db/schema.js';
 import { discoverFilter } from '../discover/service.js';
 import { availabilityFor } from '../library/service.js';
 import { badRequest, notFound } from '../lib/errors.js';
+import { forViewer } from '../kids/ratings.js';
 import { parse } from '../lib/validate.js';
 import { itemsFromCsv, parseListUrl, replaceItems, syncList, type ListItem } from './service.js';
 
@@ -49,7 +50,7 @@ export async function listRoutes(app: FastifyInstance) {
     const { limit } = parse(z.object({ limit: z.coerce.number().int().min(1).max(1000).default(1000) }), req.query);
     const list = getList(id);
     const items = ctx.db.select().from(listItems).where(eq(listItems.listId, id)).orderBy(asc(listItems.position)).limit(limit).all();
-    return { list: view(list), items: withAvailability(ctx, items) };
+    return { list: view(list), items: await forViewer(ctx, req.user!.id, withAvailability(ctx, items)) };
   });
 
   /** Adds a list from a pasted mdblist or TMDB URL, or a saved Discover search. */

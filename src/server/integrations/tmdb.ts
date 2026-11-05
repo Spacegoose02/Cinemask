@@ -46,7 +46,7 @@ export interface TmdbMovie {
   genres: { id: number; name: string }[];
   imdb_id: string | null;
   videos?: { results: TmdbVideo[] };
-  release_dates?: { results: { iso_3166_1: string; release_dates: { type: number; release_date: string }[] }[] };
+  release_dates?: { results: { iso_3166_1: string; release_dates: { type: number; release_date: string; certification?: string }[] }[] };
   belongs_to_collection?: { id: number; name: string; poster_path: string | null } | null;
   credits?: { cast: { id: number; name: string; character: string; profile_path: string | null; order: number }[] };
 }
@@ -60,12 +60,14 @@ export interface TmdbShow {
   poster_path: string | null;
   backdrop_path: string | null;
   vote_average: number;
+  original_language?: string;
   genres: { id: number; name: string }[];
   networks: { id: number; name: string }[];
   episode_run_time: number[];
   next_episode_to_air: { air_date: string; season_number: number; episode_number: number; name: string } | null;
   seasons: { season_number: number; name: string; episode_count: number; air_date: string | null; poster_path: string | null }[];
   external_ids?: { imdb_id: string | null; tvdb_id: number | null };
+  content_ratings?: { results: { iso_3166_1: string; rating: string }[] };
   videos?: { results: TmdbVideo[] };
   /** Cast across every season, with the episodes each person is in. */
   aggregate_credits?: { cast: { id: number; name: string; roles: { character: string; episode_count: number }[]; total_episode_count: number; profile_path: string | null; order: number }[] };
@@ -176,7 +178,7 @@ export class TmdbClient {
   }
 
   show(id: number) {
-    return this.get<TmdbShow>(`/tv/${id}`, { append_to_response: 'videos,external_ids,aggregate_credits' });
+    return this.get<TmdbShow>(`/tv/${id}`, { append_to_response: 'videos,external_ids,aggregate_credits,content_ratings' });
   }
 
   season(id: number, season: number) {

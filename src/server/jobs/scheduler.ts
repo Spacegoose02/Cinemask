@@ -1,3 +1,6 @@
+import { probeMissing } from '../files/mediainfo.js';
+import { syncAllWatchlists } from '../watchlist/service.js';
+import { storageJob } from '../storage/service.js';
 import cron, { type ScheduledTask } from 'node-cron';
 import type { FastifyInstance } from 'fastify';
 import { lt } from 'drizzle-orm';
@@ -7,7 +10,7 @@ import { audit } from '../audit/log.js';
 import { authStates } from '../db/schema.js';
 import type { BackupService } from '../backup/service.js';
 import { rssSync, searchMissing } from '../arr/rss.js';
-import { trackDownloads } from '../arr/tracker.js';
+import { cleanUpSeeding, trackDownloads } from '../arr/tracker.js';
 import { scanWatchFolder } from '../arr/watch.js';
 import { refreshMonitored } from '../calendar/service.js';
 import { remindMovieNights } from '../fun/nights.js';
@@ -71,6 +74,14 @@ export class Scheduler {
       cron.schedule('*/5 * * * *', this.once('youtube-download', () => downloadWanted(this.app.ctx))),
       // "Movie night soon" goes out within the hour before it starts.
       cron.schedule('*/5 * * * *', this.once('movie-nights', async () => remindMovieNights(this.app.ctx))),
+      // What's really in files imported before file details existed, a few titles an hour.
+      cron.schedule('35 * * * *', this.once('file-details', () => probeMissing(this.app.ctx))),
+      // Plex watchlists and Jellyfin favourites become requests.
+      cron.schedule('*/30 * * * *', this.once('watchlists', () => syncAllWatchlists(this.app.ctx))),
+      // Torrents that have seeded enough leave the download client.
+      cron.schedule('*/15 * * * *', this.once('seeding', () => cleanUpSeeding(this.app.ctx))),
+      // Empties the old part of the recycle bin and applies the delete rules (Settings → Storage).
+      cron.schedule('50 3 * * *', this.once('storage', async () => storageJob(this.app.ctx))),
     ];
     requeueInterrupted(this.app.ctx);
     // First health run shortly after start, so the nav badge is right without waiting an hour.

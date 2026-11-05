@@ -48,6 +48,16 @@ What's coming out this week:
 curl -H "X-Api-Key: $KEY" "$URL/api/calendar?start=$(date +%F)&end=$(date -d '+7 days' +%F)"
 ```
 
+## Radarr and Sonarr apps
+
+Apps made for Radarr or Sonarr (Overseerr and Jellyseerr, LunaSea, nzb360, Home Assistant's Radarr and Sonarr integrations) can use Cinemask instead. In the app, add a Radarr or Sonarr server with:
+
+- **Host and port**: Cinemask's.
+- **URL base**: `/api/compat/radarr` for Radarr, `/api/compat/sonarr` for Sonarr.
+- **API key**: a Cinemask API key of a manager or admin (Settings → API). A read-only key can look but not add.
+
+What's there: system status, quality profiles, root folders, tags, the queue, movies and series (list, look up by `tmdb:`, `imdb:` or `tvdb:` or by name, add, update, delete), episodes, the calendar, and the search commands (`MoviesSearch`, `SeriesSearch`, `SeasonSearch`, `EpisodeSearch`). Anything added this way skips request approval, like a manager adding it in Cinemask, and is in the activity log. Ids are Cinemask's own, so an app that remembered Radarr's or Sonarr's ids needs the server set up again.
+
 ## Errors
 
 Errors are JSON `{"error": "message"}` with the usual status codes: `400` invalid input, `401` missing or bad key, `403` not allowed for this user or key, `404` not found, `409` conflict (for example, already requested), `429` rate limited, `502` an outside service (TMDB, Plex…) failed.

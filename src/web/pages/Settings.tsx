@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { LoadError } from '../components/ui';
+import { useT } from '../lib/i18n';
 import { ActivitySettings } from './settings/Activity';
 import { ApiSettings } from './settings/ApiSettings';
 import { BookSettings } from './settings/Books';
@@ -66,6 +67,7 @@ function SettingsLoadError() {
 }
 
 export function SettingsPage() {
+  const tr = useT();
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Settings</h1>
@@ -76,7 +78,7 @@ export function SettingsPage() {
             to={`/settings/${t.path}`}
             className={({ isActive }) => `whitespace-nowrap border-b-2 px-3 py-2 text-sm ${isActive ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-text'}`}
           >
-            {t.label}
+            {tr(t.label)}
           </NavLink>
         ))}
       </div>

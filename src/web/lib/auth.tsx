@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, setCsrfToken, setSignedOutHandler, type Me } from './api';
 import { applyAccountTheme } from './theme';
+import { applyAccountLanguage } from './i18n';
 
 interface AuthValue {
   me: Me | null;
@@ -25,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const r = await api<{ user: Me; csrfToken: string }>('/api/auth/me');
         setCsrfToken(r.csrfToken);
         applyAccountTheme(r.user.theme);
+        applyAccountLanguage(r.user.language);
         setExpired(false);
         return r.user;
       } catch (e) {

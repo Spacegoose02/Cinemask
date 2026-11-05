@@ -29,3 +29,28 @@ describe('themes', () => {
     });
   });
 });
+
+describe('interface languages', () => {
+  it('the server accepts exactly the languages the app offers, and each translates the menu', async () => {
+    const { LANGUAGE_CODES } = await import('../src/server/auth/apikey-routes.js');
+    const { LANGUAGES, CATALOGS, t } = await import('../src/web/lib/i18n.js');
+    expect([...LANGUAGE_CODES]).toEqual(LANGUAGES.map((l) => l.code));
+    const keys = Object.keys(CATALOGS.es);
+    for (const [code, catalog] of Object.entries(CATALOGS)) {
+      expect(Object.keys(catalog).sort(), code).toEqual([...keys].sort());
+      for (const k of ['Library', 'Requests', 'Settings', 'Account']) expect(catalog[k], `${code} ${k}`).toBeTruthy();
+    }
+    expect(t('Something not translated')).toBe('Something not translated');
+  });
+
+  it('saves the account’s language, or clears it to follow the browser', async () => {
+    const t = await makeApp();
+    const owner = await setupOwner(t.app);
+    expect((await owner.req('PUT', '/api/auth/language', { language: 'de' })).statusCode).toBe(200);
+    expect((await owner.req('GET', '/api/auth/me')).json().user.language).toBe('de');
+    expect((await owner.req('PUT', '/api/auth/language', { language: 'xx' })).statusCode).toBe(400);
+    expect((await owner.req('PUT', '/api/auth/language', { language: null })).statusCode).toBe(200);
+    expect((await owner.req('GET', '/api/auth/me')).json().user.language).toBeNull();
+    await t.close();
+  });
+});

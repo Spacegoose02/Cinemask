@@ -237,6 +237,14 @@ export const SETTINGS = {
         .array(z.object({ minutes: z.number().int().min(1).max(600), gb: z.number().min(0.1).max(1000) }))
         .max(10)
         .default([]),
+      /**
+       * Seeding goals for torrents when finished downloads are removed after import: keep seeding
+       * until the ratio or the time is reached, whichever comes first. 0 turns each one off.
+       */
+      seedRatio: z.number().min(0).max(100).default(0),
+      seedMinutes: z.number().int().min(0).max(525_600).default(0),
+      /** A download whose progress hasn't moved for this long is given up on and another release tried. 0 is off. */
+      stalledMinutes: z.number().int().min(0).max(10_080).default(0),
       /** Delay profile: which protocol wins when both have a fitting release. */
       preferredProtocol: z.enum(['any', 'usenet', 'torrent']).default('any'),
       /** Wait this long after a release appears before grabbing it automatically, so a better one can turn up. */
@@ -244,6 +252,46 @@ export const SETTINGS = {
       torrentDelayMinutes: z.number().int().min(0).max(10080).default(0),
       /** Grab straight away, delay or not, when the release already meets the profile's cutoff. */
       bypassDelayAtCutoff: z.boolean().default(true),
+    }),
+    secrets: [],
+  },
+  subtitles: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      /** An OpenSubtitles.com API consumer key (opensubtitles.com → API consumers). */
+      apiKey: z.string().max(200).default(''),
+      /** An OpenSubtitles.com account raises the daily download limit. */
+      username: z.string().trim().max(100).default(''),
+      password: z.string().max(200).default(''),
+      languages: z.array(z.string().regex(/^[a-z]{2}(-[a-z]{2})?$/)).min(1).max(5).default(['en']),
+      /** Fetch missing subtitles after each import. */
+      auto: z.boolean().default(true),
+      /** Subtitles for the deaf and hard of hearing (with sound descriptions). */
+      hearingImpaired: z.enum(['prefer_not', 'include', 'only']).default('prefer_not'),
+    }),
+    secrets: ['apiKey', 'password'],
+  },
+  storage: {
+    schema: z.object({
+      /** Deleted files wait in a hidden folder for this many days before they're gone for good. */
+      recycleBin: z.boolean().default(true),
+      recycleDays: z.number().int().min(1).max(365).default(30),
+      /** Suggest removing titles everyone finished this many days ago. 0 turns the suggestion off. */
+      watchedDays: z.number().int().min(0).max(3650).default(180),
+      /** Suggest removing titles nobody has played since they arrived this many days ago. 0 turns it off. */
+      unwatchedDays: z.number().int().min(0).max(3650).default(365),
+      /** Remove the suggestions automatically every night (into the recycle bin). */
+      autoDelete: z.boolean().default(false),
+    }),
+    secrets: [],
+  },
+  issues: {
+    schema: z.object({
+      /**
+       * Fix wrong-language, bad-picture and won't-play reports straight away (blocklist the copy and
+       * find another, or fetch subtitles) instead of waiting for a manager.
+       */
+      autoFix: z.boolean().default(false),
     }),
     secrets: [],
   },

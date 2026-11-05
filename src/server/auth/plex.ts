@@ -1,11 +1,13 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
+import type { AppContext } from '../context.js';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
 import { users } from '../db/schema.js';
 import { badRequest } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { sha256 } from '../security/crypto.js';
+import { sealSecret } from '../arr/secrets.js';
 import * as plextv from '../integrations/plextv.js';
 import { peekAuthState, putAuthState, resolveExternalUser, takeAuthState } from './external.js';
 import { createSession } from './sessions.js';
@@ -15,10 +17,12 @@ interface PlexState {
   linkUserId?: number;
 }
 
-export function plexHeaders(app: FastifyInstance): plextv.PlexHeaders {
+export function plexHeadersFor(ctx: AppContext): plextv.PlexHeaders {
   // Stable per install, derived from the instance key so it survives restarts without being stored.
-  return { clientId: `mm-${sha256(app.ctx.secretKey.toString('hex')).slice(0, 24)}`, product: 'Cinemask' };
+  return { clientId: `mm-${sha256(ctx.secretKey.toString('hex')).slice(0, 24)}`, product: 'Cinemask' };
 }
+
+export const plexHeaders = (app: FastifyInstance) => plexHeadersFor(app.ctx);
 
 export async function plexAuthRoutes(app: FastifyInstance) {
   const limit = { rateLimit: { max: 30, timeWindow: '1 minute' } };
@@ -71,11 +75,15 @@ export async function plexAuthRoutes(app: FastifyInstance) {
       };
       return { done: true, ok: false, error: messages[result.reason] ?? 'Sign-in failed' };
     }
+    // The account's own token is kept (sealed) so its Plex watchlist can be read later.
+    const keepToken = () => app.ctx.db.update(users).set({ plexToken: sealSecret(app.ctx, token) }).where(eq(users.id, result.userId)).run();
     if (saved.linkUserId !== undefined) {
+      keepToken();
       audit(app.ctx.db, req, 'auth.sso_linked', { details: { provider: 'plex' } });
       return { done: true, ok: true };
     }
     if (!s.enabled) return { done: true, ok: false, error: 'Plex sign-in is turned off' };
+    keepToken();
     createSession(app.ctx.db, req, reply, result.userId, app.ctx.settings.get('auth').sessionDays);
     audit(app.ctx.db, req, 'auth.login', { user: { id: result.userId, username: result.username }, details: { method: 'plex' } });
     return { done: true, ok: true };
@@ -84,7 +92,7 @@ export async function plexAuthRoutes(app: FastifyInstance) {
   app.delete('/api/auth/links/:provider', { config: { access: 'user' } }, async (req) => {
     const { provider } = parse(z.object({ provider: z.enum(['oidc', 'plex']) }), req.params);
     if (!req.user!.hasPassword) throw badRequest('Set a password before unlinking, or you could lose access to your account');
-    app.ctx.db.update(users).set(provider === 'oidc' ? { oidcSubject: null } : { plexId: null }).where(eq(users.id, req.user!.id)).run();
+    app.ctx.db.update(users).set(provider === 'oidc' ? { oidcSubject: null } : { plexId: null, plexToken: null }).where(eq(users.id, req.user!.id)).run();
     audit(app.ctx.db, req, 'auth.sso_unlinked', { details: { provider } });
     return { ok: true };
   });

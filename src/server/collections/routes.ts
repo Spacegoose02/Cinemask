@@ -10,6 +10,7 @@ import { collectionItems, collections, lists, MEDIA_KINDS, SERVERS } from '../db
 import { refreshMetadata, tmdbClient } from '../library/service.js';
 import { upstream } from '../library/routes.js';
 import { badRequest, HttpError, notFound } from '../lib/errors.js';
+import { forViewer } from '../kids/ratings.js';
 import { parse } from '../lib/validate.js';
 import { withAvailability } from '../lists/routes.js';
 import { postersDir } from '../posters/service.js';
@@ -83,7 +84,7 @@ export async function collectionRoutes(app: FastifyInstance) {
 
   app.get('/api/collections/:id', { config: { access: 'user' } }, async (req) => {
     const { id } = parse(idParam, req.params);
-    return { ...getCol(id), items: withAvailability(ctx, itemsOf(ctx, id)) };
+    return { ...getCol(id), items: await forViewer(ctx, req.user!.id, withAvailability(ctx, itemsOf(ctx, id))) };
   });
 
   app.post('/api/collections', { config: { access: 'manager' } }, async (req) => {

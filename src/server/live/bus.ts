@@ -48,6 +48,8 @@ export const JOB_TOPICS: Record<string, LiveEvent> = {
   readmeabook: { topic: 'books', access: 'user' },
   'youtube-check': { topic: 'youtube', access: 'manager' },
   'youtube-download': { topic: 'youtube', access: 'manager' },
+  watchlists: { topic: 'requests', access: 'user' },
+  storage: { topic: 'storage', access: 'manager' },
 };
 
 /** Writes under these never need to reach other tabs. */

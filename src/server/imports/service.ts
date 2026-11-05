@@ -191,6 +191,7 @@ interface OverseerrUser {
   email?: string;
   username?: string | null;
   plexUsername?: string | null;
+  plexId?: number | null;
   displayName?: string;
 }
 interface OverseerrRequest {
@@ -276,6 +277,7 @@ function matchUser(ctx: AppContext, u?: OverseerrUser) {
   const names = [u.username, u.plexUsername].filter((x): x is string => Boolean(x)).map((x) => x.toLowerCase());
   const email = u.email?.toLowerCase();
   const conds = [
+    ...(u.plexId ? [eq(users.plexId, String(u.plexId))] : []),
     ...(names.length ? [inArray(sql`lower(${users.username})`, names)] : []),
     ...(email ? [eq(sql`lower(${users.email})`, email)] : []),
   ];

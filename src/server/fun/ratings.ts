@@ -7,6 +7,7 @@ import { MEDIA_KINDS, media, ratings, users, type MediaKind } from '../db/schema
 import { availabilityFor, cards, refreshMetadata, tmdbClient } from '../library/service.js';
 import { upstream } from '../library/routes.js';
 import { notFound } from '../lib/errors.js';
+import { forViewer } from '../kids/ratings.js';
 import { parse } from '../lib/validate.js';
 
 const titleParams = z.object({ kind: z.enum(MEDIA_KINDS), tmdbId: z.coerce.number().int().positive() });
@@ -76,7 +77,7 @@ export async function ratingRoutes(app: FastifyInstance) {
     if (!liked || !tmdb.configured) return { basedOn: null, results: [] };
     const recs = await upstream(() => tmdb.recommendations(liked.kind === 'movie' ? 'movie' : 'tv', liked.tmdbId));
     const rated = new Set(ctx.db.select({ k: ratings.kind, t: ratings.tmdbId }).from(ratings).where(eq(ratings.userId, req.user!.id)).all().map((r) => `${r.k}:${r.t}`));
-    return { basedOn: liked, results: cards(ctx, recs.results, liked.kind).filter((c) => !rated.has(`${c.kind}:${c.tmdbId}`)) };
+    return { basedOn: liked, results: await forViewer(ctx, req.user!.id, cards(ctx, recs.results, liked.kind).filter((c) => !rated.has(`${c.kind}:${c.tmdbId}`))) };
   });
 
   app.get('/api/ratings/:kind/:tmdbId', { config: { access: 'user' } }, async (req) => {

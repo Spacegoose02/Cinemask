@@ -62,12 +62,20 @@ function queriesFor(ctx: AppContext, row: MonitoredRow, target: Target): SearchQ
     ];
   }
   const seasons = [...new Set((target.episodes ?? []).map((e) => e.season))];
-  return seasons.flatMap((season) => {
+  // Anime is filed by absolute number ("Show - 112"), which a season search doesn't find.
+  const anime: SearchQuery[] =
+    row.seriesType === 'anime'
+      ? (target.episodes ?? [])
+          .filter((e) => e.absolute)
+          .slice(0, 4)
+          .map((e) => ({ type: 'search' as const, q: `${queryText(row.title)} ${String(e.absolute).padStart(2, '0')}`, categories: [...CATEGORIES.tv, ...CATEGORIES.anime] }))
+      : [];
+  return [...anime, ...seasons.flatMap((season) => {
     const eps = (target.episodes ?? []).filter((e) => e.season === season);
     const base = { type: 'tvsearch' as const, q: queryText(row.title), tvdbId: m?.tvdbId, categories: CATEGORIES.tv };
     // Ask for single episodes when only a few are missing; otherwise ask for the season (catches packs too).
     return eps.length <= 2 ? eps.map((e) => ({ ...base, season, episode: e.episode })) : [{ ...base, season }];
-  });
+  })];
 }
 
 const GB = 1024 ** 3;
@@ -205,13 +213,14 @@ function dateQueries(ctx: AppContext, row: MonitoredRow, target: Target): Search
 
 /** Every episode of a season (or just one) as a manual-search target, for when nothing in it is wanted. */
 function seasonEpisodes(ctx: AppContext, monitoredId: number, season: number, episode?: number): NonNullable<Target['episodes']> {
-  if (episode !== undefined) return [{ season, episode, currentQuality: null }];
   const eps = ctx.db
-    .select({ episode: monitoredEpisodes.episode })
+    .select({ episode: monitoredEpisodes.episode, absolute: monitoredEpisodes.absoluteNumber })
     .from(monitoredEpisodes)
     .where(and(eq(monitoredEpisodes.monitoredId, monitoredId), eq(monitoredEpisodes.season, season)))
-    .all();
-  return (eps.length ? eps : [{ episode: 1 }]).map((e) => ({ season, episode: e.episode, currentQuality: null }));
+    .all()
+    .filter((e) => episode === undefined || e.episode === episode);
+  const list: { episode: number; absolute?: number | null }[] = eps.length ? eps : [{ episode: episode ?? 1 }];
+  return list.map((e) => ({ season, episode: e.episode, absolute: e.absolute ?? null, currentQuality: null }));
 }
 
 /** For an Upgrade: what to look for and under which profile, instead of what's wanted. */
@@ -253,7 +262,7 @@ export async function searchMonitored(ctx: AppContext, row: MonitoredRow, filter
   let judged = judge();
   // Nothing by season and episode: news and talk shows (Dateline, 20/20) are often filed by air date instead,
   // even when some of their episodes do carry SxxEyy names.
-  if (row.kind === 'show' && !judged.some((d) => d.accepted)) {
+  if (row.kind === 'show' && row.seriesType !== 'anime' && !judged.some((d) => d.accepted)) {
     await run(dateQueries(ctx, row, target));
     judged = judge();
   }
@@ -279,7 +288,7 @@ export function pickClient(ctx: AppContext, protocol: 'torrent' | 'usenet') {
 }
 
 /** Sends a release to a download client and records it for tracking and import. */
-export async function grab(ctx: AppContext, release: Release, row: MonitoredRow | null, opts: { covers?: Decision['covers']; userId?: number | null; quality?: string; warning?: string | null; destination?: string | null; replace?: boolean }) {
+export async function grab(ctx: AppContext, release: Release, row: MonitoredRow | null, opts: { covers?: Decision['covers']; userId?: number | null; quality?: string; warning?: string | null; destination?: string | null; replace?: boolean; issueId?: number | null }) {
   const picked = pickClient(ctx, release.protocol);
   if (!picked) throw new Error(`No ${release.protocol === 'torrent' ? 'torrent' : 'Usenet'} download client is set up`);
   // A root folder can have its own category (e.g. "kids-tv"), so the client files it separately.
@@ -303,6 +312,7 @@ export async function grab(ctx: AppContext, release: Release, row: MonitoredRow 
       addedBy: opts.userId ?? null,
       addedAt: Date.now(),
       replaceFile: opts.replace ?? false,
+      issueId: opts.issueId ?? null,
     })
     .returning()
     .get();
@@ -338,7 +348,7 @@ function scopeLabel(row: MonitoredRow, filter?: SearchFilter) {
  * An automatic search that also says why nothing was grabbed (nothing wanted, nothing found, every
  * release rejected, already downloading, or the download client refused it), for the Search buttons.
  */
-export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter): Promise<{ grabbed: number; message: string; errors: string[] }> {
+export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter?: SearchFilter, tag?: GrabExtras): Promise<{ grabbed: number; message: string; errors: string[] }> {
   const label = scopeLabel(row, filter);
   if (!wantedTarget(ctx, row, filter)) {
     if (filter?.missingOnly) return { grabbed: 0, errors: [], message: `Nothing missing for ${label}: ${row.kind === 'show' ? 'every monitored episode that has aired has a file' : 'it has a file'}.` };
@@ -346,8 +356,8 @@ export async function explainedSearch(ctx: AppContext, row: MonitoredRow, filter
   }
   const { decisions, errors } = await searchMonitored(ctx, row, filter);
   const notes: string[] = [];
-  const grabbed = await grabBest(ctx, row, decisions, notes);
-  retryAfterDelay(ctx, row, decisions);
+  const grabbed = await grabBest(ctx, row, decisions, notes, tag);
+  if (!tag) retryAfterDelay(ctx, row, decisions);
   if (grabbed) return { grabbed, errors, message: `Grabbed ${grabbed === 1 ? 'a release' : `${grabbed} releases`} for ${label}. It's on Downloads.` };
   if (notes.length) return { grabbed, errors, message: `Nothing grabbed for ${label}. ${[...new Set(notes)].join(' ')}` };
   if (!decisions.length) return { grabbed, errors, message: `No releases found for ${label}.` };
@@ -412,7 +422,10 @@ export async function grabBest(ctx: AppContext, row: MonitoredRow, decisions: De
 /** Who a grab is for, and whether its import replaces the file on disk (an Upgrade). */
 export interface GrabExtras {
   userId?: number | null;
+  /** Replaces the file on disk even if it looks as good (an Upgrade, or a fix for a problem report). */
   replace?: boolean;
+  /** The problem report this download fixes; it's marked fixed once the download is imported. */
+  issueId?: number | null;
 }
 
 /**
@@ -450,6 +463,7 @@ function holdRelease(ctx: AppContext, d: Decision, row: MonitoredRow, warning: s
       addedBy: extras.userId ?? null,
       addedAt: Date.now(),
       replaceFile: extras.replace ?? false,
+      issueId: extras.issueId ?? null,
     })
     .run();
 }
@@ -463,7 +477,7 @@ export async function confirmHeld(ctx: AppContext, id: number, userId: number | 
   const release = JSON.parse(openSecret(ctx, held.heldRelease)) as Release;
   const covers = held.episodes ? (JSON.parse(held.episodes) as NonNullable<Decision['covers']>) : undefined;
   // The held row stays until the client has the release, so a failed send can be tried again.
-  const newId = await grab(ctx, release, row, { covers, quality: held.quality ?? undefined, warning: held.warning, userId, replace: held.replaceFile });
+  const newId = await grab(ctx, release, row, { covers, quality: held.quality ?? undefined, warning: held.warning, userId, replace: held.replaceFile, issueId: held.issueId });
   ctx.db.delete(downloads).where(eq(downloads.id, id)).run();
   return newId;
 }

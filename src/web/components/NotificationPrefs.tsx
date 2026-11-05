@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api, formatDate } from '../lib/api';
 import { currentSubscription, disablePush, enablePush, pushSupported } from '../lib/push';
 import { Alert, Toggle } from './ui';
+import { useT } from '../lib/i18n';
 
 interface Prefs {
   push: boolean;
@@ -38,6 +39,7 @@ export const EVENT_LABELS: Record<string, string> = {
 /** Account → Notifications: this device, email, and which events. */
 export function NotificationPrefs() {
   const qc = useQueryClient();
+  const t = useT();
   const q = useQuery({ queryKey: ['notify-me'], queryFn: () => api<Me>('/api/notifications/me') });
   const [here, setHere] = useState<boolean | null>(null);
   const [email, setEmail] = useState<string | null>(null);
@@ -77,7 +79,7 @@ export function NotificationPrefs() {
 
   return (
     <section className="card space-y-4">
-      <h2 className="font-semibold">Notifications</h2>
+      <h2 className="font-semibold">{t('Notifications')}</h2>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       <div className="flex flex-wrap items-center gap-2">
         {!pushSupported() ? (

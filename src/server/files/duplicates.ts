@@ -7,6 +7,7 @@ import { findVideos } from '../arr/importer.js';
 import { parseRelease } from '../arr/parser.js';
 import { isExtra, rootFor, scanFolder } from './service.js';
 import { insideRoot } from '../lib/paths.js';
+import { discard } from './recycle.js';
 
 export interface DuplicateFile {
   path: string;
@@ -75,8 +76,7 @@ export function deleteDuplicate(ctx: AppContext, monitoredId: number, file: stri
   if (!insideRoot(rootFor(ctx, row), file) || !insideRoot(row.path, file)) throw new Error('That file is not in this title’s folder');
   const group = findDuplicates(ctx).files.find((g) => g.monitoredId === row.id && g.files.some((f) => f.path === file));
   if (!group) throw new Error('That file is not one of several copies');
-  const freed = fs.statSync(file).size;
-  fs.rmSync(file);
+  const freed = discard(ctx, rootFor(ctx, row), file, { kind: row.kind, tmdbId: row.tmdbId, title: row.title, reason: 'Duplicate copy' });
   // If it was the tracked copy, the scan picks up the one that's left.
   if (row.filePath === file) ctx.db.update(monitored).set({ filePath: null, fileQuality: null }).where(eq(monitored.id, row.id)).run();
   ctx.db.update(monitoredEpisodes).set({ filePath: null, fileQuality: null }).where(and(eq(monitoredEpisodes.monitoredId, row.id), eq(monitoredEpisodes.filePath, file))).run();

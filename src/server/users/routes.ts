@@ -25,6 +25,9 @@ function toPublic(u: UserRow) {
     movieRequestLimit: u.movieRequestLimit,
     seasonRequestLimit: u.seasonRequestLimit,
     canRequest4k: u.canRequest4k,
+    maxAge: u.maxAge,
+    jellyfinUserId: u.jellyfinUserId,
+    watchlistSync: u.watchlistSync,
     hasPassword: Boolean(u.passwordHash),
     linked: { oidc: Boolean(u.oidcSubject), plex: Boolean(u.plexId) },
     locked: u.lockedUntil !== null && u.lockedUntil > Date.now(),
@@ -99,6 +102,10 @@ export async function userRoutes(app: FastifyInstance) {
         movieRequestLimit: z.number().int().min(0).max(1000).nullable().optional(),
         seasonRequestLimit: z.number().int().min(0).max(1000).nullable().optional(),
         canRequest4k: z.boolean().optional(),
+        /** Kids profile: the oldest age rating they may see. Null means no limit. */
+        maxAge: z.number().int().min(0).max(18).nullable().optional(),
+        /** The Jellyfin account whose favourites are their watchlist. */
+        jellyfinUserId: z.string().trim().regex(/^[A-Za-z0-9-]{1,64}$/).nullable().optional(),
       }),
       req.body,
     );
@@ -118,6 +125,8 @@ export async function userRoutes(app: FastifyInstance) {
     if (body.movieRequestLimit !== undefined) patch.movieRequestLimit = body.movieRequestLimit;
     if (body.seasonRequestLimit !== undefined) patch.seasonRequestLimit = body.seasonRequestLimit;
     if (body.canRequest4k !== undefined) patch.canRequest4k = body.canRequest4k;
+    if (body.maxAge !== undefined) patch.maxAge = body.maxAge;
+    if (body.jellyfinUserId !== undefined) patch.jellyfinUserId = body.jellyfinUserId;
     if (body.unlock) Object.assign(patch, { failedLogins: 0, lockedUntil: null });
     if (body.password !== undefined) {
       const problem = passwordProblem(body.password, target.username);
