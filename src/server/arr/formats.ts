@@ -14,7 +14,7 @@ const pattern = z
   .string()
   .trim()
   .min(1)
-  .max(300)
+  .max(2000)
   .refine((p) => {
     try {
       new RegExp(p, 'i');

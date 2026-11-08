@@ -200,6 +200,10 @@ export const qualityProfiles = sqliteTable('quality_profiles', {
   minFormatScore: integer('min_format_score').notNull().default(0),
   /** Keep upgrading a file at the cutoff quality until its format score reaches this. 0 turns it off. */
   upgradeUntilFormatScore: integer('upgrade_until_format_score').notNull().default(0),
+  /** A TRaSH Guides profile this one follows (arr/trash.ts): 'radarr' or 'sonarr', its guide id, and the last sync. */
+  trashApp: text('trash_app', { enum: ['radarr', 'sonarr'] }),
+  trashId: text('trash_id'),
+  trashSyncedAt: integer('trash_synced_at'),
 });
 
 /** Named release rules (HDR, Atmos, a release group…) that quality profiles score. See arr/formats.ts. */
@@ -208,6 +212,8 @@ export const customFormats = sqliteTable('custom_formats', {
   name: text('name').notNull().unique(),
   rules: text('rules').notNull(), // JSON FormatRule[]
   createdAt: integer('created_at').notNull(),
+  /** The TRaSH Guides id of a format synced from the guides; null for formats made here. */
+  trashId: text('trash_id'),
 });
 
 /** A movie or show the app keeps an eye on: searches for it, downloads and upgrades it. */

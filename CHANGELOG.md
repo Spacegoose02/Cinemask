@@ -6,6 +6,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Added
 - **Specials.** A show's specials (season 0) are now listed with its episodes, unmonitored. Monitor them one at a time, or pick season 0 with the show's seasons, and they're searched for, downloaded and imported like any other episode.
 - **Weekly email.** With email set up, people can turn on a weekly email in Account → Notifications: what arrived on the servers this week, what's coming out in the next, and any movie nights. Kids profiles only hear about titles for their age. Settings → Notifications picks the day and hour, and "Send me this week's" shows what it looks like.
+- **TRaSH Guides.** Settings → Quality can make a profile from one of the TRaSH Guides' recommended profiles (for movies or shows), with their qualities, custom formats and scores, or bring an existing profile in line with one. Profiles that follow the guides are synced every Sunday (or with Sync now), so new release groups and formats arrive by themselves. Formats Cinemask can't check, such as "original language", are left out and listed.
 
 ## [0.34.0] - 2026-11-08
 

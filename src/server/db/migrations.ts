@@ -759,6 +759,16 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE users ADD COLUMN language TEXT;
     `,
   },
+  {
+    id: 28,
+    name: 'trash guides',
+    sql: `
+      ALTER TABLE custom_formats ADD COLUMN trash_id TEXT;
+      ALTER TABLE quality_profiles ADD COLUMN trash_app TEXT CHECK (trash_app IN ('radarr','sonarr'));
+      ALTER TABLE quality_profiles ADD COLUMN trash_id TEXT;
+      ALTER TABLE quality_profiles ADD COLUMN trash_synced_at INTEGER;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

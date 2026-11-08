@@ -20,6 +20,7 @@ import { defaultProfileId, getProfile, listProfiles } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
 import { formatBody, getFormat, listFormats, PRESETS } from './formats.js';
+import { applyGuideProfile, forgetGuideCache, formatsFor, loadGuide, syncLinkedProfiles } from './trash.js';
 import { autoSearch, confirmHeld, defaultMaxSize, explainedSearch, grab, MANUAL_TYPES, manualSearch, rememberedManual, rememberedRelease, searchMonitored, upgradeSearch } from './search.js';
 import { openSecret, sealSecret } from './secrets.js';
 import { failDownload, liveStats, refreshMediaServers } from './tracker.js';
@@ -717,6 +718,42 @@ export async function arrRoutes(app: FastifyInstance) {
     }
     audit(db(), req, 'format.presets', { details: { added, profiles: profileIds.length } });
     return { added, formats: listFormats(ctx) };
+  });
+
+  // ---------------- TRaSH Guides ----------------
+  const trashApp = z.enum(['radarr', 'sonarr']);
+  /** The guides' quality profiles for movies (Radarr's) or shows (Sonarr's). */
+  app.get('/api/trash/:app/profiles', { config: { access: 'admin' } }, async (req) => {
+    const { app: which } = parse(z.object({ app: trashApp }), req.params);
+    const guide = await upstream(() => loadGuide(which));
+    return guide.profiles.map((p) => ({ id: p.trash_id, name: p.name, description: (p.trash_description ?? '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ''), formats: formatsFor(guide, p).length }));
+  });
+
+  /** Makes a profile from a guide profile, or brings an existing profile in line with one and links it for weekly syncs. */
+  app.post('/api/trash/apply', { config: { access: 'admin' } }, async (req) => {
+    const b = parse(z.object({ app: trashApp, trashId: z.string().regex(/^[a-f0-9]{32}$/), profileId: z.number().int().positive().nullable().default(null) }), req.body);
+    if (b.profileId && !getProfile(ctx, b.profileId)) throw notFound('Unknown quality profile');
+    const guide = await upstream(() => loadGuide(b.app));
+    const result = applyGuideProfile(ctx, b.app, guide, b.trashId, b.profileId);
+    audit(db(), req, 'profile.trash_applied', { target: getProfile(ctx, result.profileId)!.name, details: { app: b.app, trashId: b.trashId, formats: result.formats, skipped: result.skipped.length } });
+    return { ...result, profile: getProfile(ctx, result.profileId) };
+  });
+
+  /** Stops a profile following the guides. It keeps its current settings and formats. */
+  app.post('/api/trash/unlink', { config: { access: 'admin' } }, async (req) => {
+    const { profileId } = parse(z.object({ profileId: z.number().int().positive() }), req.body);
+    if (!getProfile(ctx, profileId)) throw notFound('Unknown quality profile');
+    db().update(qualityProfiles).set({ trashApp: null, trashId: null, trashSyncedAt: null }).where(eq(qualityProfiles.id, profileId)).run();
+    audit(db(), req, 'profile.trash_unlinked', { target: String(profileId) });
+    return getProfile(ctx, profileId);
+  });
+
+  /** Syncs every linked profile now, instead of waiting for the weekly run. */
+  app.post('/api/trash/sync', { config: { access: 'admin' } }, async (req) => {
+    forgetGuideCache();
+    const synced = await upstream(() => syncLinkedProfiles(ctx));
+    audit(db(), req, 'profile.trash_synced', { details: { synced } });
+    return { synced };
   });
 
   // ---------------- Indexers ----------------

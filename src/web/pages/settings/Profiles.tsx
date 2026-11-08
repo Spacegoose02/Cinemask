@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Alert, Field, Toggle } from '../../components/ui';
 import { api } from '../../lib/api';
 import { CustomFormats, useFormats } from './CustomFormats';
+import { TrashGuides } from './TrashGuides';
 
 const QUALITIES = [
   'SDTV', 'DVD', 'WEBRip-480p', 'WEBDL-480p', 'HDTV-720p', 'WEBRip-720p', 'WEBDL-720p', 'Bluray-720p', 'HDTV-1080p', 'WEBRip-1080p', 'WEBDL-1080p', 'Bluray-1080p',
@@ -23,6 +24,7 @@ interface Profile {
   formatScores: Record<string, number>;
   minFormatScore: number;
   upgradeUntilFormatScore: number;
+  trash?: { app: string; id: string; syncedAt: number | null } | null;
 }
 
 export function ProfileSettings() {
@@ -54,6 +56,7 @@ export function ProfileSettings() {
               <div>
                 <div className="font-medium">{p.name}</div>
                 <div className="text-xs text-muted">
+                  {p.trash ? 'Follows the TRaSH Guides · ' : ''}
                   {p.qualities.length} qualities · stop upgrading at {p.cutoff} · {LANGUAGES.find((l) => l[0] === p.language)?.[1] ?? p.language}
                 </div>
               </div>
@@ -160,6 +163,7 @@ export function ProfileSettings() {
           </div>
         </section>
       )}
+      <TrashGuides profiles={(list.data ?? []).map((p) => ({ id: p.id, name: p.name, trash: p.trash ?? null }))} />
       <CustomFormats profiles={list.data ?? []} />
     </div>
   );
