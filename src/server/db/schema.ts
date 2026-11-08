@@ -49,6 +49,9 @@ export const users = sqliteTable('users', {
   totpLastStep: integer('totp_last_step'),
   /** JSON string[] of sha256 hashes of unused recovery codes. */
   recoveryCodes: text('recovery_codes'),
+  /** The person's Trakt tokens (sealed JSON) and username, from linking in Account. */
+  traktToken: text('trakt_token'),
+  traktUser: text('trakt_user'),
 });
 
 /** Passkeys (WebAuthn credentials) people sign in with. See auth/twofactor.ts. */
@@ -450,7 +453,7 @@ export const blocklist = sqliteTable('blocklist', {
   createdAt: integer('created_at').notNull(),
 });
 
-export const LIST_SOURCES = ['mdblist', 'tmdb_list', 'tmdb_discover', 'csv'] as const;
+export const LIST_SOURCES = ['mdblist', 'tmdb_list', 'tmdb_discover', 'csv', 'trakt'] as const;
 export type ListSource = (typeof LIST_SOURCES)[number];
 
 export const lists = sqliteTable('lists', {
@@ -754,7 +757,7 @@ export const issues = sqliteTable(
   (t) => [index('issues_status_idx').on(t.status), index('issues_title_idx').on(t.kind, t.tmdbId)],
 );
 
-export const WATCHLIST_SOURCES = ['plex', 'jellyfin'] as const;
+export const WATCHLIST_SOURCES = ['plex', 'jellyfin', 'trakt'] as const;
 
 /** Titles seen on a user's Plex watchlist or Jellyfin favourites, so each is only requested once. */
 export const watchlistItems = sqliteTable(

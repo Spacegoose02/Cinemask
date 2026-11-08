@@ -124,6 +124,14 @@ export const SETTINGS = {
     }),
     secrets: ['tmdbApiKey', 'mdblistApiKey'],
   },
+  /** A Trakt app (trakt.tv/oauth/applications) so people can link Trakt for watchlists and lists. */
+  trakt: {
+    schema: z.object({
+      clientId: z.string().trim().max(200).regex(/^[\w-]*$/, 'The client id from your Trakt app').default(''),
+      clientSecret: z.string().max(200).default(''),
+    }),
+    secrets: ['clientSecret'],
+  },
   library: {
     schema: z.object({
       /** Periodically scan Plex/Jellyfin/BingeBandit to learn what is on the server. */

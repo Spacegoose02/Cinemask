@@ -8,6 +8,7 @@ import type { TmdbSearchResult } from '../integrations/tmdb.js';
 import { monitorTitle } from '../arr/monitor.js';
 import { defaultProfileId, getProfile } from '../arr/profiles.js';
 import { autoSearch } from '../arr/search.js';
+import { traktList, traktPath } from '../integrations/trakt.js';
 
 export interface ListItem {
   kind: MediaKind;
@@ -37,6 +38,8 @@ export function parseListUrl(url: string): { source: ListSource; config: Record<
     const id = Number.parseInt(parts[1], 10);
     if (id > 0) return { source: 'tmdb_list', config: { id } };
   }
+  const trakt = traktPath(u);
+  if (trakt) return { source: 'trakt', config: { path: trakt } };
   return null;
 }
 
@@ -80,6 +83,12 @@ export async function fetchItems(ctx: AppContext, list: Pick<ListRow, 'source' |
       const params = await discoverParams(ctx, f);
       const results = await Promise.all(Array.from({ length: pages }, (_, i) => tmdb.discover(f.kind, { ...params, page: i + 1 })));
       items = results.flatMap((r) => r.results.map((x) => fromTmdb(x, kind)).filter((i): i is ListItem => i !== null));
+      break;
+    }
+    case 'trakt': {
+      const path = String(cfg.path ?? '');
+      if (!traktPath(new URL(`https://trakt.tv${path.replace(/\/items$/, '')}`))) throw new Error('Not a Trakt list');
+      items = (await traktList(ctx, path)).filter((i): i is typeof i & { tmdbId: number } => i.tmdbId !== null).map((i) => ({ kind: i.kind, tmdbId: i.tmdbId, title: i.title, year: i.year, posterPath: null }));
       break;
     }
     case 'csv':

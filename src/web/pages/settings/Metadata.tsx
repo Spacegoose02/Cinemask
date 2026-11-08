@@ -5,7 +5,8 @@ import { TestButton } from './TestButton';
 
 export function MetadataSettings() {
   const s = useSettingsSection('metadata');
-  if (s.loading) return null;
+  const trakt = useSettingsSection('trakt');
+  if (s.loading || trakt.loading) return null;
   return (
     <div className="max-w-2xl space-y-6">
       <section className="card space-y-4">
@@ -23,6 +24,21 @@ export function MetadataSettings() {
           <SecretInput isSet={s.secretsSet['mdblistApiKey']!} value={s.secrets['mdblistApiKey']} onChange={(v) => s.setSecret('mdblistApiKey', v)} />
         </Field>
         <TestButton service="mdblist" beforeTest={s.save} />
+      </section>
+      <section className="card space-y-4">
+        <h2 className="font-semibold">Trakt</h2>
+        <p className="text-sm text-muted">
+          Optional. Lets people link Trakt in Account so their Trakt watchlist becomes requests, and lets managers add Trakt lists and charts on Lists. Make an app at trakt.tv → Settings → Your API Apps with the redirect URI <span className="font-mono">urn:ietf:wg:oauth:2.0:oob</span>, then copy its client id and secret here.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Client id">
+            <input className="input" autoComplete="off" value={trakt.values.clientId} onChange={(e) => trakt.set('clientId', e.target.value.trim())} />
+          </Field>
+          <Field label="Client secret">
+            <SecretInput isSet={trakt.secretsSet['clientSecret']!} value={trakt.secrets['clientSecret']} onChange={(v) => trakt.setSecret('clientSecret', v)} />
+          </Field>
+        </div>
+        <SaveBar onSave={trakt.save} saving={trakt.saving} message={trakt.message} />
       </section>
       <section className="card space-y-4">
         <h2 className="font-semibold">Region and language</h2>

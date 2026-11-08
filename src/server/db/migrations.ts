@@ -789,6 +789,50 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       CREATE INDEX passkeys_user_idx ON passkeys(user_id);
     `,
   },
+  {
+    id: 30,
+    name: 'trakt',
+    // lists and watchlist_items are rebuilt for their source CHECKs; list_items would cascade away, so they're set aside.
+    sql: `
+      ALTER TABLE users ADD COLUMN trakt_token TEXT;
+      ALTER TABLE users ADD COLUMN trakt_user TEXT;
+      CREATE TABLE list_items_keep AS SELECT * FROM list_items;
+      CREATE TABLE lists_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('mdblist','tmdb_list','tmdb_discover','csv','trakt')),
+        config TEXT NOT NULL DEFAULT '{}',
+        kind TEXT CHECK (kind IN ('movie','show')),
+        auto_add INTEGER NOT NULL DEFAULT 0,
+        profile_id INTEGER REFERENCES quality_profiles(id) ON DELETE SET NULL,
+        search_on_add INTEGER NOT NULL DEFAULT 1,
+        sync_hours INTEGER NOT NULL DEFAULT 12,
+        last_sync_at INTEGER,
+        last_error TEXT,
+        item_count INTEGER NOT NULL DEFAULT 0,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      INSERT INTO lists_new SELECT * FROM lists;
+      DROP TABLE lists;
+      ALTER TABLE lists_new RENAME TO lists;
+      INSERT INTO list_items SELECT * FROM list_items_keep;
+      DROP TABLE list_items_keep;
+      CREATE TABLE watchlist_items_new (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        source TEXT NOT NULL CHECK (source IN ('plex','jellyfin','trakt')),
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        result TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, source, kind, tmdb_id)
+      );
+      INSERT INTO watchlist_items_new SELECT * FROM watchlist_items;
+      DROP TABLE watchlist_items;
+      ALTER TABLE watchlist_items_new RENAME TO watchlist_items;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;
