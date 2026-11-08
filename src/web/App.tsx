@@ -31,6 +31,7 @@ import { StoragePage } from './pages/Storage';
 import { FileDetails } from './components/FileDetails';
 import { SettingsPage } from './pages/Settings';
 import { SetupPage } from './pages/Setup';
+import { InvitePage } from './pages/Invite';
 
 const panels = (m: MediaDetail) => (
   <>
@@ -67,6 +68,7 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage status={status.data!} />} />
+        <Route path="/invite/:code" element={<InvitePage />} />
         {/* Remember where they were going, so a shared link still opens after signing in. */}
         <Route path="*" element={<Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />} />
       </Routes>
@@ -76,6 +78,7 @@ export function App() {
     <Layout>
       <Routes>
         <Route path="/login" element={<Navigate to={afterSignIn(location.state)} replace />} />
+        <Route path="/invite/:code" element={<Navigate to="/" replace />} />
         <Route path="/" element={<HomePage />} />
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/search" element={<SearchPage />} />

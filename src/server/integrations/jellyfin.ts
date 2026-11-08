@@ -135,6 +135,12 @@ export class JellyfinClient implements MediaServerClient {
     return res;
   }
 
+  /** Makes a Jellyfin account (for invites). Returns its id. */
+  async createUser(name: string, password: string): Promise<string> {
+    const r = (await (await this.send('POST', '/Users/New', JSON.stringify({ Name: name, Password: password }), 'application/json')).json()) as { Id: string };
+    return r.Id;
+  }
+
   async createCollection(name: string, ids: string[]): Promise<string> {
     const qs = new URLSearchParams({ Name: name, Ids: ids.join(',') });
     const r = (await (await this.send('POST', `/Collections?${qs.toString()}`)).json()) as { Id: string };

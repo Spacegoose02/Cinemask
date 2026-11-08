@@ -833,6 +833,36 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE watchlist_items_new RENAME TO watchlist_items;
     `,
   },
+  {
+    id: 31,
+    name: 'invites',
+    sql: `
+      CREATE TABLE invites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code_hash TEXT NOT NULL UNIQUE,
+        code TEXT NOT NULL,
+        label TEXT,
+        role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','manager','admin')),
+        max_age INTEGER,
+        can_request_4k INTEGER NOT NULL DEFAULT 0,
+        uses_left INTEGER,
+        used INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER,
+        plex_share INTEGER NOT NULL DEFAULT 0,
+        plex_sections TEXT,
+        jellyfin_account INTEGER NOT NULL DEFAULT 0,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE invite_uses (
+        invite_id INTEGER NOT NULL REFERENCES invites(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        used_at INTEGER NOT NULL,
+        note TEXT,
+        PRIMARY KEY (invite_id, user_id)
+      );
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

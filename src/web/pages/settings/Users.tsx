@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Alert, Field } from '../../components/ui';
 import { api, formatDate, type Role } from '../../lib/api';
+import { Invites } from './Invites';
 import { useAuth } from '../../lib/auth';
 
 interface UserRow {
@@ -98,6 +99,7 @@ export function UserSettings() {
   return (
     <div className="space-y-6">
       {error && <Alert>{error}</Alert>}
+      <Invites />
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead className="text-left text-muted">

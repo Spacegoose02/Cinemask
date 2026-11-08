@@ -45,6 +45,12 @@ export class PlexClient implements MediaServerClient {
     return { name: id.friendlyName, version: id.version, machineId: id.machineIdentifier };
   }
 
+  /** The server's movie and show libraries, for picking which to share in an invite. */
+  async sections(): Promise<{ key: string; title: string; type: string }[]> {
+    const r = await this.get<{ Directory?: { key: string; type: string; title?: string }[] }>('/library/sections');
+    return (r.Directory ?? []).map((d) => ({ key: String(d.key), title: d.title ?? d.key, type: d.type }));
+  }
+
   async fetchLibrary(): Promise<ServerItem[]> {
     const sections = await this.get<{ Directory?: { key: string; type: string; title?: string }[] }>('/library/sections');
     const items: ServerItem[] = [];

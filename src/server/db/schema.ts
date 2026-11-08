@@ -54,6 +54,45 @@ export const users = sqliteTable('users', {
   traktUser: text('trakt_user'),
 });
 
+/** Invite links that let someone make their own account (auth/invites.ts). Only a hash of the code is kept. */
+export const invites = sqliteTable('invites', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  codeHash: text('code_hash').notNull().unique(),
+  /** The code itself, sealed, so the link can be copied again later. */
+  code: text('code').notNull(),
+  label: text('label'),
+  role: text('role', { enum: ROLES }).notNull().default('user'),
+  maxAge: integer('max_age'),
+  canRequest4k: integer('can_request_4k', { mode: 'boolean' }).notNull().default(false),
+  /** How many accounts it can still make; null means no limit. */
+  usesLeft: integer('uses_left'),
+  used: integer('used').notNull().default(0),
+  expiresAt: integer('expires_at'),
+  /** Share the Plex server with people who join with Plex: null libraries means all of them (JSON string[] of section keys). */
+  plexShare: integer('plex_share', { mode: 'boolean' }).notNull().default(false),
+  plexSections: text('plex_sections'),
+  /** Also make a Jellyfin account with the same name and password. */
+  jellyfinAccount: integer('jellyfin_account', { mode: 'boolean' }).notNull().default(false),
+  createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const inviteUses = sqliteTable(
+  'invite_uses',
+  {
+    inviteId: integer('invite_id')
+      .notNull()
+      .references(() => invites.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    usedAt: integer('used_at').notNull(),
+    /** Anything that didn't work out (a Plex share or Jellyfin account), for the admin. */
+    note: text('note'),
+  },
+  (t) => [primaryKey({ columns: [t.inviteId, t.userId] })],
+);
+
 /** Passkeys (WebAuthn credentials) people sign in with. See auth/twofactor.ts. */
 export const passkeys = sqliteTable(
   'passkeys',
