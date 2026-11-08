@@ -414,13 +414,13 @@ export async function twoFactorRoutes(app: FastifyInstance) {
     const { rpID } = relyingParty(ctx, req);
     const allow = userId === null ? [] : ctx.db.select().from(passkeys).where(eq(passkeys.userId, userId)).all();
     const options = await generateAuthenticationOptions({ rpID, userVerification: 'required', allowCredentials: allow.map((k) => ({ id: k.id, transports: k.transports ? (JSON.parse(k.transports) as AuthenticatorTransportFuture[]) : undefined })) });
-    const state = putState(ctx, 'passkey-auth', { userId, challenge: options.challenge, mfa: b.token ?? null });
+    const state = putState(ctx, 'passkey-auth', { userId, challenge: options.challenge, pendingLogin: b.token ?? null });
     return { state, options };
   });
 
   app.post('/api/auth/passkey', { config: { access: 'public', ...rate } }, async (req, reply) => {
     const b = parse(z.object({ state: z.string().max(100), response: passkeyResponse }), req.body);
-    const pending = getState<{ userId: number | null; challenge: string; mfa: string | null }>(ctx, 'passkey-auth', b.state);
+    const pending = getState<{ userId: number | null; challenge: string; pendingLogin: string | null }>(ctx, 'passkey-auth', b.state);
     dropState(ctx, b.state);
     if (!pending) throw new HttpError(401, 'Try again: that took too long', 'invalid_credentials');
     const userId = await verifyPasskey(ctx, req, b.response as unknown as AuthenticationResponseJSON, pending.challenge, pending.userId);
@@ -428,8 +428,8 @@ export async function twoFactorRoutes(app: FastifyInstance) {
       audit(ctx.db, req, 'auth.passkey_failed', { user: null });
       throw new HttpError(401, "That passkey wasn't accepted", 'invalid_credentials');
     }
-    if (pending.mfa) dropState(ctx, pending.mfa);
-    return finish(req, reply, userId, pending.mfa ? 'local+passkey' : 'passkey');
+    if (pending.pendingLogin) dropState(ctx, pending.pendingLogin);
+    return finish(req, reply, userId, pending.pendingLogin ? 'local+passkey' : 'passkey');
   });
 
   // ---- admins: help someone who lost their phone
