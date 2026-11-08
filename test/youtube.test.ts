@@ -123,6 +123,8 @@ describe("YouTube subscriptions", () => {
     expect(nfo).toContain("<aired>2024-03-15</aired>");
     // Arguments go after "--", never through a shell, and odd ids from the listing are dropped.
     expect(calls().every((a) => a[a.length - 2] === "--")).toBe(true);
+    // YouTube needs a JavaScript runtime to serve most videos; yt-dlp is pointed at Node.
+    expect(calls().every((a) => a[0] === "--js-runtimes" && a[1] === `node:${process.execPath}`)).toBe(true);
     expect(JSON.stringify(calls())).not.toContain("--exec");
   });
 

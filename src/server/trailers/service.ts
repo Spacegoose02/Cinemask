@@ -129,6 +129,14 @@ export function ytDlpBinary(ctx: AppContext): string {
 }
 
 /**
+ * Arguments every yt-dlp run starts with. YouTube now hides most videos (made-for-kids ones among
+ * them) from clients that can't solve its JavaScript challenges, and yt-dlp only looks for Deno
+ * unless told otherwise, so "This video is not available" came back for every video. Node is
+ * already in the image (it runs Cinemask), so yt-dlp is pointed at this very binary.
+ */
+export const ytDlpBaseArgs = (): string[] => ['--js-runtimes', `node:${process.execPath}`];
+
+/**
  * Downloads a YouTube or Vimeo trailer with yt-dlp into the title's folder. Runs in the background;
  * progress is read with trailerJob(). The video id is validated and passed as an argument,
  * never through a shell.
@@ -145,6 +153,7 @@ export function downloadTrailer(ctx: AppContext, row: MonitoredRow, key: string,
   fs.mkdirSync(dir, { recursive: true });
   const h = s.trailerMaxHeight;
   const args = [
+    ...ytDlpBaseArgs(),
     '--no-playlist',
     '--no-progress',
     '--restrict-filenames',
