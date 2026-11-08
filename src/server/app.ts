@@ -36,6 +36,7 @@ import { registerGuard } from './auth/guard.js';
 import { oidcRoutes } from './auth/oidc.js';
 import { plexAuthRoutes } from './auth/plex.js';
 import { authRoutes } from './auth/routes.js';
+import { twoFactorRoutes } from './auth/twofactor.js';
 import { apiKeyRoutes } from './auth/apikey-routes.js';
 import { backupRoutes } from './backup/routes.js';
 import { BackupService, writeBackupArchive } from './backup/service.js';
@@ -141,6 +142,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
 
   app.get('/api/health', { config: { access: 'public' } }, async () => ({ status: 'ok' }));
   await app.register(authRoutes);
+  await app.register(twoFactorRoutes);
   await app.register(apiKeyRoutes);
   await app.register(oidcRoutes);
   await app.register(plexAuthRoutes);

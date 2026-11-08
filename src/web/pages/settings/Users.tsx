@@ -20,6 +20,7 @@ interface UserRow {
   maxAge: number | null;
   jellyfinUserId: string | null;
   hasPassword: boolean;
+  twoFactor: boolean;
   linked: { oidc: boolean; plex: boolean };
   locked: boolean;
   lastLoginAt: number | null;
@@ -175,7 +176,7 @@ export function UserSettings() {
                       </label>
                     )}
                   </td>
-                  <td className="p-3 text-xs text-muted">{[u.hasPassword && 'password', u.linked.oidc && 'SSO', u.linked.plex && 'Plex'].filter(Boolean).join(', ') || 'none'}</td>
+                  <td className="p-3 text-xs text-muted">{[u.hasPassword && 'password', u.twoFactor && 'two-factor', u.linked.oidc && 'SSO', u.linked.plex && 'Plex'].filter(Boolean).join(', ') || 'none'}</td>
                   <td className="p-3 text-xs text-muted">{formatDate(u.lastLoginAt)}</td>
                   <td className="p-3">
                     {editable && (
@@ -188,6 +189,11 @@ export function UserSettings() {
                         <button className="btn-secondary" onClick={() => resetPassword(u)}>
                           Reset password
                         </button>
+                        {u.twoFactor && (
+                          <button className="btn-secondary" onClick={() => confirm(`Turn off two-factor sign-in for ${u.username}? They can set it up again from Account.`) && void run(() => api(`/api/users/${u.id}/2fa`, { method: 'DELETE' }))}>
+                            Reset two-factor
+                          </button>
+                        )}
                         <button className="btn-secondary" onClick={() => patch(u.id, { disabled: !u.disabled })}>
                           {u.disabled ? 'Enable' : 'Disable'}
                         </button>

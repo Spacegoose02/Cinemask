@@ -43,7 +43,32 @@ export const users = sqliteTable('users', {
   maxAge: integer('max_age'),
   /** Interface language (src/web/lib/i18n.ts). Null follows the browser. */
   language: text('language'),
+  /** Authenticator app secret (sealed with the instance key); null when not set up. See auth/twofactor.ts. */
+  totpSecret: text('totp_secret'),
+  /** The last 30-second step a code was accepted for, so a code can't be used twice. */
+  totpLastStep: integer('totp_last_step'),
+  /** JSON string[] of sha256 hashes of unused recovery codes. */
+  recoveryCodes: text('recovery_codes'),
 });
+
+/** Passkeys (WebAuthn credentials) people sign in with. See auth/twofactor.ts. */
+export const passkeys = sqliteTable(
+  'passkeys',
+  {
+    /** The credential id, base64url. */
+    id: text('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    publicKey: text('public_key').notNull(), // base64url COSE key
+    counter: integer('counter').notNull().default(0),
+    transports: text('transports'), // JSON string[]
+    name: text('name').notNull(),
+    createdAt: integer('created_at').notNull(),
+    lastUsedAt: integer('last_used_at'),
+  },
+  (t) => [index('passkeys_user_idx').on(t.userId)],
+);
 
 export const sessions = sqliteTable(
   'sessions',

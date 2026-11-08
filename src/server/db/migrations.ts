@@ -769,6 +769,26 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE quality_profiles ADD COLUMN trash_synced_at INTEGER;
     `,
   },
+  {
+    id: 29,
+    name: 'two-factor sign-in',
+    sql: `
+      ALTER TABLE users ADD COLUMN totp_secret TEXT;
+      ALTER TABLE users ADD COLUMN totp_last_step INTEGER;
+      ALTER TABLE users ADD COLUMN recovery_codes TEXT;
+      CREATE TABLE passkeys (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        public_key TEXT NOT NULL,
+        counter INTEGER NOT NULL DEFAULT 0,
+        transports TEXT,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER
+      );
+      CREATE INDEX passkeys_user_idx ON passkeys(user_id);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;
