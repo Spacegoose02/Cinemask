@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { t } from '../lib/i18n';
 
 export function SearchBar() {
   const [q, setQ] = useState('');
@@ -13,7 +14,7 @@ export function SearchBar() {
       }}
       className="w-full max-w-xl"
     >
-      <input className="input" type="search" placeholder="Search your library and new releases…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search" />
+      <input className="input" type="search" placeholder={t('Search your library and new releases…')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search')} />
     </form>
   );
 }

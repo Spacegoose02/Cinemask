@@ -7,6 +7,7 @@ import { api, formatDate, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { usePageState } from '../lib/history';
 import { mediaPath, poster, type MediaKind } from '../lib/media';
+import { t, useT } from '../lib/i18n';
 
 interface RequestRow {
   id: number;
@@ -42,25 +43,26 @@ interface Progress {
 }
 
 function formatEta(seconds: number) {
-  if (seconds < 90) return 'about a minute';
+  if (seconds < 90) return t('about a minute');
   const min = Math.round(seconds / 60);
-  if (min < 90) return `about ${min} minutes`;
+  if (min < 90) return t('about {n} minutes', { n: min });
   const h = Math.round(min / 60);
-  return h < 36 ? `about ${h} hours` : `about ${Math.round(h / 24)} days`;
+  return h < 36 ? t('about {n} hours', { n: h }) : t('about {n} days', { n: Math.round(h / 24) });
 }
 
 /** Where an approved request has got to, in words, with a bar while it downloads. */
 function ProgressLine({ p }: { p: Progress }) {
-  const eps = p.total ? ` · ${p.have} of ${p.total} episodes ready` : '';
+  const eps = p.total ? ` · ${t('{have} of {total} episodes ready', { have: p.have ?? 0, total: p.total })}` : '';
+  const percent = Math.round((p.percent ?? 0) * 100);
   const text: Record<Progress['state'], string> = {
-    waiting: 'Approved, getting ready',
-    unreleased: p.releaseDate ? `Not out yet, expected ${formatDate(Date.parse(p.releaseDate))}` : 'Not out yet',
-    searching: 'Looking for a copy',
-    queued: 'Found, waiting to download',
-    downloading: `Downloading ${Math.round((p.percent ?? 0) * 100)}%${p.eta ? `, ${formatEta(p.eta)} left` : ''}`,
-    importing: 'Downloaded, adding to the library',
-    partial: 'Some episodes ready, looking for the rest',
-    ready: 'Ready to watch',
+    waiting: t('Approved, getting ready'),
+    unreleased: p.releaseDate ? t('Not out yet, expected {date}', { date: formatDate(Date.parse(p.releaseDate)) }) : t('Not out yet'),
+    searching: t('Looking for a copy'),
+    queued: t('Found, waiting to download'),
+    downloading: p.eta ? t('Downloading {percent}%, {eta} left', { percent, eta: formatEta(p.eta) }) : t('Downloading {percent}%', { percent }),
+    importing: t('Downloaded, adding to the library'),
+    partial: t('Some episodes ready, looking for the rest'),
+    ready: t('Ready to watch'),
   };
   return (
     <div className="mt-1 text-xs text-muted">
@@ -75,6 +77,13 @@ function ProgressLine({ p }: { p: Progress }) {
   );
 }
 
+const STATUS_TEXT: Record<RequestRow['status'], string> = {
+  pending: 'Waiting for approval',
+  approved: 'Approved',
+  declined: 'Declined',
+  available: 'Available',
+};
+
 const STATUS_STYLE: Record<RequestRow['status'], string> = {
   pending: 'text-accent',
   approved: 'text-text',
@@ -85,6 +94,7 @@ const STATUS_STYLE: Record<RequestRow['status'], string> = {
 export function RequestsPage() {
   const { me } = useAuth();
   const qc = useQueryClient();
+  useT();
   const isManager = hasRole(me, 'manager');
   const [status, setStatus] = usePageState('status', isManager ? 'pending' : 'all');
   const [error, setError] = useState('');
@@ -116,18 +126,18 @@ export function RequestsPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">{isManager ? 'Requests' : 'My requests'}</h1>
-        <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
-          <option value="all">All</option>
-          <option value="pending">Waiting for approval</option>
-          <option value="approved">Approved</option>
-          <option value="available">Available</option>
-          <option value="declined">Declined</option>
+        <h1 className="text-2xl font-semibold">{t(isManager ? 'Requests' : 'My requests')}</h1>
+        <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label={t('Status')}>
+          <option value="all">{t('All')}</option>
+          <option value="pending">{t('Waiting for approval')}</option>
+          <option value="approved">{t('Approved')}</option>
+          <option value="available">{t('Available')}</option>
+          <option value="declined">{t('Declined')}</option>
         </select>
       </div>
       {error && <Alert>{error}</Alert>}
       <LoadError queries={[list]} />
-      {list.data?.length === 0 && <div className="card text-sm text-muted">No requests here. Find something with the search bar and press Request.</div>}
+      {list.data?.length === 0 && <div className="card text-sm text-muted">{t('No requests here. Find something with the search bar and press Request.')}</div>}
       <ul className="space-y-3">
         {list.data?.map((r) => (
           <li key={r.id} className="card flex flex-wrap items-center gap-4 p-3">
@@ -139,16 +149,16 @@ export function RequestsPage() {
                 {r.title} {r.year && <span className="text-muted">({r.year})</span>}
               </Link>
               <div className="text-xs text-muted">
-                {r.kind === 'movie' ? 'Movie' : `Series${r.seasons ? ` · seasons ${(JSON.parse(r.seasons) as number[]).join(', ')}` : ''}`}
+                {r.kind === 'movie' ? t('Movie') : `${t('Series')}${r.seasons ? ` · ${t('seasons {list}', { list: (JSON.parse(r.seasons) as number[]).join(', ') })}` : ''}`}
                 {r.fourK && <span className="ml-1 rounded border border-accent px-1 text-[10px] font-semibold text-accent">4K</span>}
-                {r.upgrade && <span className="ml-1 rounded border border-accent px-1 text-[10px] font-semibold text-accent">Upgrade</span>} · requested by {r.requestedByName}
-                {r.followers > 0 && ` and ${r.followers} other${r.followers === 1 ? '' : 's'}`} · {formatDate(r.createdAt)}
+                {r.upgrade && <span className="ml-1 rounded border border-accent px-1 text-[10px] font-semibold text-accent">{t('Upgrade')}</span>} · {t('requested by {name}', { name: r.requestedByName ?? '' })}
+                {r.followers > 0 && ` ${r.followers === 1 ? t('and 1 other') : t('and {n} others', { n: r.followers })}`} · {formatDate(r.createdAt)}
               </div>
               {r.note && <div className="text-sm italic text-muted">“{r.note}”</div>}
-              <div className={`text-sm capitalize ${STATUS_STYLE[r.status]}`}>
-                {r.status}
-                {r.decidedByName && r.status !== 'pending' && <span className="normal-case text-muted"> by {r.decidedByName}</span>}
-                {r.reason && <span className="normal-case text-muted">: {r.reason}</span>}
+              <div className={`text-sm ${STATUS_STYLE[r.status]}`}>
+                {t(STATUS_TEXT[r.status])}
+                {r.decidedByName && r.status !== 'pending' && <span className="text-muted"> {t('by {name}', { name: r.decidedByName })}</span>}
+                {r.reason && <span className="text-muted">: {r.reason}</span>}
               </div>
               {r.progress && r.status === 'approved' && <ProgressLine p={r.progress} />}
             </div>
@@ -157,11 +167,11 @@ export function RequestsPage() {
                 <>
                   <select
                     className="input w-auto"
-                    aria-label="Quality profile"
+                    aria-label={t('Quality profile')}
                     value={profileFor[r.id] ?? ''}
                     onChange={(e) => setProfileFor({ ...profileFor, [r.id]: Number(e.target.value) })}
                   >
-                    <option value="">Default quality</option>
+                    <option value="">{t('Default quality')}</option>
                     {profiles.data?.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name}
@@ -172,32 +182,32 @@ export function RequestsPage() {
                   <button
                     className="btn-primary"
                     disabled={needsRoot(r)}
-                    title={needsRoot(r) ? 'Choose a library first' : undefined}
+                    title={needsRoot(r) ? t('Choose a library first') : undefined}
                     onClick={() => act(() => api(`/api/requests/${r.id}/approve`, { body: { profileId: profileFor[r.id] || undefined, rootId: rootFor[r.id] || undefined } }))}
                   >
-                    Approve
+                    {t('Approve')}
                   </button>
                   <button
                     className="btn-danger"
                     onClick={() => {
-                      const reason = prompt('Reason (optional):');
+                      const reason = prompt(t('Reason (optional):'));
                       // Cancel means don't decline; OK with nothing typed declines without a reason.
                       if (reason === null) return;
                       void act(() => api(`/api/requests/${r.id}/decline`, { body: { reason: reason.trim() || undefined } }));
                     }}
                   >
-                    Decline
+                    {t('Decline')}
                   </button>
                 </>
               )}
               {r.following && (
                 <button className="btn-secondary" onClick={() => act(() => api(`/api/requests/${r.id}/follow`, { method: 'DELETE' }))}>
-                  Stop following
+                  {t('Stop following')}
                 </button>
               )}
               {(isManager || (r.requestedBy === me?.id && r.status === 'pending')) && (
-                <button className="btn-secondary" onClick={() => confirm('Remove this request?') && act(() => api(`/api/requests/${r.id}`, { method: 'DELETE' }))}>
-                  {r.status === 'pending' && !isManager ? 'Cancel' : 'Remove'}
+                <button className="btn-secondary" onClick={() => confirm(t('Remove this request?')) && act(() => api(`/api/requests/${r.id}`, { method: 'DELETE' }))}>
+                  {t(r.status === 'pending' && !isManager ? 'Cancel' : 'Remove')}
                 </button>
               )}
             </div>

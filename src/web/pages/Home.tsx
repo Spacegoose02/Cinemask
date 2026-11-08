@@ -10,6 +10,7 @@ import { api, localDay } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { mediaPath, poster, type MediaCardData } from '../lib/media';
 import { nightWhen, useMovieNights } from './MovieNights';
+import { t } from '../lib/i18n';
 
 type HomeRow =
   | { type: 'featured' | 'upcoming' | 'requests' | 'collections' | 'airing_next' | 'airing_recent' | 'family_favorites' | 'because_you_liked' | 'movie_nights' }
@@ -112,15 +113,15 @@ function Featured() {
       <img src={poster(f.backdropPath, 'w780')!} alt="" className="absolute inset-0 h-full w-full object-cover" />
       <div className="absolute inset-0 bg-gradient-to-r from-bg via-bg/80 to-transparent" />
       <div className="relative max-w-xl space-y-3 p-6 md:p-10">
-        <div className="text-xs uppercase tracking-wider text-accent">Trending this week</div>
+        <div className="text-xs uppercase tracking-wider text-accent">{t('Trending this week')}</div>
         <h2 className="text-3xl font-bold">{f.title}</h2>
         {f.overview && <p className="line-clamp-3 text-sm text-text/90">{f.overview}</p>}
         <div className="flex items-center gap-2">
           <Link to={mediaPath(f.kind, f.tmdbId!)} className="btn-primary">
-            View details
+            {t('View details')}
           </Link>
           {items.length > 1 && (
-            <div className="ml-2 flex gap-1.5" role="tablist" aria-label="Featured titles">
+            <div className="ml-2 flex gap-1.5" role="tablist" aria-label={t('Featured titles')}>
               {items.map((x, n) => (
                 <button key={x.tmdbId} role="tab" aria-selected={n === i % items.length} aria-label={x.title} onClick={() => setI(n)} className={`h-2 w-2 rounded-full ${n === i % items.length ? 'bg-accent' : 'bg-text/40'}`} />
               ))}
@@ -140,9 +141,9 @@ function CollectionsRow({ items: all }: { items: ReturnType<typeof useNames>['co
   return (
     <section className="space-y-2">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-lg font-semibold">Collections</h2>
+        <h2 className="text-lg font-semibold">{t('Collections')}</h2>
         <Link to={library === 'all' ? '/collections' : `/collections?library=${encodeURIComponent(library)}`} className="text-sm text-muted hover:text-accent">
-          See all
+          {t('See all')}
         </Link>
       </div>
       <div className="flex gap-3 overflow-x-auto pb-2">
@@ -183,9 +184,9 @@ function MovieNightsRow() {
   return (
     <section className="space-y-2">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-lg font-semibold">Movie nights</h2>
+        <h2 className="text-lg font-semibold">{t('Movie nights')}</h2>
         <Link to="/movie-nights" className="text-sm text-muted hover:text-accent">
-          See all
+          {t('See all')}
         </Link>
       </div>
       <div className="flex gap-3 overflow-x-auto pb-2">
@@ -255,7 +256,7 @@ function Customize({ rows, onClose }: { rows: HomeRow[]; onClose: () => void }) 
     }
   };
   return (
-    <Modal title="Customize your homepage" onClose={onClose}>
+    <Modal title={t('Customize your homepage')} onClose={onClose}>
       <ul className="mb-3 space-y-1">
         {draft.map((r, i) => (
           <li key={rowKey(r)} className="flex items-center justify-between gap-2 rounded border border-border px-2 py-1.5 text-sm">
@@ -275,8 +276,8 @@ function Customize({ rows, onClose }: { rows: HomeRow[]; onClose: () => void }) 
         ))}
       </ul>
       {options.length > 0 && (
-        <select className="input mb-4" value="" onChange={(e) => e.target.value && setDraft([...draft, options[Number(e.target.value)]!])} aria-label="Add a row">
-          <option value="">Add a row…</option>
+        <select className="input mb-4" value="" onChange={(e) => e.target.value && setDraft([...draft, options[Number(e.target.value)]!])} aria-label={t('Add a row')}>
+          <option value="">{t('Add a row…')}</option>
           {options.map((o, n) => (
             <option key={rowKey(o)} value={n}>
               {label(o)}
@@ -287,10 +288,10 @@ function Customize({ rows, onClose }: { rows: HomeRow[]; onClose: () => void }) 
       {error && <Alert>{error}</Alert>}
       <div className="flex justify-between">
         <button className="btn-primary" onClick={() => save()}>
-          Save
+          {t('Save')}
         </button>
         <button className="btn-secondary" onClick={() => save(true)}>
-          Reset to default
+          {t('Reset to default')}
         </button>
       </div>
     </Modal>
@@ -308,7 +309,7 @@ export function HomePage() {
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Hi {me?.displayName || me?.username}</h1>
         <button className="btn-secondary" onClick={() => setCustomizing(true)}>
-          Customize
+          {t('Customize')}
         </button>
       </div>
       {rows.map((r) =>
@@ -326,7 +327,7 @@ export function HomePage() {
           <Row key={rowKey(r)} row={r} label={label(r)} more={r.type === 'recent' ? `/library?${recentQuery(r)}` : r.type === 'list' ? `/lists/${r.id}` : r.type === 'collection' ? `/collections/${r.id}` : r.type === 'upcoming' ? '/calendar' : r.type === 'requests' ? '/requests' : undefined} />
         ),
       )}
-      {layout.data && !rows.length && <div className="card text-sm text-muted">Your homepage is empty. Use Customize to add rows.</div>}
+      {layout.data && !rows.length && <div className="card text-sm text-muted">{t('Your homepage is empty. Use Customize to add rows.')}</div>}
       {customizing && <Customize rows={rows} onClose={() => setCustomizing(false)} />}
     </div>
   );

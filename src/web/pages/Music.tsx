@@ -5,6 +5,7 @@ import { Alert } from '../components/ui';
 import { api, formatDate, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { usePageState } from '../lib/history';
+import { t } from '../lib/i18n';
 
 type AlbumStatus = 'pending' | 'approved' | 'declined' | 'downloading' | 'available' | 'failed';
 
@@ -97,21 +98,21 @@ function Cover({ src, alt }: { src: string; alt: string }) {
 /** Music: find albums on MusicBrainz, request them, and follow artists for their new albums. */
 export function MusicPage() {
   const [params, setParams] = useSearchParams();
-  const tab = TABS.find((t) => t.id === params.get('tab'))?.id ?? 'find';
+  const tab = TABS.find((x) => x.id === params.get('tab'))?.id ?? 'find';
   const artist = params.get('artist');
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Music</h1>
+      <h1 className="text-2xl font-semibold">{t('Music')}</h1>
       <div className="flex gap-1 overflow-x-auto border-b border-border" role="tablist">
-        {TABS.map((t) => (
+        {TABS.map((x) => (
           <button
-            key={t.id}
+            key={x.id}
             role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => setParams({ tab: t.id })}
-            className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tab === t.id ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-text'}`}
+            aria-selected={tab === x.id}
+            onClick={() => setParams({ tab: x.id })}
+            className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tab === x.id ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-text'}`}
           >
-            {t.label}
+            {t(x.label)}
           </button>
         ))}
       </div>
@@ -153,10 +154,10 @@ function AlbumGrid({ albums, onRequest }: { albums: Album[]; onRequest: (a: Albu
           <div className="text-xs text-muted">{[a.type, ...a.secondary].join(' · ')}</div>
           <div className="pt-1">
             {a.request && a.request.status !== 'declined' && a.request.status !== 'failed' ? (
-              <span className={`text-xs ${STATUS_STYLE[a.request.status]}`}>{STATUS_LABEL[a.request.status]}</span>
+              <span className={`text-xs ${STATUS_STYLE[a.request.status]}`}>{t(STATUS_LABEL[a.request.status])}</span>
             ) : (
               <button className="btn-secondary px-2 py-1 text-xs" onClick={() => onRequest(a)}>
-                Request
+                {t('Request')}
               </button>
             )}
           </div>
@@ -185,20 +186,20 @@ function FindMusic({ onArtist }: { onArtist: (mbid: string) => void }) {
           setTerm(input.trim());
         }}
       >
-        <select className="input w-auto" value={type} onChange={(e) => setType(e.target.value)} aria-label="Search for">
-          <option value="artist">Artists</option>
-          <option value="album">Albums</option>
+        <select className="input w-auto" value={type} onChange={(e) => setType(e.target.value)} aria-label={t('Search for')}>
+          <option value="artist">{t('Artists')}</option>
+          <option value="album">{t('Albums')}</option>
         </select>
-        <input className="input min-w-0 flex-1" placeholder={type === 'artist' ? 'Artist name' : 'Album title, or artist and album'} value={input} onChange={(e) => setInput(e.target.value)} aria-label="Search music" />
-        <button className="btn-primary">Search</button>
+        <input className="input min-w-0 flex-1" placeholder={t(type === 'artist' ? 'Artist name' : 'Album title, or artist and album')} value={input} onChange={(e) => setInput(e.target.value)} aria-label={t('Search music')} />
+        <button className="btn-primary">{t('Search')}</button>
       </form>
       {error && <Alert>{error}</Alert>}
       {search.error && <Alert>{(search.error as Error).message}</Alert>}
-      {search.isLoading && term && <div className="text-sm text-muted">Searching MusicBrainz…</div>}
-      {!term && <div className="card text-sm text-muted">Search for an artist to see their albums, or for an album to request it straight away.</div>}
+      {search.isLoading && term && <div className="text-sm text-muted">{t('Searching MusicBrainz…')}</div>}
+      {!term && <div className="card text-sm text-muted">{t('Search for an artist to see their albums, or for an album to request it straight away.')}</div>}
       {search.data?.artists && (
         <ul className="divide-y divide-border rounded-md border border-border">
-          {search.data.artists.length === 0 && <li className="p-3 text-sm text-muted">No artists found.</li>}
+          {search.data.artists.length === 0 && <li className="p-3 text-sm text-muted">{t('No artists found.')}</li>}
           {search.data.artists.map((a) => (
             <li key={a.mbid}>
               <button className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-surface-2" onClick={() => onArtist(a.mbid)}>
@@ -207,14 +208,14 @@ function FindMusic({ onArtist }: { onArtist: (mbid: string) => void }) {
                   {a.disambiguation && <span className="text-muted"> ({a.disambiguation})</span>}
                   <span className="block text-xs text-muted">{[a.type, a.country].filter(Boolean).join(' · ')}</span>
                 </span>
-                {a.followed && <span className="text-xs text-success">Following</span>}
+                {a.followed && <span className="text-xs text-success">{t('Following')}</span>}
               </button>
             </li>
           ))}
         </ul>
       )}
-      {search.data?.albums && (search.data.albums.length ? <AlbumGrid albums={search.data.albums} onRequest={request} /> : <div className="card text-sm text-muted">No albums found.</div>)}
-      <p className="text-xs text-muted">Music details come from MusicBrainz, covers from the Cover Art Archive.</p>
+      {search.data?.albums && (search.data.albums.length ? <AlbumGrid albums={search.data.albums} onRequest={request} /> : <div className="card text-sm text-muted">{t('No albums found.')}</div>)}
+      <p className="text-xs text-muted">{t('Music details come from MusicBrainz, covers from the Cover Art Archive.')}</p>
     </div>
   );
 }
@@ -237,7 +238,7 @@ function ArtistView({ mbid, onBack }: { mbid: string; onBack: () => void }) {
     }
   };
   if (q.error) return <Alert>{(q.error as Error).message}</Alert>;
-  if (!q.data) return <div className="text-sm text-muted">Loading…</div>;
+  if (!q.data) return <div className="text-sm text-muted">{t('Loading…')}</div>;
   const { artist } = q.data;
   const studio = q.data.albums.filter((a) => !a.secondary.length);
   const shown = showAll ? q.data.albums : studio;
@@ -252,8 +253,8 @@ function ArtistView({ mbid, onBack }: { mbid: string; onBack: () => void }) {
           {artist.disambiguation && <span className="text-base font-normal text-muted"> ({artist.disambiguation})</span>}
         </h2>
         {hasRole(me, 'manager') && (
-          <button className="btn-secondary" onClick={follow} title="Request and download their new albums as they come out">
-            {artist.followed ? 'Unfollow' : 'Follow new releases'}
+          <button className="btn-secondary" onClick={follow} title={t('Request and download their new albums as they come out')}>
+            {t(artist.followed ? 'Unfollow' : 'Follow new releases')}
           </button>
         )}
       </div>
@@ -263,7 +264,7 @@ function ArtistView({ mbid, onBack }: { mbid: string; onBack: () => void }) {
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> Include live albums, compilations and remixes
         </label>
       )}
-      {shown.length ? <AlbumGrid albums={shown} onRequest={request} /> : <div className="card text-sm text-muted">No albums listed for this artist.</div>}
+      {shown.length ? <AlbumGrid albums={shown} onRequest={request} /> : <div className="card text-sm text-muted">{t('No albums listed for this artist.')}</div>}
     </div>
   );
 }
@@ -286,16 +287,16 @@ function AlbumRequests() {
   };
   return (
     <div className="space-y-4">
-      <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
-        <option value="all">All</option>
+      <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label={t('Status')}>
+        <option value="all">{t('All')}</option>
         {Object.entries(STATUS_LABEL).map(([k, v]) => (
           <option key={k} value={k}>
-            {v}
+            {t(v)}
           </option>
         ))}
       </select>
       {error && <Alert>{error}</Alert>}
-      {list.data?.length === 0 && <div className="card text-sm text-muted">No album requests here.</div>}
+      {list.data?.length === 0 && <div className="card text-sm text-muted">{t('No album requests here.')}</div>}
       <ul className="space-y-3">
         {list.data?.map((r) => (
           <li key={r.id} className="card flex flex-wrap items-center gap-4 p-3">
@@ -310,7 +311,7 @@ function AlbumRequests() {
                 {r.type ?? 'Album'} · requested by {r.requestedByName} · {formatDate(r.createdAt)}
               </div>
               <div className={`text-sm ${STATUS_STYLE[r.status]}`}>
-                {STATUS_LABEL[r.status]}
+                {t(STATUS_LABEL[r.status])}
                 {r.decidedByName && ['approved', 'declined'].includes(r.status) && <span className="text-muted"> by {r.decidedByName}</span>}
                 {r.reason && <span className="text-muted">: {r.reason}</span>}
               </div>
@@ -320,7 +321,7 @@ function AlbumRequests() {
               {isManager && r.status === 'pending' && (
                 <>
                   <button className="btn-primary" onClick={() => act(() => api(`/api/music/${r.id}/approve`, { method: 'POST' }))}>
-                    Approve
+                    {t('Approve')}
                   </button>
                   <button
                     className="btn-danger"
@@ -330,18 +331,18 @@ function AlbumRequests() {
                       void act(() => api(`/api/music/${r.id}/decline`, { body: { reason: reason.trim() || undefined } }));
                     }}
                   >
-                    Decline
+                    {t('Decline')}
                   </button>
                 </>
               )}
               {isManager && ['failed', 'approved', 'downloading'].includes(r.status) && (
                 <button className="btn-secondary" onClick={() => act(() => api(`/api/music/${r.id}/retry`, { method: 'POST' }))}>
-                  {r.status === 'downloading' ? 'Search again' : 'Retry'}
+                  {t(r.status === 'downloading' ? 'Search again' : 'Retry')}
                 </button>
               )}
               {(isManager || (r.requestedBy === me?.id && r.status === 'pending')) && (
                 <button className="btn-secondary" onClick={() => confirm('Remove this request?') && act(() => api(`/api/music/${r.id}`, { method: 'DELETE' }))}>
-                  {r.status === 'pending' && !isManager ? 'Cancel' : 'Remove'}
+                  {t(r.status === 'pending' && !isManager ? 'Cancel' : 'Remove')}
                 </button>
               )}
             </div>
@@ -369,9 +370,9 @@ function FollowedArtists({ onArtist }: { onArtist: (mbid: string) => void }) {
   };
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted">New albums and EPs by these artists are requested and downloaded by themselves, checked every morning.</p>
+      <p className="text-sm text-muted">{t('New albums and EPs by these artists are requested and downloaded by themselves, checked every morning.')}</p>
       {error && <Alert>{error}</Alert>}
-      {list.data?.length === 0 && <div className="card text-sm text-muted">No followed artists yet. Open an artist from Find music to follow them.</div>}
+      {list.data?.length === 0 && <div className="card text-sm text-muted">{t('No followed artists yet. Open an artist from Find music to follow them.')}</div>}
       <ul className="divide-y divide-border rounded-md border border-border">
         {list.data?.map((a) => (
           <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
@@ -381,7 +382,7 @@ function FollowedArtists({ onArtist }: { onArtist: (mbid: string) => void }) {
             </button>
             {hasRole(me, 'manager') && (
               <button className="btn-secondary" onClick={() => unfollow(a)}>
-                Unfollow
+                {t('Unfollow')}
               </button>
             )}
           </li>

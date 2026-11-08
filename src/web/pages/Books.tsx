@@ -7,6 +7,7 @@ import { api, formatDate, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { usePageState } from '../lib/history';
 import { poster } from '../lib/media';
+import { t } from '../lib/i18n';
 
 type Format = 'audiobook' | 'ebook';
 type BookStatus = 'pending' | 'approved' | 'declined' | 'downloading' | 'available' | 'failed';
@@ -97,20 +98,20 @@ function Cover({ src, alt }: { src: string | null; alt: string }) {
 
 export function BooksPage() {
   const [params, setParams] = useSearchParams();
-  const tab = TABS.find((t) => t.id === params.get('tab'))?.id ?? 'library';
+  const tab = TABS.find((x) => x.id === params.get('tab'))?.id ?? 'library';
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Books</h1>
+      <h1 className="text-2xl font-semibold">{t('Books')}</h1>
       <div className="flex gap-1 overflow-x-auto border-b border-border" role="tablist">
-        {TABS.map((t) => (
+        {TABS.map((x) => (
           <button
-            key={t.id}
+            key={x.id}
             role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => setParams({ tab: t.id })}
-            className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tab === t.id ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-text'}`}
+            aria-selected={tab === x.id}
+            onClick={() => setParams({ tab: x.id })}
+            className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tab === x.id ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-text'}`}
           >
-            {t.label}
+            {t(x.label)}
           </button>
         ))}
       </div>
@@ -145,7 +146,7 @@ function AbsLibrary({ type }: { type: 'book' | 'podcast' }) {
         Audiobookshelf isn't connected yet.{' '}
         {hasRole(me, 'admin') ? (
           <Link to="/settings/books" className="text-accent">
-            Connect it in Settings → Books.
+            {t('Connect it in Settings → Books.')}
           </Link>
         ) : (
           'Ask an admin to connect it.'
@@ -161,12 +162,12 @@ function AbsLibrary({ type }: { type: 'book' | 'podcast' }) {
         <input className="input max-w-xs" placeholder={`Filter ${q.data.items.length} ${type === 'book' ? 'audiobooks' : 'podcasts'}`} value={filter} onChange={(e) => setFilter(e.target.value)} />
         {hasRole(me, 'manager') && (
           <button className="btn-secondary" onClick={sync}>
-            Sync with Audiobookshelf
+            {t('Sync with Audiobookshelf')}
           </button>
         )}
       </div>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
-      {!items.length && <div className="card text-sm text-muted">Nothing here yet.</div>}
+      {!items.length && <div className="card text-sm text-muted">{t('Nothing here yet.')}</div>}
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-7">
         {items.map((i) => (
           <div key={i.absId} className="space-y-1">
@@ -208,8 +209,8 @@ function FindBooks() {
   const button = (b: BookResult, format: Format) => {
     const r = b.requests[format];
     const label = format === 'audiobook' ? 'Audiobook' : 'Ebook';
-    if (format === 'audiobook' && b.inAudiobookshelf) return <span className="text-xs text-success">Audiobook in library</span>;
-    if (r && r.status !== 'declined' && r.status !== 'failed') return <span className={`text-xs ${STATUS_STYLE[r.status]}`}>{`${label}: ${STATUS_LABEL[r.status].toLowerCase()}`}</span>;
+    if (format === 'audiobook' && b.inAudiobookshelf) return <span className="text-xs text-success">{t('Audiobook in library')}</span>;
+    if (r && r.status !== 'declined' && r.status !== 'failed') return <span className={`text-xs ${STATUS_STYLE[r.status]}`}>{`${label}: ${t(STATUS_LABEL[r.status]).toLowerCase()}`}</span>;
     return (
       <button className="btn-secondary px-2 py-1 text-xs" onClick={() => request(b, format)}>
         Request {label.toLowerCase()}
@@ -226,14 +227,14 @@ function FindBooks() {
           setTerm(input.trim());
         }}
       >
-        <input className="input" placeholder="Title, author or ISBN" value={input} onChange={(e) => setInput(e.target.value)} aria-label="Search books" />
-        <button className="btn-primary">Search</button>
+        <input className="input" placeholder={t('Title, author or ISBN')} value={input} onChange={(e) => setInput(e.target.value)} aria-label={t('Search books')} />
+        <button className="btn-primary">{t('Search')}</button>
       </form>
       <h2 className="font-semibold">{term ? `Results for “${term}”` : 'Trending this week'}</h2>
       {error && <Alert>{error}</Alert>}
       {failed && <Alert>{failed.message}</Alert>}
-      {loading && <div className="text-sm text-muted">Loading…</div>}
-      {results?.length === 0 && <div className="card text-sm text-muted">No books found.</div>}
+      {loading && <div className="text-sm text-muted">{t('Loading…')}</div>}
+      {results?.length === 0 && <div className="card text-sm text-muted">{t('No books found.')}</div>}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
         {results?.map((b) => (
           <div key={b.workKey} className="space-y-1">
@@ -252,7 +253,7 @@ function FindBooks() {
           </div>
         ))}
       </div>
-      <p className="text-xs text-muted">Book details and covers come from Open Library.</p>
+      <p className="text-xs text-muted">{t('Book details and covers come from Open Library.')}</p>
     </div>
   );
 }
@@ -276,16 +277,16 @@ function BookRequests() {
   };
   return (
     <div className="space-y-4">
-      <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
-        <option value="all">All</option>
+      <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label={t('Status')}>
+        <option value="all">{t('All')}</option>
         {Object.entries(STATUS_LABEL).map(([k, v]) => (
           <option key={k} value={k}>
-            {v}
+            {t(v)}
           </option>
         ))}
       </select>
       {error && <Alert>{error}</Alert>}
-      {list.data?.length === 0 && <div className="card text-sm text-muted">No book requests here.</div>}
+      {list.data?.length === 0 && <div className="card text-sm text-muted">{t('No book requests here.')}</div>}
       <ul className="space-y-3">
         {list.data?.map((r) => (
           <li key={r.id} className="card flex flex-wrap items-center gap-4 p-3">
@@ -297,11 +298,11 @@ function BookRequests() {
                 {r.title} {r.year && <span className="text-muted">({r.year})</span>}
               </div>
               <div className="text-xs text-muted">
-                {r.format === 'audiobook' ? 'Audiobook' : 'Ebook'}
+                {t(r.format === 'audiobook' ? 'Audiobook' : 'Ebook')}
                 {r.author ? ` · ${r.author}` : ''} · requested by {r.requestedByName} · {formatDate(r.createdAt)}
               </div>
               <div className={`text-sm ${STATUS_STYLE[r.status]}`}>
-                {STATUS_LABEL[r.status]}
+                {t(STATUS_LABEL[r.status])}
                 {r.decidedByName && ['approved', 'declined'].includes(r.status) && <span className="text-muted"> by {r.decidedByName}</span>}
                 {r.reason && <span className="text-muted">: {r.reason}</span>}
               </div>
@@ -311,7 +312,7 @@ function BookRequests() {
               {isManager && r.status === 'pending' && (
                 <>
                   <button className="btn-primary" onClick={() => act(() => api(`/api/books/${r.id}/approve`, { method: 'POST' }))}>
-                    Approve
+                    {t('Approve')}
                   </button>
                   <button
                     className="btn-danger"
@@ -322,23 +323,23 @@ function BookRequests() {
                       void act(() => api(`/api/books/${r.id}/decline`, { body: { reason: reason.trim() || undefined } }));
                     }}
                   >
-                    Decline
+                    {t('Decline')}
                   </button>
                 </>
               )}
               {isManager && ['failed', 'approved', 'downloading'].includes(r.status) && (
                 <button className="btn-secondary" onClick={() => act(() => api(`/api/books/${r.id}/retry`, { method: 'POST' }))}>
-                  {r.status === 'downloading' ? 'Search again' : 'Retry'}
+                  {t(r.status === 'downloading' ? 'Search again' : 'Retry')}
                 </button>
               )}
               {isManager && r.status !== 'available' && (
-                <button className="btn-secondary" onClick={() => setMatching(r)} title="Point this request at a different book">
-                  Fix match
+                <button className="btn-secondary" onClick={() => setMatching(r)} title={t('Point this request at a different book')}>
+                  {t('Fix match')}
                 </button>
               )}
               {(isManager || (r.requestedBy === me?.id && r.status === 'pending')) && (
                 <button className="btn-secondary" onClick={() => confirm('Remove this request?') && act(() => api(`/api/books/${r.id}`, { method: 'DELETE' }))}>
-                  {r.status === 'pending' && !isManager ? 'Cancel' : 'Remove'}
+                  {t(r.status === 'pending' && !isManager ? 'Cancel' : 'Remove')}
                 </button>
               )}
             </div>
@@ -374,8 +375,8 @@ function BookMatch({ request, onClose, onDone }: { request: BookRequest; onClose
           setTerm(q);
         }}
       >
-        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Title or author" />
-        <button className="btn-primary">Search</button>
+        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Title or author')} />
+        <button className="btn-primary">{t('Search')}</button>
       </form>
       {error && <Alert>{error}</Alert>}
       <ul className="mt-3 max-h-96 space-y-1 overflow-y-auto">
@@ -394,7 +395,7 @@ function BookMatch({ request, onClose, onDone }: { request: BookRequest; onClose
               </button>
             </li>
           ))}
-        {search.data && !search.data.results.length && <li className="text-sm text-muted">No books found.</li>}
+        {search.data && !search.data.results.length && <li className="text-sm text-muted">{t('No books found.')}</li>}
       </ul>
     </Modal>
   );
@@ -426,7 +427,7 @@ function Podcasts() {
   return (
     <div className="space-y-6">
       <section className="space-y-3">
-        <h2 className="font-semibold">Your podcasts</h2>
+        <h2 className="font-semibold">{t('Your podcasts')}</h2>
         <AbsLibrary type="podcast" />
       </section>
       <section className="space-y-3">
@@ -437,8 +438,8 @@ function Podcasts() {
             setTerm(input.trim());
           }}
         >
-          <input className="input" placeholder="Find a podcast" value={input} onChange={(e) => setInput(e.target.value)} aria-label="Search podcasts" />
-          <button className="btn-primary">Search</button>
+          <input className="input" placeholder={t('Find a podcast')} value={input} onChange={(e) => setInput(e.target.value)} aria-label={t('Search podcasts')} />
+          <button className="btn-primary">{t('Search')}</button>
         </form>
         <h2 className="font-semibold">{term ? `Results for “${term}”` : 'Top podcasts'}</h2>
         {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
@@ -452,11 +453,11 @@ function Podcasts() {
               </div>
               <div className="truncate text-xs text-muted">{[p.author, p.genre].filter(Boolean).join(' · ')}</div>
               {p.subscribed ? (
-                <span className="text-xs text-success">Subscribed</span>
+                <span className="text-xs text-success">{t('Subscribed')}</span>
               ) : (
                 canAdd && (
                   <button className="btn-secondary px-2 py-1 text-xs" onClick={() => add(p)}>
-                    Subscribe
+                    {t('Subscribe')}
                   </button>
                 )
               )}

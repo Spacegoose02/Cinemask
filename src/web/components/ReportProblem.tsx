@@ -6,6 +6,7 @@ import type { MediaDetail } from '../pages/MediaDetail';
 import { scopeOf } from '../pages/Issues';
 import { Modal } from './Modal';
 import { Alert } from './ui';
+import { t } from '../lib/i18n';
 
 const TYPES: [string, string][] = [
   ['audio', 'Wrong language or bad audio'],
@@ -56,7 +57,7 @@ export function ReportProblem({ m }: { m: MediaDetail }) {
   return (
     <>
       <button className="btn-secondary" onClick={() => setShow(true)}>
-        Report a problem
+        {t('Report a problem')}
       </button>
       {!!open.data?.length && (
         <Link to="/issues" className="self-center text-sm text-warning hover:underline">
@@ -68,7 +69,7 @@ export function ReportProblem({ m }: { m: MediaDetail }) {
         <Modal title={`Report a problem with ${m.title}`} onClose={() => setShow(false)}>
           <div className="space-y-3">
             <label className="block">
-              <span className="label">What's wrong?</span>
+              <span className="label">{t("What's wrong?")}</span>
               <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
                 {TYPES.map(([v, l]) => (
                   <option key={v} value={v}>
@@ -80,9 +81,9 @@ export function ReportProblem({ m }: { m: MediaDetail }) {
             {m.kind === 'show' && (
               <div className="flex gap-2">
                 <label className="block flex-1">
-                  <span className="label">Season</span>
+                  <span className="label">{t('Season')}</span>
                   <select className="input" value={season} onChange={(e) => (setSeason(e.target.value === '' ? '' : Number(e.target.value)), setEpisode(''))}>
-                    <option value="">The whole show</option>
+                    <option value="">{t('The whole show')}</option>
                     {seasons.map((s) => (
                       <option key={s.seasonNumber} value={s.seasonNumber}>
                         Season {s.seasonNumber}
@@ -92,9 +93,9 @@ export function ReportProblem({ m }: { m: MediaDetail }) {
                 </label>
                 {season !== '' && (
                   <label className="block flex-1">
-                    <span className="label">Episode</span>
+                    <span className="label">{t('Episode')}</span>
                     <select className="input" value={episode} onChange={(e) => setEpisode(e.target.value === '' ? '' : Number(e.target.value))}>
-                      <option value="">Every episode</option>
+                      <option value="">{t('Every episode')}</option>
                       {Array.from({ length: episodes }, (_, i) => i + 1).map((n) => (
                         <option key={n} value={n}>
                           Episode {n}
@@ -110,7 +111,7 @@ export function ReportProblem({ m }: { m: MediaDetail }) {
               <textarea className="input min-h-20" maxLength={1000} value={message} onChange={(e) => setMessage(e.target.value)} />
             </label>
             <button className="btn-primary" disabled={type === 'other' && !message.trim()} onClick={send}>
-              Send report
+              {t('Send report')}
             </button>
           </div>
         </Modal>

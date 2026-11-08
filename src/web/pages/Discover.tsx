@@ -8,6 +8,7 @@ import { api, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { usePageState } from '../lib/history';
 import type { MediaCardData } from '../lib/media';
+import { t } from '../lib/i18n';
 
 interface Options {
   genres: { id: number; name: string }[];
@@ -92,7 +93,7 @@ function Chips({ label, items, value, onChange }: { label: string; items: { id: 
     <div>
       <div className="flex items-center gap-2">
         <div className="label">{label}</div>
-        {items.length > 14 && <input className="input mb-1 h-7 w-40 py-0 text-xs" placeholder="Find…" value={find} onChange={(e) => setFind(e.target.value)} aria-label={`Find in ${label}`} />}
+        {items.length > 14 && <input className="input mb-1 h-7 w-40 py-0 text-xs" placeholder={t('Find…')} value={find} onChange={(e) => setFind(e.target.value)} aria-label={`Find in ${label}`} />}
       </div>
       <div className="flex flex-wrap gap-1.5">
         {shown.map((i) => {
@@ -136,12 +137,12 @@ function SaveAsList({ filter, onClose }: { filter: Filter; onClose: () => void }
     }
   };
   return (
-    <Modal title="Save as a list" onClose={onClose}>
+    <Modal title={t('Save as a list')} onClose={onClose}>
       <div className="space-y-3">
-        <Field label="Name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Animated family films" />
+        <Field label={t('Name')}>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Animated family films')} />
         </Field>
-        <Field label="How many results" hint="20 titles per page">
+        <Field label={t('How many results')} hint={t('20 titles per page')}>
           <select className="input" value={pages} onChange={(e) => setPages(Number(e.target.value))}>
             {[1, 2, 3, 4, 5].map((n) => (
               <option key={n} value={n}>
@@ -150,10 +151,10 @@ function SaveAsList({ filter, onClose }: { filter: Filter; onClose: () => void }
             ))}
           </select>
         </Field>
-        <Toggle label="Download new titles automatically" checked={autoAdd} onChange={setAutoAdd} hint="Anything in the list that isn't on the server gets monitored and searched for." />
+        <Toggle label={t('Download new titles automatically')} checked={autoAdd} onChange={setAutoAdd} hint={t("Anything in the list that isn't on the server gets monitored and searched for.")} />
         {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
         <button className="btn-primary" disabled={!name.trim()} onClick={save}>
-          Save list
+          {t('Save list')}
         </button>
       </div>
     </Modal>
@@ -182,21 +183,21 @@ export function DiscoverPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Discover</h1>
+        <h1 className="text-2xl font-semibold">{t('Discover')}</h1>
         <div className="flex flex-wrap gap-2">
           <div className="flex overflow-hidden rounded-md border border-border">
             {(['movie', 'tv'] as const).map((k) => (
               <button key={k} onClick={() => setF({ ...EMPTY, kind: k, sort: f.sort })} className={`px-3 py-1.5 text-sm ${f.kind === k ? 'bg-accent text-accent-fg' : 'bg-surface-2 text-muted'}`}>
-                {k === 'movie' ? 'Movies' : 'TV shows'}
+                {t(k === 'movie' ? 'Movies' : 'TV shows')}
               </button>
             ))}
           </div>
           <button className="btn-secondary" onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters}>
-            Filters
+            {t('Filters')}
           </button>
           {hasRole(me, 'manager') && (
             <button className="btn-secondary" onClick={() => setSaving(true)}>
-              Save as list
+              {t('Save as list')}
             </button>
           )}
         </div>
@@ -205,24 +206,24 @@ export function DiscoverPage() {
       {showFilters && (
         <div className="card space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <Field label="Sort by">
+            <Field label={t('Sort by')}>
               <select className="input" value={f.sort} onChange={(e) => set('sort', e.target.value)}>
                 {(opts.data?.sorts ?? ['popular']).map((s) => (
                   <option key={s} value={s}>
-                    {SORT_LABEL[s] ?? s}
+                    {SORT_LABEL[s] ? t(SORT_LABEL[s]) : s}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="From year">
+            <Field label={t('From year')}>
               <input className="input" type="number" min={1900} max={thisYear + 5} value={f.yearFrom ?? ''} onChange={(e) => set('yearFrom', e.target.value ? Number(e.target.value) : undefined)} />
             </Field>
-            <Field label="To year">
+            <Field label={t('To year')}>
               <input className="input" type="number" min={1900} max={thisYear + 5} value={f.yearTo ?? ''} onChange={(e) => set('yearTo', e.target.value ? Number(e.target.value) : undefined)} />
             </Field>
-            <Field label="Minimum rating">
+            <Field label={t('Minimum rating')}>
               <select className="input" value={f.ratingMin ?? ''} onChange={(e) => set('ratingMin', e.target.value ? Number(e.target.value) : undefined)}>
-                <option value="">Any</option>
+                <option value="">{t('Any')}</option>
                 {[5, 6, 7, 8, 9].map((n) => (
                   <option key={n} value={n}>
                     {n}+
@@ -230,7 +231,7 @@ export function DiscoverPage() {
                 ))}
               </select>
             </Field>
-            <Field label="Original language">
+            <Field label={t('Original language')}>
               <select className="input" value={f.language ?? ''} onChange={(e) => set('language', e.target.value || undefined)}>
                 {LANGUAGES.map(([v, l]) => (
                   <option key={v} value={v}>
@@ -240,9 +241,9 @@ export function DiscoverPage() {
               </select>
             </Field>
           </div>
-          <Chips label="Genres" items={opts.data?.genres ?? []} value={f.genres} onChange={(v) => set('genres', v)} />
+          <Chips label={t('Genres')} items={opts.data?.genres ?? []} value={f.genres} onChange={(v) => set('genres', v)} />
           <Chips
-            label={f.kind === 'tv' ? 'Channels and networks' : 'Made by a channel or service'}
+            label={t(f.kind === 'tv' ? 'Channels and networks' : 'Made by a channel or service')}
             items={opts.data?.networks ?? []}
             value={f.networks}
             onChange={(v) => set('networks', v)}
@@ -250,26 +251,26 @@ export function DiscoverPage() {
           <Chips label={`Streaming on${opts.data ? ` (${opts.data.region})` : ''}`} items={opts.data?.providers ?? []} value={f.providers} onChange={(v) => set('providers', v)} />
           {f.providers.some((p) => opts.data?.originals.includes(p)) && (
             <Toggle
-              label="Originals only"
+              label={t('Originals only')}
               checked={Boolean(f.originals)}
               onChange={(v) => set('originals', v)}
               hint={`Only ${f.kind === 'tv' ? 'shows' : 'movies'} the picked services made themselves, such as Netflix or Tubi originals.`}
             />
           )}
           <button className="text-sm text-muted hover:text-accent" onClick={() => setF({ ...EMPTY, kind: f.kind })}>
-            Clear filters
+            {t('Clear filters')}
           </button>
         </div>
       )}
 
       {res.error && <Alert>{(res.error as Error).message}</Alert>}
       {res.data && <p className="text-sm text-muted">{res.data.pages[0]?.totalResults.toLocaleString()} titles</p>}
-      {opts.data && !opts.data.genres.length && <Alert kind="info">Discover needs a TMDB key. An admin can add one in Settings → Metadata.</Alert>}
+      {opts.data && !opts.data.genres.length && <Alert kind="info">{t('Discover needs a TMDB key. An admin can add one in Settings → Metadata.')}</Alert>}
       <MediaGrid items={items} />
       {res.hasNextPage && (
         <div className="flex justify-center">
           <button className="btn-secondary" disabled={res.isFetchingNextPage} onClick={() => res.fetchNextPage()}>
-            {res.isFetchingNextPage ? 'Loading…' : 'Load more'}
+            {t(res.isFetchingNextPage ? 'Loading…' : 'Load more')}
           </button>
         </div>
       )}

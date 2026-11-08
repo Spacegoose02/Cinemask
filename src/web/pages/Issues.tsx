@@ -5,6 +5,7 @@ import { Alert, LoadError } from '../components/ui';
 import { api, formatDate, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { mediaPath, poster, type MediaKind } from '../lib/media';
+import { t } from '../lib/i18n';
 
 export interface IssueRow {
   id: number;
@@ -60,17 +61,17 @@ export function IssuesPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">{isManager ? 'Problems' : 'My problem reports'}</h1>
-        <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label="Status">
-          <option value="open">Open</option>
-          <option value="resolved">Fixed</option>
-          <option value="all">All</option>
+        <h1 className="text-2xl font-semibold">{t(isManager ? 'Problems' : 'My problem reports')}</h1>
+        <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label={t('Status')}>
+          <option value="open">{t('Open')}</option>
+          <option value="resolved">{t('Fixed')}</option>
+          <option value="all">{t('All')}</option>
         </select>
       </div>
       <p className="text-sm text-muted">Something wrong with a movie or episode? Use “Report a problem” on its page.</p>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       <LoadError queries={[list]} />
-      {list.data?.length === 0 && <div className="card text-sm text-muted">Nothing here.</div>}
+      {list.data?.length === 0 && <div className="card text-sm text-muted">{t('Nothing here.')}</div>}
       <ul className="space-y-3">
         {list.data?.map((i) => (
           <li key={i.id} className="card flex flex-wrap items-start gap-4 p-3">
@@ -97,7 +98,7 @@ export function IssuesPage() {
                 i.status !== 'resolved' &&
                 i.fixes.map((f) => (
                   <button key={f} className="btn-primary" disabled={busy === i.id} onClick={() => act(i.id, () => api(`/api/issues/${i.id}/fix`, { body: { action: f } }))}>
-                    {FIX_LABEL[f]}
+                    {t(FIX_LABEL[f])}
                   </button>
                 ))}
               {isManager && i.status !== 'resolved' && (
@@ -109,17 +110,17 @@ export function IssuesPage() {
                     void act(i.id, () => api(`/api/issues/${i.id}/resolve`, { body: { note: note.trim() || undefined } }));
                   }}
                 >
-                  Mark fixed
+                  {t('Mark fixed')}
                 </button>
               )}
               {i.status === 'resolved' && (isManager || i.reportedBy === me?.id) && (
                 <button className="btn-secondary" onClick={() => act(i.id, () => api(`/api/issues/${i.id}/reopen`, { body: {} }))}>
-                  Still not right
+                  {t('Still not right')}
                 </button>
               )}
               {(isManager || (i.reportedBy === me?.id && i.status === 'open')) && (
                 <button className="btn-secondary" onClick={() => confirm('Remove this report?') && act(i.id, () => api(`/api/issues/${i.id}`, { method: 'DELETE' }))}>
-                  {isManager ? 'Remove' : 'Withdraw'}
+                  {t(isManager ? 'Remove' : 'Withdraw')}
                 </button>
               )}
             </div>
