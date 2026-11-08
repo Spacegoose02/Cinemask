@@ -1,5 +1,6 @@
 import { ApiDocsPage } from './pages/ApiDocs';
 import { BooksPage } from './pages/Books';
+import { MusicPage } from './pages/Music';
 import { YoutubePage } from './pages/Youtube';
 import { useQuery } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
@@ -86,6 +87,7 @@ export function App() {
         <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" actions={(m) => <MediaActions m={m} />} panels={panels} />} />
         <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} panels={panels} />} />
         <Route path="/books" element={<BooksPage />} />
+        <Route path="/music" element={<MusicPage />} />
         <Route path="/developer" element={<ApiDocsPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/discover" element={<DiscoverPage />} />

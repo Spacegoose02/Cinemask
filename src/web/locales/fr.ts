@@ -5,6 +5,7 @@ const messages: Record<string, string> = {
   "Discover": "Découvrir",
   "Collections": "Collections",
   "Lists": "Listes",
+  "Music": "Musique",
   "Books": "Livres",
   "Calendar": "Calendrier",
   "Requests": "Demandes",

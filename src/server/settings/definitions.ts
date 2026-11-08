@@ -162,6 +162,7 @@ export const SETTINGS = {
       tvPath: z.string().trim().max(1000).default('/media/tv'),
       audiobooksPath: z.string().trim().max(1000).default('/media/audiobooks'),
       booksPath: z.string().trim().max(1000).default('/media/books'),
+      musicPath: z.string().trim().max(1000).default('/media/music'),
       /** hardlink keeps torrents seeding without using extra space (needs the same disk/share). */
       importMode: z.enum(['hardlink', 'copy', 'move']).default('hardlink'),
       /** Translate paths a download client reports (its own container) into paths here. */
@@ -418,6 +419,15 @@ export const SETTINGS = {
       privateKey: z.string().max(200).default(''),
     }),
     secrets: ['privateKey'],
+  },
+  music: {
+    schema: z.object({
+      /** Which releases to prefer: lossless (FLAC), lossy (MP3/AAC), or whichever is best seeded. */
+      format: z.enum(['any', 'lossless', 'lossy']).default('any'),
+      /** Followed artists' new albums are requested and downloaded by themselves. */
+      followNewReleases: z.boolean().default(true),
+    }),
+    secrets: [],
   },
   overlays: {
     schema: z.object({

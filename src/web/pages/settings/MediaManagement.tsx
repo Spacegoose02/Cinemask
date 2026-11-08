@@ -71,6 +71,27 @@ function FromBingeBandit({ extra, onAdd }: { extra: ExtraFolder[]; onAdd: (add: 
   );
 }
 
+/** Album downloads (Music page): which releases to prefer, and whether followed artists' new albums come by themselves. */
+function MusicSettings() {
+  const s = useSettingsSection('music');
+  if (s.loading) return null;
+  return (
+    <section className="card space-y-4">
+      <h2 className="font-semibold">Music</h2>
+      <p className="hint">Albums requested on the Music page are searched for in your indexers' audio categories and go into the music folder above.</p>
+      <Field label="Prefer">
+        <select className="input w-auto max-w-full" value={s.values.format} onChange={(e) => s.set('format', e.target.value)}>
+          <option value="any">The best release, either kind (FLAC wins a tie)</option>
+          <option value="lossless">Lossless only (FLAC, ALAC)</option>
+          <option value="lossy">Lossy only (MP3 320/V0, AAC)</option>
+        </select>
+      </Field>
+      <Toggle label="Download new albums by followed artists" checked={s.values.followNewReleases} onChange={(v) => s.set('followNewReleases', v)} />
+      <SaveBar onSave={s.save} saving={s.saving} message={s.message} />
+    </section>
+  );
+}
+
 export function MediaManagementSettings() {
   const m = useSettingsSection('media');
   const n = useSettingsSection('naming');
@@ -142,6 +163,9 @@ export function MediaManagementSettings() {
         </Field>
         <Field label="Books folder">
           <input className="input" value={m.values.booksPath} onChange={(e) => m.set('booksPath', e.target.value)} />
+        </Field>
+        <Field label="Music folder" hint="Albums go in as Artist/Album (Year)/. Point a Plex, Jellyfin or Emby music library at it.">
+          <input className="input" value={m.values.musicPath} onChange={(e) => m.set('musicPath', e.target.value)} />
         </Field>
         <Field label="When a download finishes" hint="Hardlink keeps torrents seeding without using extra space. Falls back to copy across disks.">
           <select className="input" value={m.values.importMode} onChange={(e) => m.set('importMode', e.target.value)}>
@@ -331,6 +355,8 @@ export function MediaManagementSettings() {
         />
         <SaveBar onSave={d.save} saving={d.saving} message={d.message} />
       </section>
+
+      <MusicSettings />
 
       <section className="card space-y-4">
         <h2 className="font-semibold">Subtitles</h2>

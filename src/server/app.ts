@@ -8,6 +8,7 @@ import path from 'node:path';
 import { ZodError } from 'zod';
 import { seedProfiles } from './arr/profiles.js';
 import { bookRoutes } from './books/routes.js';
+import { musicRoutes } from './music/routes.js';
 import { calendarRoutes } from './calendar/routes.js';
 import { collectionRoutes } from './collections/routes.js';
 import { discoverRoutes } from './discover/routes.js';
@@ -179,6 +180,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   await app.register(gameRoutes);
   await app.register(wrappedRoutes);
   await app.register(bookRoutes);
+  await app.register(musicRoutes);
   await app.register(apiRoutes);
   await app.register(notificationRoutes);
   await app.register(issueRoutes);

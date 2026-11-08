@@ -958,6 +958,40 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    id: 35,
+    name: 'music',
+    sql: `
+      CREATE TABLE albums (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mbid TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        artist TEXT NOT NULL,
+        artist_mbid TEXT,
+        year INTEGER,
+        type TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending','approved','declined','downloading','available','failed')),
+        requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        requested_by_name TEXT,
+        decided_by_name TEXT,
+        decided_at INTEGER,
+        reason TEXT,
+        path TEXT,
+        error TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX albums_status_idx ON albums(status);
+      CREATE TABLE music_artists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mbid TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        added_at INTEGER NOT NULL,
+        checked_at INTEGER
+      );
+      ALTER TABLE downloads ADD COLUMN album_id INTEGER REFERENCES albums(id) ON DELETE SET NULL;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

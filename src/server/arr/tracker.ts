@@ -12,6 +12,7 @@ import { deliverLink } from './direct.js';
 import { autoSearch } from './search.js';
 import { autoTrailer } from '../trailers/service.js';
 import { failBook, importBook } from '../books/service.js';
+import { failAlbum, importAlbum } from '../music/service.js';
 import { openSecret } from './secrets.js';
 
 const ACTIVE = ['queued', 'downloading', 'paused', 'completed', 'importing'] as const;
@@ -118,7 +119,17 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
         }
         continue;
       }
-      if (!d.monitoredId && !d.bookId && d.destination && item.outputPath) {
+      if (d.albumId && item.outputPath) {
+        try {
+          importAlbum(ctx, d.albumId, mapRemotePath(ctx, item.outputPath));
+          ctx.db.update(downloads).set({ status: 'imported', importedAt: Date.now(), outputPath: item.outputPath }).where(eq(downloads.id, d.id)).run();
+        } catch (err) {
+          ctx.db.update(downloads).set({ status: 'failed', error: (err as Error).message }).where(eq(downloads.id, d.id)).run();
+          failAlbum(ctx, d.albumId, (err as Error).message);
+        }
+        continue;
+      }
+      if (!d.monitoredId && !d.bookId && !d.albumId && d.destination && item.outputPath) {
         deliverLink(ctx, d.id, mapRemotePath(ctx, item.outputPath), ctx.settings.get('media').importMode);
         const media = ctx.settings.get('media');
         // Only once it's safely in its folder: left in the downloads folder, or not delivered, the client's copy is the only one.
@@ -214,6 +225,7 @@ export async function failDownload(ctx: AppContext, id: number, reason: string, 
   ctx.db.update(downloads).set({ status: 'failed', error: reason }).where(eq(downloads.id, id)).run();
   notify(ctx, { event: 'download.failed', title: 'Download failed', message: `${d.title}: ${reason}`, data: { downloadId: id } });
   if (d.bookId) failBook(ctx, d.bookId, reason);
+  if (d.albumId) failAlbum(ctx, d.albumId, reason);
   if (!d.monitoredId) return;
   ctx.db.insert(blocklist).values({ monitoredId: d.monitoredId, releaseTitle: d.title, indexer: d.indexer, reason, createdAt: Date.now() }).run();
   const row = ctx.db.select().from(monitored).where(eq(monitored.id, d.monitoredId)).get();

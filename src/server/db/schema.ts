@@ -463,6 +463,7 @@ export const downloads = sqliteTable(
     completedAt: integer('completed_at'),
     importedAt: integer('imported_at'),
     bookId: integer('book_id'), // set for audiobook/ebook grabs instead of monitoredId
+    albumId: integer('album_id'), // set for music grabs (music/service.ts)
     /** Download-client category or label it was sent with. */
     category: text('category'),
     /** Something worth knowing that didn't stop the download, e.g. bigger than the size limit. */
@@ -879,3 +880,40 @@ export const posterOverlays = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.server, t.externalKey] })],
 );
+
+export const ALBUM_STATUSES = ['pending', 'approved', 'declined', 'downloading', 'available', 'failed'] as const;
+export type AlbumStatus = (typeof ALBUM_STATUSES)[number];
+
+/** Album requests (music/service.ts): a MusicBrainz release group, downloaded from the indexers into the music folder. */
+export const albums = sqliteTable(
+  'albums',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    mbid: text('mbid').notNull().unique(),
+    title: text('title').notNull(),
+    artist: text('artist').notNull(),
+    artistMbid: text('artist_mbid'),
+    year: integer('year'),
+    type: text('type'),
+    status: text('status', { enum: ALBUM_STATUSES }).notNull(),
+    requestedBy: integer('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    requestedByName: text('requested_by_name'),
+    decidedByName: text('decided_by_name'),
+    decidedAt: integer('decided_at'),
+    reason: text('reason'),
+    path: text('path'),
+    error: text('error'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('albums_status_idx').on(t.status)],
+);
+
+/** Artists whose new albums are requested by themselves, like Lidarr's monitored artists. */
+export const musicArtists = sqliteTable('music_artists', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  mbid: text('mbid').notNull().unique(),
+  name: text('name').notNull(),
+  addedBy: integer('added_by').references(() => users.id, { onDelete: 'set null' }),
+  addedAt: integer('added_at').notNull(),
+  checkedAt: integer('checked_at'),
+});

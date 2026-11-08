@@ -85,6 +85,9 @@ export function Layout({ children }: { children: ReactNode }) {
       <NavLink to="/books" className={linkClass}>
         {t('Books')}
       </NavLink>
+      <NavLink to="/music" className={linkClass}>
+        {t('Music')}
+      </NavLink>
       <NavLink to="/calendar" className={linkClass}>
         {t('Calendar')}
       </NavLink>

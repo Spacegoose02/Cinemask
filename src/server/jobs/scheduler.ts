@@ -3,6 +3,7 @@ import { syncAllWatchlists } from '../watchlist/service.js';
 import { storageJob } from '../storage/service.js';
 import { weeklyDigest } from '../notify/digest.js';
 import { syncLinkedProfiles } from '../arr/trash.js';
+import { checkFollowedArtists } from '../music/service.js';
 import { trackPlays } from '../playing/service.js';
 import cron, { type ScheduledTask } from 'node-cron';
 import type { FastifyInstance } from 'fastify';
@@ -94,6 +95,8 @@ export class Scheduler {
       cron.schedule('50 3 * * *', this.once('storage', async () => storageJob(this.app.ctx))),
       // Poster badges, after the night's library sync; "New" wears off, so this runs daily.
       cron.schedule('20 5 * * *', this.once('overlays', () => applyOverlays(this.app.ctx))),
+      // New albums by followed artists.
+      cron.schedule('30 6 * * *', this.once('music-artists', () => checkFollowedArtists(this.app.ctx))),
     ];
     requeueInterrupted(this.app.ctx);
     // First health run shortly after start, so the nav badge is right without waiting an hour.
