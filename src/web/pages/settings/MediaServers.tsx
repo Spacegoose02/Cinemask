@@ -184,6 +184,87 @@ function SyncSettings() {
   );
 }
 
+interface OverlayStatus {
+  enabled: boolean;
+  applied: number;
+  running: boolean;
+  lastRun: { at: number; updated: number; unchanged: number; failed: number; errors: string[] } | null;
+  sample: { kind: 'movie' | 'show'; tmdbId: number; title: string } | null;
+}
+
+/** Badges on posters (4K, score, New…), drawn here and uploaded to the servers. */
+function OverlaySettings() {
+  const qc = useQueryClient();
+  const s = useSettingsSection('overlays');
+  const status = useQuery({ queryKey: ['overlays'], queryFn: () => api<OverlayStatus>('/api/overlays'), refetchInterval: (q) => (q.state.data?.running ? 3000 : false) });
+  const [version, setVersion] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  if (s.loading) return null;
+  const act = async (path: string, confirmText?: string) => {
+    if (confirmText && !confirm(confirmText)) return;
+    setError(null);
+    try {
+      await api(path, { method: 'POST' });
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    await qc.invalidateQueries({ queryKey: ['overlays'] });
+  };
+  const d = status.data;
+  const sample = d?.sample;
+  return (
+    <section className="card space-y-4">
+      <h2 className="font-semibold">Poster overlays</h2>
+      <p className="text-sm text-muted">
+        Draws badges on posters and uploads them to Plex, Jellyfin, Emby and BingeBandit, so the quality and score show while browsing there. Badges go on the poster chosen in Cinemask (or TMDB's), never on top of an old badge. Updated every night, after the library sync.
+      </p>
+      <Toggle label="Put badges on posters" checked={s.values.enabled} onChange={(v) => s.set('enabled', v)} />
+      <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+        <div className="space-y-3">
+          <Toggle label="Resolution (4K, 1080p…)" checked={s.values.resolution} onChange={(v) => s.set('resolution', v)} />
+          <Toggle label="TMDB score" checked={s.values.rating} onChange={(v) => s.set('rating', v)} />
+          <Toggle label="Show status (Returning, Ended, Canceled)" checked={s.values.showStatus} onChange={(v) => s.set('showStatus', v)} />
+          <Toggle label="Age rating" checked={s.values.certification} onChange={(v) => s.set('certification', v)} />
+          <Field label='"New" banner for (days)' hint="Titles added, or shows with episodes added, this recently. 0 turns it off.">
+            <input className="input w-24" type="number" min={0} max={90} value={s.values.newDays} onChange={(e) => s.set('newDays', Number(e.target.value))} />
+          </Field>
+        </div>
+        {sample && (
+          <figure className="w-40 space-y-1">
+            <img key={version} className="w-40 rounded-md border border-border" alt={`Preview: ${sample.title}`} src={`/api/overlays/preview/${sample.kind}/${sample.tmdbId}?v=${version}`} />
+            <figcaption className="text-xs text-muted">Preview: {sample.title} (after saving)</figcaption>
+          </figure>
+        )}
+      </div>
+      <SaveBar
+        onSave={() => void s.save().then(() => setVersion((v) => v + 1))}
+        saving={s.saving}
+        message={s.message}
+      />
+      {error && <Alert kind="error">{error}</Alert>}
+      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+        <button className="btn-primary" disabled={!d?.enabled || d.running} onClick={() => act('/api/overlays/run')}>
+          {d?.running ? 'Updating…' : 'Update posters now'}
+        </button>
+        <button className="btn-secondary" disabled={!d?.applied || d.running} onClick={() => act('/api/overlays/remove', 'Put the clean posters back on every title that has badges?')}>
+          Remove all badges
+        </button>
+        <span className="text-sm text-muted">
+          {d ? `${d.applied} title${d.applied === 1 ? '' : 's'} with badges` : ''}
+          {d?.lastRun ? ` · last run ${formatDate(d.lastRun.at)}: ${d.lastRun.updated} updated${d.lastRun.failed ? `, ${d.lastRun.failed} failed` : ''}` : ''}
+        </span>
+      </div>
+      {!!d?.lastRun?.errors.length && (
+        <Alert kind="info">
+          {d.lastRun.errors.map((e) => (
+            <div key={e}>{e}</div>
+          ))}
+        </Alert>
+      )}
+    </section>
+  );
+}
+
 export function MediaServerSettings() {
   return (
     <div className="max-w-2xl space-y-6">
@@ -192,6 +273,7 @@ export function MediaServerSettings() {
       <JellyfinSettings />
       <EmbySettings />
       <SyncSettings />
+      <OverlaySettings />
     </div>
   );
 }

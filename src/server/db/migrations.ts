@@ -945,6 +945,19 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE match_overrides_new RENAME TO match_overrides;
     `,
   },
+  {
+    id: 34,
+    name: 'poster overlays',
+    sql: `
+      CREATE TABLE poster_overlays (
+        server TEXT NOT NULL CHECK (server IN ('plex','jellyfin','bingebandit','emby')),
+        external_key TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        applied_at INTEGER NOT NULL,
+        PRIMARY KEY (server, external_key)
+      );
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

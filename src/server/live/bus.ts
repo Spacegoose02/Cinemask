@@ -51,6 +51,7 @@ export const JOB_TOPICS: Record<string, LiveEvent> = {
   watchlists: { topic: 'requests', access: 'user' },
   storage: { topic: 'storage', access: 'manager' },
   'now-playing': { topic: 'playing', access: 'manager' },
+  overlays: { topic: 'overlays', access: 'admin' },
 };
 
 /** Writes under these never need to reach other tabs. */

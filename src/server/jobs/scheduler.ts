@@ -25,6 +25,7 @@ import { sweepTrailers } from '../trailers/service.js';
 import { checkDueChannels, downloadWanted, requeueInterrupted } from '../youtube/service.js';
 import type { LibrarySync } from '../library/service.js';
 import { JOB_TOPICS } from '../live/bus.js';
+import { applyOverlays } from '../posters/overlays.js';
 
 /** Background jobs. Kept in-process: a household install doesn't need a separate worker. */
 export class Scheduler {
@@ -91,6 +92,8 @@ export class Scheduler {
       cron.schedule('0 * * * *', this.once('digest', async () => weeklyDigest(this.app.ctx))),
       // Empties the old part of the recycle bin and applies the delete rules (Settings → Storage).
       cron.schedule('50 3 * * *', this.once('storage', async () => storageJob(this.app.ctx))),
+      // Poster badges, after the night's library sync; "New" wears off, so this runs daily.
+      cron.schedule('20 5 * * *', this.once('overlays', () => applyOverlays(this.app.ctx))),
     ];
     requeueInterrupted(this.app.ctx);
     // First health run shortly after start, so the nav badge is right without waiting an hour.

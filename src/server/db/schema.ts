@@ -866,3 +866,16 @@ export const plays = sqliteTable(
   },
   (t) => [uniqueIndex('plays_session_idx').on(t.server, t.sessionId), index('plays_started_idx').on(t.startedAt)],
 );
+
+/** Posters with badges (posters/overlays.ts): what was last put on each server item, so unchanged ones are skipped. */
+export const posterOverlays = sqliteTable(
+  'poster_overlays',
+  {
+    server: text('server', { enum: SERVERS }).notNull(),
+    externalKey: text('external_key').notNull(),
+    /** Hash of the badges and the clean poster they were drawn on. */
+    hash: text('hash').notNull(),
+    appliedAt: integer('applied_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.server, t.externalKey] })],
+);

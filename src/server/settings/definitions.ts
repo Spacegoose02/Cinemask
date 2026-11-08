@@ -419,6 +419,21 @@ export const SETTINGS = {
     }),
     secrets: ['privateKey'],
   },
+  overlays: {
+    schema: z.object({
+      /** Draws badges on posters and pushes them to the media servers (posters/overlays.ts). */
+      enabled: z.boolean().default(false),
+      resolution: z.boolean().default(true),
+      rating: z.boolean().default(true),
+      /** "New" on titles added (or with episodes added) in this many days; 0 turns it off. */
+      newDays: z.number().int().min(0).max(90).default(14),
+      /** Returning, Ended or Canceled on shows. */
+      showStatus: z.boolean().default(false),
+      /** Age rating (PG-13, TV-Y7…). */
+      certification: z.boolean().default(false),
+    }),
+    secrets: [],
+  },
   extras: {
     schema: z.object({
       /** yt-dlp downloads trailers into media folders, where Plex and Jellyfin pick them up. */
