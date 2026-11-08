@@ -27,6 +27,8 @@ export const prefsSchema = z.object({
   /** Notifications on the devices where this person turned them on. */
   push: z.boolean().default(true),
   email: z.boolean().default(false),
+  /** The weekly email of what's new and coming up (notify/digest.ts). */
+  digest: z.boolean().default(false),
   /** Events this person doesn't want. */
   off: z.array(z.string().max(40)).max(40).default(['download.imported']),
 });
@@ -139,6 +141,13 @@ export async function sendEmail(ctx: AppContext, to: string, n: Pick<Notificatio
   const base = ctx.settings.get('general').baseUrl.replace(/\/+$/, '');
   const link = base && n.url ? `\n\nOpen in Cinemask: ${base}${n.url}` : '';
   await t.transport.sendMail({ from: t.from, to, subject: n.title, text: `${n.message}${link}\n\n(You can change which emails you get in Cinemask → Account.)` });
+}
+
+/** An email with an HTML part, for the weekly digest. */
+export async function sendHtmlEmail(ctx: AppContext, to: string, mail: { subject: string; text: string; html: string }): Promise<void> {
+  const t = transport(ctx);
+  if (!t) throw new Error('Email is not set up (Settings → Notifications)');
+  await t.transport.sendMail({ from: t.from, to, subject: mail.subject, text: mail.text, html: mail.html });
 }
 
 /** Sends an event to each person who should hear it, on the channels they picked. */

@@ -386,6 +386,11 @@ export const SETTINGS = {
       password: z.string().max(500).default(''),
       from: z.union([z.literal(''), z.email().max(254)]).default(''),
       fromName: z.string().trim().max(100).default('Cinemask'),
+      /** The weekly "new this week and coming up" email people can turn on in Account → Notifications. */
+      digestEnabled: z.boolean().default(true),
+      /** Day of the week (0 is Sunday) and hour (0–23, in TZ) it goes out. */
+      digestDay: z.number().int().min(0).max(6).default(0),
+      digestHour: z.number().int().min(0).max(23).default(9),
     }),
     secrets: ['password'],
   },

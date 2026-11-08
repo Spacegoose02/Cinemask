@@ -117,6 +117,29 @@ export function NotificationSettings() {
             <input className="input" type="email" value={e.values.from} placeholder="cinemask@example.com" onChange={(ev) => e.set('from', ev.target.value)} />
           </Field>
         </div>
+        <Toggle label="Offer a weekly email of what's new and coming up" checked={e.values.digestEnabled} onChange={(v) => e.set('digestEnabled', v)} />
+        {e.values.digestEnabled && (
+          <div className="flex flex-wrap gap-4">
+            <Field label="Sent on">
+              <select className="input" value={e.values.digestDay} onChange={(ev) => e.set('digestDay', Number(ev.target.value))}>
+                {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => (
+                  <option key={d} value={i}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="At">
+              <select className="input" value={e.values.digestHour} onChange={(ev) => e.set('digestHour', Number(ev.target.value))}>
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>
+                    {String(h).padStart(2, '0')}:00
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        )}
         <TestButton service="email" beforeTest={e.save} endpoint="/api/notifications/email/test" body={{}} label="Save and email me a test" />
         <SaveBar onSave={e.save} saving={e.saving} message={e.message} />
       </section>

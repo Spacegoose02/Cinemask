@@ -1,6 +1,7 @@
 import { probeMissing } from '../files/mediainfo.js';
 import { syncAllWatchlists } from '../watchlist/service.js';
 import { storageJob } from '../storage/service.js';
+import { weeklyDigest } from '../notify/digest.js';
 import cron, { type ScheduledTask } from 'node-cron';
 import type { FastifyInstance } from 'fastify';
 import { lt } from 'drizzle-orm';
@@ -80,6 +81,8 @@ export class Scheduler {
       cron.schedule('*/30 * * * *', this.once('watchlists', () => syncAllWatchlists(this.app.ctx))),
       // Torrents that have seeded enough leave the download client.
       cron.schedule('*/15 * * * *', this.once('seeding', () => cleanUpSeeding(this.app.ctx))),
+      // The weekly email, at the day and hour in Settings → Notifications.
+      cron.schedule('0 * * * *', this.once('digest', async () => weeklyDigest(this.app.ctx))),
       // Empties the old part of the recycle bin and applies the delete rules (Settings → Storage).
       cron.schedule('50 3 * * *', this.once('storage', async () => storageJob(this.app.ctx))),
     ];

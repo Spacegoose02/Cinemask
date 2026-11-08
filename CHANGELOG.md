@@ -5,6 +5,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ## [Unreleased]
 ### Added
 - **Specials.** A show's specials (season 0) are now listed with its episodes, unmonitored. Monitor them one at a time, or pick season 0 with the show's seasons, and they're searched for, downloaded and imported like any other episode.
+- **Weekly email.** With email set up, people can turn on a weekly email in Account → Notifications: what arrived on the servers this week, what's coming out in the next, and any movie nights. Kids profiles only hear about titles for their age. Settings → Notifications picks the day and hour, and "Send me this week's" shows what it looks like.
 
 ## [0.34.0] - 2026-11-08
 
