@@ -721,12 +721,14 @@ export async function arrRoutes(app: FastifyInstance) {
   });
 
   // ---------------- TRaSH Guides ----------------
+  /** The guides' HTML descriptions as plain text: line breaks kept, tags dropped, and no angle bracket left over. */
+  const plainText = (html: string) => html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').replace(/[<>]/g, '');
   const trashApp = z.enum(['radarr', 'sonarr']);
   /** The guides' quality profiles for movies (Radarr's) or shows (Sonarr's). */
   app.get('/api/trash/:app/profiles', { config: { access: 'admin' } }, async (req) => {
     const { app: which } = parse(z.object({ app: trashApp }), req.params);
     const guide = await upstream(() => loadGuide(which));
-    return guide.profiles.map((p) => ({ id: p.trash_id, name: p.name, description: (p.trash_description ?? '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ''), formats: formatsFor(guide, p).length }));
+    return guide.profiles.map((p) => ({ id: p.trash_id, name: p.name, description: plainText(p.trash_description ?? ''), formats: formatsFor(guide, p).length }));
   });
 
   /** Makes a profile from a guide profile, or brings an existing profile in line with one and links it for weekly syncs. */
