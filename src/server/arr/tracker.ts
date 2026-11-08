@@ -4,6 +4,7 @@ import type { AppContext } from '../context.js';
 import { blocklist, downloadClients, downloads, monitored, type DownloadClientType } from '../db/schema.js';
 import { BingeBanditClient } from '../integrations/bingebandit.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
+import { EmbyClient } from '../integrations/emby.js';
 import { createClient, type ClientItem } from './clients.js';
 import { importDownload, locateDownload, mapRemotePath } from './importer.js';
 import { removeUnpacked, unpackDownload } from './unpack.js';
@@ -39,6 +40,10 @@ export async function refreshMediaServers(ctx: AppContext) {
   const jf = ctx.settings.get('jellyfin');
   if (jf.enabled && jf.url && jf.apiKey) {
     await new JellyfinClient(jf.url, jf.apiKey).refresh().catch(() => undefined);
+  }
+  const em = ctx.settings.get('emby');
+  if (em.enabled && em.url && em.apiKey) {
+    await new EmbyClient(em.url, em.apiKey).refresh().catch(() => undefined);
   }
   const bb = ctx.settings.get('bingebandit');
   if (bb.enabled && bb.url && bb.apiKey) {

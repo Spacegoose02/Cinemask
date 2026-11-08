@@ -285,7 +285,7 @@ export function libraryLabels(ctx: AppContext): string[] {
 }
 
 /** Copies the collections that already exist on Plex, Jellyfin or BingeBandit into the app (matching items by TMDB id). */
-export async function importServerCollections(ctx: AppContext, server: ServerType, userId: number | null): Promise<{ imported: number; updated: number }> {
+export async function importServerCollections(ctx: AppContext, server: 'plex' | 'jellyfin' | 'bingebandit', userId: number | null): Promise<{ imported: number; updated: number }> {
   const byKey = (key: string) => ctx.db.select().from(libraryItems).where(and(eq(libraryItems.server, server), eq(libraryItems.externalKey, key))).get();
   const toItems = (keys: string[]) =>
     keys

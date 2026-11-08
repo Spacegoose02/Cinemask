@@ -98,6 +98,24 @@ function JellyfinSettings() {
   );
 }
 
+function EmbySettings() {
+  const s = useSettingsSection('emby');
+  if (s.loading) return null;
+  return (
+    <section className="card space-y-4">
+      <h2 className="font-semibold">Emby</h2>
+      <Toggle label="Use Emby" checked={s.values.enabled} onChange={(v) => s.set('enabled', v)} />
+      <Field label="Server URL" hint="e.g. http://192.168.1.10:8096">
+        <input className="input" value={s.values.url} onChange={(e) => s.set('url', e.target.value)} />
+      </Field>
+      <Field label="API key" hint="Emby Settings → Advanced → API Keys. Emby titles count as available, show in Now playing and are rescanned after imports; collections and posters stay Plex and Jellyfin only.">
+        <SecretInput isSet={s.secretsSet['apiKey']!} value={s.secrets['apiKey']} onChange={(v) => s.setSecret('apiKey', v)} />
+      </Field>
+      <TestButton service="emby" beforeTest={s.save} />
+    </section>
+  );
+}
+
 function BingeBanditSettings() {
   const s = useSettingsSection('bingebandit');
   if (s.loading) return null;
@@ -172,6 +190,7 @@ export function MediaServerSettings() {
       <BingeBanditSettings />
       <PlexSettings />
       <JellyfinSettings />
+      <EmbySettings />
       <SyncSettings />
     </div>
   );

@@ -157,7 +157,7 @@ export const auditLog = sqliteTable(
 
 export const MEDIA_KINDS = ['movie', 'show'] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
-export const SERVERS = ['plex', 'jellyfin', 'bingebandit'] as const;
+export const SERVERS = ['plex', 'jellyfin', 'bingebandit', 'emby'] as const;
 export type ServerType = (typeof SERVERS)[number];
 
 /** Metadata for a movie or show, keyed by TMDB id. Filled from TMDB and cached. */

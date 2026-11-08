@@ -104,6 +104,15 @@ export const SETTINGS = {
     }),
     secrets: ['apiKey'],
   },
+  emby: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      name: z.string().trim().max(100).default(''),
+      url: httpUrl.default(''),
+      apiKey: z.string().max(500).default(''),
+    }),
+    secrets: ['apiKey'],
+  },
   bingebandit: {
     schema: z.object({
       enabled: z.boolean().default(false),

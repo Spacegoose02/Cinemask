@@ -32,14 +32,27 @@ function height(item: JfItem): number | undefined {
 }
 
 export class JellyfinClient implements MediaServerClient {
+  /** The name errors use. */
+  protected readonly service: string = 'Jellyfin';
+
   constructor(
-    private readonly url: string,
-    private readonly apiKey: string,
+    protected readonly url: string,
+    protected readonly apiKey: string,
   ) {}
 
-  private get<T>(path: string) {
+  /** How the API key is sent. Emby reads its own header. */
+  protected auth(): Record<string, string> {
+    return { Authorization: `MediaBrowser Token="${this.apiKey}"` };
+  }
+
+  protected get<T>(path: string) {
     const base = this.url.replace(/\/+$/, '');
-    return fetchJson<T>('Jellyfin', `${base}${path}`, { headers: { Authorization: `MediaBrowser Token="${this.apiKey}"` } }, 60_000);
+    return fetchJson<T>(this.service, `${base}${path}`, { headers: { ...this.auth(), Accept: 'application/json' } }, 60_000);
+  }
+
+  /** Every account on the server, with its admin flag. */
+  protected listUsers(): Promise<{ Id: string; Name: string; Policy?: { IsAdministrator?: boolean } }[]> {
+    return this.get('/Users');
   }
 
   async test() {
@@ -49,12 +62,12 @@ export class JellyfinClient implements MediaServerClient {
 
   async refresh() {
     const base = this.url.replace(/\/+$/, '');
-    await fetch(`${base}/Library/Refresh`, { method: 'POST', headers: { Authorization: `MediaBrowser Token="${this.apiKey}"` }, signal: AbortSignal.timeout(10_000) });
+    await fetch(`${base}/Library/Refresh`, { method: 'POST', headers: this.auth(), signal: AbortSignal.timeout(10_000) });
   }
 
   /** Jellyfin's user accounts, for linking one to a Cinemask user (its favourites are their watchlist). */
   async users(): Promise<{ id: string; name: string }[]> {
-    const users = await this.get<{ Id: string; Name: string }[]>('/Users');
+    const users = await this.listUsers();
     return users.map((u) => ({ id: u.Id, name: u.Name }));
   }
 
@@ -72,7 +85,7 @@ export class JellyfinClient implements MediaServerClient {
   /** Watched state lives per user in Jellyfin; read it as the first administrator, like Plex's server account. */
   private async adminUserId(): Promise<string | null> {
     try {
-      const users = await this.get<{ Id: string; Policy?: { IsAdministrator?: boolean } }[]>('/Users');
+      const users = await this.listUsers();
       return (users.find((u) => u.Policy?.IsAdministrator) ?? users[0])?.Id ?? null;
     } catch {
       return null;
@@ -118,20 +131,20 @@ export class JellyfinClient implements MediaServerClient {
 
   // ---------------- Writes: collections and posters ----------------
 
-  private async send(method: string, path: string, body?: string | Uint8Array, contentType?: string): Promise<Response> {
+  protected async send(method: string, path: string, body?: string | Uint8Array, contentType?: string): Promise<Response> {
     const base = this.url.replace(/\/+$/, '');
     let res: Response;
     try {
       res = await fetch(`${base}${path}`, {
         method,
         body,
-        headers: { Authorization: `MediaBrowser Token="${this.apiKey}"`, Accept: 'application/json', ...(contentType ? { 'Content-Type': contentType } : {}) },
+        headers: { ...this.auth(), Accept: 'application/json', ...(contentType ? { 'Content-Type': contentType } : {}) },
         signal: AbortSignal.timeout(30_000),
       });
     } catch (err) {
-      throw new IntegrationError('Jellyfin', connectError(err));
+      throw new IntegrationError(this.service, connectError(err));
     }
-    if (!res.ok) throw new IntegrationError('Jellyfin', `responded with HTTP ${res.status}`, res.status);
+    if (!res.ok) throw new IntegrationError(this.service, `responded with HTTP ${res.status}`, res.status);
     return res;
   }
 

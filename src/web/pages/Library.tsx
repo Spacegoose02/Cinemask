@@ -119,7 +119,7 @@ export function LibraryPage() {
       )}
       <LoadError queries={[lib]} />
       {lib.data && lib.data.total === 0 && (
-        <div className="card text-sm text-muted">Nothing here yet. An admin can connect BingeBandit, Plex or Jellyfin in Settings → Media servers.</div>
+        <div className="card text-sm text-muted">Nothing here yet. An admin can connect BingeBandit, Plex, Jellyfin or Emby in Settings → Media servers.</div>
       )}
       <MediaGrid
         items={lib.data?.items ?? []}

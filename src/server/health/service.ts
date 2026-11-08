@@ -9,6 +9,7 @@ import { testIndexer } from '../arr/indexers.js';
 import { openSecret } from '../arr/secrets.js';
 import { BingeBanditClient } from '../integrations/bingebandit.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
+import { EmbyClient } from '../integrations/emby.js';
 import { PlexClient } from '../integrations/plex.js';
 import { tmdbClient, type LibrarySync } from '../library/service.js';
 
@@ -90,6 +91,13 @@ export async function runHealthChecks(ctx: AppContext, deps: { backups: BackupSe
     pending.push(connection('jellyfin', `Jellyfin${jf.name ? ` (${jf.name})` : ''}`, 'media-servers', async () => {
       const i = await new JellyfinClient(jf.url, jf.apiKey!).test();
       return `Connected to ${i.name} (Jellyfin ${i.version})`;
+    }));
+  }
+  const em = ctx.settings.get('emby');
+  if (em.enabled && em.url && em.apiKey) {
+    pending.push(connection('emby', `Emby${em.name ? ` (${em.name})` : ''}`, 'media-servers', async () => {
+      const i = await new EmbyClient(em.url, em.apiKey!).test();
+      return `Connected to ${i.name} (Emby ${i.version})`;
     }));
   }
   const bb = ctx.settings.get('bingebandit');

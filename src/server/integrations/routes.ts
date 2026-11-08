@@ -10,6 +10,7 @@ import { parse } from '../lib/validate.js';
 import { mdblistClient, tmdbClient } from '../library/service.js';
 import { BingeBanditClient } from './bingebandit.js';
 import { JellyfinClient } from './jellyfin.js';
+import { EmbyClient } from './emby.js';
 import { PlexClient } from './plex.js';
 import * as plextv from './plextv.js';
 
@@ -25,7 +26,7 @@ export async function integrationRoutes(app: FastifyInstance) {
   };
 
   app.post('/api/integrations/:service/test', { config: { access: 'admin' } }, async (req) => {
-    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'bingebandit', 'tmdb', 'mdblist', 'audiobookshelf', 'shelfmark', 'readmeabook']) }), req.params);
+    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'emby', 'bingebandit', 'tmdb', 'mdblist', 'audiobookshelf', 'shelfmark', 'readmeabook']) }), req.params);
     const result = await run(async () => {
       switch (service) {
         case 'plex': {
@@ -43,6 +44,13 @@ export async function integrationRoutes(app: FastifyInstance) {
           const info = await new JellyfinClient(s.url, s.apiKey).test();
           ctx.settings.update('jellyfin', { name: s.name || info.name });
           return `Connected to ${info.name} (Jellyfin ${info.version})`;
+        }
+        case 'emby': {
+          const s = ctx.settings.get('emby');
+          if (!s.url || !s.apiKey) throw new Error('Enter the Emby URL and API key first');
+          const info = await new EmbyClient(s.url, s.apiKey).test();
+          ctx.settings.update('emby', { name: s.name || info.name });
+          return `Connected to ${info.name} (Emby ${info.version})`;
         }
         case 'bingebandit': {
           const s = ctx.settings.get('bingebandit');

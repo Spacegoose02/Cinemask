@@ -80,7 +80,7 @@ export function NowPlayingPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Now playing</h1>
       {error && <Alert>{error}</Alert>}
-      {live.data && !live.data.servers.length && <div className="card text-sm text-muted">Connect Plex or Jellyfin in Settings → Media servers to see what's playing.</div>}
+      {live.data && !live.data.servers.length && <div className="card text-sm text-muted">Connect Plex, Jellyfin or Emby in Settings → Media servers to see what's playing.</div>}
       {live.data?.servers.length ? (
         live.data.sessions.length ? (
           <div className="grid gap-3 md:grid-cols-2">
