@@ -8,6 +8,7 @@ import { useT } from '../lib/i18n';
 interface Prefs {
   push: boolean;
   email: boolean;
+  digest: boolean;
   off: string[];
 }
 
@@ -17,6 +18,7 @@ interface Me {
   publicKey: string;
   devices: { id: number; device: string | null; createdAt: number; lastUsedAt: number | null }[];
   emailAvailable: boolean;
+  digestAvailable: boolean;
   email: string | null;
 }
 
@@ -123,6 +125,14 @@ export function NotificationPrefs() {
               </button>
             )}
           </div>
+          {d.digestAvailable && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Toggle label="Weekly email: what's new and what's coming up" checked={d.prefs.digest} onChange={(v) => save({ digest: v })} />
+              <button className="btn-secondary px-2 py-1 text-xs" disabled={busy || !d.email} onClick={() => run(() => api('/api/notifications/digest/preview', { body: {} }))}>
+                Send me this week's
+              </button>
+            </div>
+          )}
         </div>
       )}
       <div>

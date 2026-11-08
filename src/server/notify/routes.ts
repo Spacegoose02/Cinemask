@@ -7,6 +7,7 @@ import { badRequest, HttpError, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { allowedPushEndpoint, eventsFor, prefsOf, prefsSchema, removeSubscription, sendEmail, sendPush, subscriptionsOf, vapidKeys } from './personal.js';
 import { cleanError } from './channels.js';
+import { sendDigestTo } from './digest.js';
 
 const base64url = z.string().min(10).max(200).regex(/^[\w-]+=*$/);
 
@@ -23,6 +24,7 @@ export async function notificationRoutes(app: FastifyInstance) {
       publicKey: vapidKeys(ctx).publicKey,
       devices: subscriptionsOf(ctx, u.id).map((s) => ({ id: s.id, device: s.device, createdAt: s.createdAt, lastUsedAt: s.lastUsedAt })),
       emailAvailable: ctx.settings.get('email').enabled,
+      digestAvailable: ctx.settings.get('email').enabled && ctx.settings.get('email').digestEnabled,
       email: u.email,
     };
   });
@@ -92,6 +94,19 @@ export async function notificationRoutes(app: FastifyInstance) {
     }
     if (!devices && !emailed) return { ok: false, message: 'Nothing to send to. Turn on notifications on this device, or email.' };
     return { ok: true, message: [devices && `Sent to ${devices} device${devices === 1 ? '' : 's'}`, emailed && `emailed ${u.email}`].filter(Boolean).join(' and ') + '.' };
+  });
+
+  /** Emails the signed-in person this week's digest now, so they can see what it looks like. */
+  app.post('/api/notifications/digest/preview', { config: { access: 'user', rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (req) => {
+    const u = me(req.user!.id);
+    if (!ctx.settings.get('email').enabled) throw badRequest('Email is not set up');
+    if (!u.email) throw badRequest('Add your email address first');
+    try {
+      const sent = await sendDigestTo(ctx, { id: u.id, email: u.email });
+      return sent ? { ok: true, message: `Sent this week's email to ${u.email}.` } : { ok: false, message: 'Nothing new this week and nothing coming up, so there was nothing to send.' };
+    } catch (err) {
+      throw new HttpError(502, `The email couldn't be sent: ${cleanError(err)}`, 'upstream');
+    }
   });
 
   /** Sends a test email to the admin, with the saved email settings. */

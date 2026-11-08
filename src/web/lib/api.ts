@@ -75,7 +75,7 @@ export interface Me {
 export interface AuthStatus {
   needsSetup: boolean;
   signedIn: boolean;
-  methods: { local: boolean; oidc: { label: string } | null; plex: boolean };
+  methods: { local: boolean; oidc: { label: string } | null; plex: boolean; passkey?: boolean };
 }
 
 export const RANK: Record<Role, number> = { user: 1, manager: 2, admin: 3 };

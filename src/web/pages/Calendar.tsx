@@ -8,6 +8,7 @@ import { Alert } from '../components/ui';
 import { api, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { mediaPath, poster } from '../lib/media';
+import { t } from '../lib/i18n';
 
 interface Entry {
   date: string;
@@ -101,12 +102,12 @@ function Chip({ e, onClick }: { e: Entry; onClick: () => void }) {
       {e.kind === 'movie' && <span className="shrink-0 opacity-70">{e.releaseType === 'cinema' ? '🎬' : e.releaseType === 'physical' ? '💿' : '📺'}</span>}
       <span className="min-w-0 truncate">{e.kind === 'show' && eps.length ? `${e.title} ${epCode(eps[0]!)}` : e.title}</span>
       {marker && (
-        <span className={`shrink-0 rounded px-1 text-[10px] font-bold ${isPremiere(marker) ? 'bg-accent text-accent-fg' : 'bg-warning text-black'}`} title={MARKER_LABEL[marker]}>
+        <span className={`shrink-0 rounded px-1 text-[10px] font-bold ${isPremiere(marker) ? 'bg-accent text-accent-fg' : 'bg-warning text-black'}`} title={t(MARKER_LABEL[marker])}>
           {MARKER_SHORT[marker]}
         </span>
       )}
       {e.kind === 'movie' && e.premiere && e.releaseType !== 'cinema' && (
-        <span className="shrink-0 rounded bg-accent px-1 text-[10px] font-bold text-accent-fg" title="First release">
+        <span className="shrink-0 rounded bg-accent px-1 text-[10px] font-bold text-accent-fg" title={t('First release')}>
           PREMIERE
         </span>
       )}
@@ -146,7 +147,7 @@ function Details({ e, onClose }: { e: Entry; onClose: () => void }) {
         <div className="min-w-0 space-y-2 text-sm">
           <div className="text-muted">
             {new Date(`${e.date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-            {e.releaseType && ` · ${RELEASE_LABEL[e.releaseType]}`}
+            {e.releaseType && ` · ${t(RELEASE_LABEL[e.releaseType])}`}
           </div>
           {e.episodes && (
             <ul className="space-y-0.5">
@@ -154,16 +155,16 @@ function Details({ e, onClose }: { e: Entry; onClose: () => void }) {
                 <li key={epCode(ep)} className="flex justify-between gap-2">
                   <span>
                     <span className="text-muted">{epCode(ep)}</span> {ep.title}
-                    {ep.marker && <span className={`ml-2 rounded px-1 text-[10px] font-bold ${isPremiere(ep.marker) ? 'bg-accent text-accent-fg' : 'bg-warning text-black'}`}>{MARKER_LABEL[ep.marker]}</span>}
+                    {ep.marker && <span className={`ml-2 rounded px-1 text-[10px] font-bold ${isPremiere(ep.marker) ? 'bg-accent text-accent-fg' : 'bg-warning text-black'}`}>{t(MARKER_LABEL[ep.marker])}</span>}
                   </span>
                   <span className="flex shrink-0 gap-2">
                     {canSearch && !single && (
                       <>
                         <button className="text-muted hover:text-accent" disabled={searching} onClick={() => void search({ season: ep.season, episode: ep.episode })} title={`Search for ${epCode(ep)}`}>
-                          Search
+                          {t('Search')}
                         </button>
                         <button className="text-muted hover:text-accent" onClick={() => setManual({ season: ep.season, episode: ep.episode })} title={`Manual search for ${epCode(ep)}`}>
-                          Manual
+                          {t('Manual')}
                         </button>
                       </>
                     )}
@@ -185,15 +186,15 @@ function Details({ e, onClose }: { e: Entry; onClose: () => void }) {
             {canSearch && single && (
               <>
                 <button className="btn-secondary" disabled={searching} onClick={() => void search(single)}>
-                  {searching ? 'Searching…' : 'Search'}
+                  {t(searching ? 'Searching…' : 'Search')}
                 </button>
                 <button className="btn-secondary" onClick={() => setManual(single)}>
-                  Manual search
+                  {t('Manual search')}
                 </button>
               </>
             )}
             <Link className="btn-primary" to={mediaPath(e.kind, e.tmdbId)} onClick={onClose}>
-              Details
+              {t('Details')}
             </Link>
           </div>
         </div>
@@ -245,7 +246,7 @@ export function CalendarPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Calendar</h1>
+        <h1 className="text-2xl font-semibold">{t('Calendar')}</h1>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex overflow-hidden rounded-md border border-border" role="tablist">
             {(['month', 'week', 'agenda'] as View[]).map((v) => (
@@ -254,24 +255,24 @@ export function CalendarPage() {
               </button>
             ))}
           </div>
-          <select className="input w-auto" value={only} onChange={(e) => pickOnly(e.target.value as Only)} aria-label="Show">
-            <option value="all">Everything</option>
-            <option value="missing">Missing only</option>
-            <option value="premieres">Premieres only</option>
-            <option value="premieres_finales">Premieres and finales</option>
+          <select className="input w-auto" value={only} onChange={(e) => pickOnly(e.target.value as Only)} aria-label={t('Show')}>
+            <option value="all">{t('Everything')}</option>
+            <option value="missing">{t('Missing only')}</option>
+            <option value="premieres">{t('Premieres only')}</option>
+            <option value="premieres_finales">{t('Premieres and finales')}</option>
           </select>
-          <select className="input w-auto" value={kind} onChange={(e) => setKind(e.target.value as KindFilter)} aria-label="Type">
-            <option value="all">Movies and shows</option>
-            <option value="movie">Movies</option>
-            <option value="show">Shows</option>
+          <select className="input w-auto" value={kind} onChange={(e) => setKind(e.target.value as KindFilter)} aria-label={t('Type')}>
+            <option value="all">{t('Movies and shows')}</option>
+            <option value="movie">{t('Movies')}</option>
+            <option value="show">{t('Shows')}</option>
           </select>
-          <button className="btn-secondary" onClick={() => step(-1)} aria-label="Previous">
+          <button className="btn-secondary" onClick={() => step(-1)} aria-label={t('Previous')}>
             ‹
           </button>
           <button className="btn-secondary" onClick={() => setAnchor(new Date())}>
-            Today
+            {t('Today')}
           </button>
-          <button className="btn-secondary" onClick={() => step(1)} aria-label="Next">
+          <button className="btn-secondary" onClick={() => step(1)} aria-label={t('Next')}>
             ›
           </button>
         </div>

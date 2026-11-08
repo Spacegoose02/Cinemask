@@ -8,6 +8,7 @@ import * as plextv from '../integrations/plextv.js';
 import { HttpError } from '../lib/errors.js';
 import { openSecret } from '../arr/secrets.js';
 import { submitRequest } from '../requests/submit.js';
+import { traktConfigured, traktWatchlist } from '../integrations/trakt.js';
 
 /**
  * Watchlist sync: what someone adds to their Plex watchlist or marks as a favourite in Jellyfin
@@ -18,7 +19,7 @@ import { submitRequest } from '../requests/submit.js';
 /** New requests one sync may make for one person, so a long watchlist doesn't arrive all at once. */
 const PER_RUN = 25;
 
-type Source = 'plex' | 'jellyfin';
+type Source = 'plex' | 'jellyfin' | 'trakt';
 interface Entry {
   source: Source;
   kind: MediaKind;
@@ -27,9 +28,9 @@ interface Entry {
 }
 
 /** Where a user's watchlist can come from. */
-export function sourcesOf(ctx: AppContext, u: typeof users.$inferSelect): { plex: boolean; jellyfin: boolean } {
+export function sourcesOf(ctx: AppContext, u: typeof users.$inferSelect): { plex: boolean; jellyfin: boolean; trakt: boolean } {
   const jf = ctx.settings.get('jellyfin');
-  return { plex: Boolean(u.plexToken), jellyfin: Boolean(u.jellyfinUserId && jf.enabled && jf.url && jf.apiKey) };
+  return { plex: Boolean(u.plexToken), jellyfin: Boolean(u.jellyfinUserId && jf.enabled && jf.url && jf.apiKey), trakt: Boolean(u.traktToken && traktConfigured(ctx)) };
 }
 
 async function entriesOf(ctx: AppContext, u: typeof users.$inferSelect): Promise<{ entries: Entry[]; errors: string[] }> {
@@ -49,6 +50,13 @@ async function entriesOf(ctx: AppContext, u: typeof users.$inferSelect): Promise
       for (const e of await new JellyfinClient(jf.url, jf.apiKey).favorites(u.jellyfinUserId!)) entries.push({ source: 'jellyfin', ...e });
     } catch (err) {
       errors.push(`Jellyfin: ${(err as Error).message}`);
+    }
+  }
+  if (src.trakt) {
+    try {
+      for (const e of await traktWatchlist(ctx, u.id)) entries.push({ source: 'trakt', ...e });
+    } catch (err) {
+      errors.push((err as Error).message);
     }
   }
   return { entries, errors };
@@ -77,7 +85,7 @@ export async function syncWatchlist(ctx: AppContext, userId: number): Promise<Sy
   let requested = 0;
   for (const e of entries) {
     if (e.tmdbId === null || seen.has(`${e.source}:${e.kind}:${e.tmdbId}`)) continue;
-    // The same title on both Plex and Jellyfin only needs asking once.
+    // The same title on more than one watchlist only needs asking once.
     seen.add(`${e.source}:${e.kind}:${e.tmdbId}`);
     if (requested >= PER_RUN) break;
     let result: string;

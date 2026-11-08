@@ -7,6 +7,7 @@ Please open a private security advisory on GitHub (Security → Report a vulnera
 ## Security model
 
 - **Accounts:** passwords are hashed with Argon2id (OWASP parameters), must be at least 12 characters and can't contain the username. Five failed attempts lock an account for 15 minutes, and sign-in endpoints are rate limited per IP. Unknown usernames and wrong passwords get the same response and similar timing.
+- **Two-factor sign-in:** authenticator apps (TOTP, SHA-1, 30-second steps, ±1 step) with the secret sealed by the instance key and each step accepted once; passkeys (WebAuthn, user verification required, bound to the public URL's host); ten recovery codes stored as SHA-256 hashes and used once. A correct password alone only gets a five-minute challenge that ends after five wrong codes. Changing two-factor settings asks for the password again. Admins can reset a user's two-factor; only the owner can for admins.
 - **Sessions:** random 256-bit tokens in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` over HTTPS). Only a SHA-256 hash is stored. Changing a password, role or account status signs the user out elsewhere.
 - **CSRF:** every state-changing request needs a custom header (which other sites can't send without CORS approval, and none is granted) and a per-session CSRF token.
 - **Authorization:** deny by default. Every API route declares the minimum role, checked server-side on every request against the current database role.

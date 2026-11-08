@@ -6,6 +6,7 @@ import { localDay } from '../lib/dates.js';
 import { bestResolution } from '../integrations/http.js';
 import { BingeBanditClient } from '../integrations/bingebandit.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
+import { EmbyClient } from '../integrations/emby.js';
 import type { MediaServerClient, ServerItem } from '../integrations/mediaserver.js';
 import { MdblistClient } from '../integrations/mdblist.js';
 import { PlexClient } from '../integrations/plex.js';
@@ -32,6 +33,8 @@ export function mediaServers(ctx: AppContext): { server: ServerType; client: Med
   if (plex.enabled && plex.url && plex.token) out.push({ server: 'plex', client: new PlexClient(plex.url, plex.token) });
   const jf = ctx.settings.get('jellyfin');
   if (jf.enabled && jf.url && jf.apiKey) out.push({ server: 'jellyfin', client: new JellyfinClient(jf.url, jf.apiKey) });
+  const em = ctx.settings.get('emby');
+  if (em.enabled && em.url && em.apiKey) out.push({ server: 'emby', client: new EmbyClient(em.url, em.apiKey) });
   const bb = ctx.settings.get('bingebandit');
   if (bb.enabled && bb.url && bb.apiKey) out.push({ server: 'bingebandit', client: new BingeBanditClient(bb.url, bb.apiKey) });
   return out;

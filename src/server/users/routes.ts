@@ -29,6 +29,8 @@ function toPublic(u: UserRow) {
     jellyfinUserId: u.jellyfinUserId,
     watchlistSync: u.watchlistSync,
     hasPassword: Boolean(u.passwordHash),
+    /** An authenticator app or passkey is set up (recovery codes exist exactly while one is). */
+    twoFactor: Boolean(u.totpSecret) || u.recoveryCodes !== null,
     linked: { oidc: Boolean(u.oidcSubject), plex: Boolean(u.plexId) },
     locked: u.lockedUntil !== null && u.lockedUntil > Date.now(),
     createdAt: u.createdAt,

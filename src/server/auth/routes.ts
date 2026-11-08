@@ -7,6 +7,7 @@ import { badRequest, conflict, HttpError, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { burnPasswordCheck, hashPassword, passwordProblem, verifyPassword } from '../security/passwords.js';
 import { createSession, destroySession, revokeUserSessions } from './sessions.js';
+import { startSecondStep } from './twofactor.js';
 
 export const MAX_FAILED_LOGINS = 5;
 export const LOCKOUT_MS = 15 * 60 * 1000;
@@ -35,6 +36,7 @@ export async function authRoutes(app: FastifyInstance) {
         local: auth.localLoginEnabled,
         oidc: auth.oidc.enabled ? { label: auth.oidc.buttonLabel } : null,
         plex: auth.plex.enabled,
+        passkey: auth.localLoginEnabled,
       },
     };
   });
@@ -87,6 +89,12 @@ export async function authRoutes(app: FastifyInstance) {
         .run();
       audit(app.ctx.db, req, lock ? 'auth.account_locked' : 'auth.login_failed', { target: user.username, user: null });
       throw new HttpError(401, GENERIC_LOGIN_ERROR, 'invalid_credentials');
+    }
+    // Two-factor: the password alone only earns a short-lived challenge for the second step.
+    const second = startSecondStep(app.ctx, user);
+    if (second) {
+      app.ctx.db.update(users).set({ failedLogins: 0 }).where(eq(users.id, user.id)).run();
+      return { ok: false, twoFactor: second };
     }
     createSession(app.ctx.db, req, reply, user.id, auth.sessionDays);
     audit(app.ctx.db, req, 'auth.login', { user: { id: user.id, username: user.username }, details: { method: 'local' } });

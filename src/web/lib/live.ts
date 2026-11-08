@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
  */
 const TOPIC_QUERIES: Record<string, string[]> = {
   requests: ['requests', 'request-count', 'request-quota', 'watchlist-me', 'home-row', 'media', 'lookup', 'activity', 'search', 'discover'],
-  downloads: ['downloads', 'download-count', 'files', 'file-details', 'issues', 'issue-count', 'monitored-overview', 'activity', 'manual-import', 'media', 'calendar', 'import'],
+  downloads: ['downloads', 'download-count', 'music-requests', 'files', 'file-details', 'issues', 'issue-count', 'monitored-overview', 'activity', 'manual-import', 'media', 'calendar', 'import'],
   monitored: ['storage', 'monitored-overview', 'files', 'media', 'calendar', 'airing', 'downloads', 'download-count', 'lookup'],
   files: ['storage', 'files', 'file-details', 'media', 'duplicates', 'rename', 'monitored-overview'],
   'manual-import': ['manual-import', 'downloads', 'download-count', 'files'],
@@ -24,7 +24,13 @@ const TOPIC_QUERIES: Record<string, string[]> = {
   posters: ['posters', 'media', 'collection', 'collections'],
   duplicates: ['duplicates'],
   home: ['home-layout', 'home-row'],
-  users: ['users', 'sessions', 'watchlist-me'],
+  users: ['users', 'sessions', 'watchlist-me', 'invites'],
+  invites: ['invites', 'users'],
+  playing: ['now-playing', 'watch-stats'],
+  overlays: ['overlays'],
+  music: ['music-requests', 'music-artists', 'music-search', 'music-artist', 'music-count'],
+  trash: ['profiles', 'custom-formats'],
+  trakt: ['trakt-me', 'watchlist-me'],
   backups: ['backups'],
   indexers: ['indexers', 'health-summary'],
   'download-clients': ['clients', 'health-summary'],

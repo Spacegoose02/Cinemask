@@ -1,6 +1,10 @@
 import { probeMissing } from '../files/mediainfo.js';
 import { syncAllWatchlists } from '../watchlist/service.js';
 import { storageJob } from '../storage/service.js';
+import { weeklyDigest } from '../notify/digest.js';
+import { syncLinkedProfiles } from '../arr/trash.js';
+import { checkFollowedArtists } from '../music/service.js';
+import { trackPlays } from '../playing/service.js';
 import cron, { type ScheduledTask } from 'node-cron';
 import type { FastifyInstance } from 'fastify';
 import { lt } from 'drizzle-orm';
@@ -22,6 +26,7 @@ import { sweepTrailers } from '../trailers/service.js';
 import { checkDueChannels, downloadWanted, requeueInterrupted } from '../youtube/service.js';
 import type { LibrarySync } from '../library/service.js';
 import { JOB_TOPICS } from '../live/bus.js';
+import { applyOverlays } from '../posters/overlays.js';
 
 /** Background jobs. Kept in-process: a household install doesn't need a separate worker. */
 export class Scheduler {
@@ -80,8 +85,18 @@ export class Scheduler {
       cron.schedule('*/30 * * * *', this.once('watchlists', () => syncAllWatchlists(this.app.ctx))),
       // Torrents that have seeded enough leave the download client.
       cron.schedule('*/15 * * * *', this.once('seeding', () => cleanUpSeeding(this.app.ctx))),
+      // Profiles that follow the TRaSH Guides pick up the guides' changes once a week.
+      cron.schedule('15 4 * * 0', this.once('trash-guides', () => syncLinkedProfiles(this.app.ctx))),
+      // What's playing on the media servers, for Now playing and watch stats.
+      cron.schedule('* * * * *', this.once('now-playing', () => trackPlays(this.app.ctx))),
+      // The weekly email, at the day and hour in Settings → Notifications.
+      cron.schedule('0 * * * *', this.once('digest', async () => weeklyDigest(this.app.ctx))),
       // Empties the old part of the recycle bin and applies the delete rules (Settings → Storage).
       cron.schedule('50 3 * * *', this.once('storage', async () => storageJob(this.app.ctx))),
+      // Poster badges, after the night's library sync; "New" wears off, so this runs daily.
+      cron.schedule('20 5 * * *', this.once('overlays', () => applyOverlays(this.app.ctx))),
+      // New albums by followed artists.
+      cron.schedule('30 6 * * *', this.once('music-artists', () => checkFollowedArtists(this.app.ctx))),
     ];
     requeueInterrupted(this.app.ctx);
     // First health run shortly after start, so the nav badge is right without waiting an hour.

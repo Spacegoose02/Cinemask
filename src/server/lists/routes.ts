@@ -53,7 +53,7 @@ export async function listRoutes(app: FastifyInstance) {
     return { list: view(list), items: await forViewer(ctx, req.user!.id, withAvailability(ctx, items)) };
   });
 
-  /** Adds a list from a pasted mdblist or TMDB URL, or a saved Discover search. */
+  /** Adds a list from a pasted mdblist, TMDB or Trakt URL, or a saved Discover search. */
   app.post('/api/lists', { config: { access: 'manager' } }, async (req) => {
     const body = parse(
       z.object({
@@ -63,14 +63,14 @@ export async function listRoutes(app: FastifyInstance) {
       }),
       req.body,
     );
-    let source: 'mdblist' | 'tmdb_list' | 'tmdb_discover';
+    let source: 'mdblist' | 'tmdb_list' | 'tmdb_discover' | 'trakt';
     let config: Record<string, unknown>;
     if (body.discover) {
       source = 'tmdb_discover';
       config = body.discover;
     } else {
       const parsed = body.url ? parseListUrl(body.url) : null;
-      if (!parsed || parsed.source === 'csv') throw badRequest('Paste an mdblist.com or themoviedb.org list link');
+      if (!parsed || parsed.source === 'csv') throw badRequest('Paste an mdblist.com, themoviedb.org or trakt.tv list link');
       source = parsed.source;
       config = parsed.config;
     }

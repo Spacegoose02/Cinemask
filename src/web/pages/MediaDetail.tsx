@@ -5,6 +5,7 @@ import { StatusBadge, TrailerModal } from '../components/media';
 import { Alert } from '../components/ui';
 import { api, localDay } from '../lib/api';
 import { poster, serverName, type AvailabilityInfo, type MediaKind } from '../lib/media';
+import { t } from '../lib/i18n';
 
 export interface MediaDetail {
   kind: MediaKind;
@@ -112,7 +113,7 @@ export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; ac
   const local = useQuery({ queryKey: ['local-trailers', kind, tmdbId], queryFn: () => api<{ index: number; name: string }[]>(`/api/trailers/${kind}/${tmdbId}`) });
   if (q.error) return <Alert>{(q.error as Error).message}</Alert>;
   const m = q.data;
-  if (!m) return <div className="text-muted">Loading…</div>;
+  if (!m) return <div className="text-muted">{t('Loading…')}</div>;
   const backdrop = poster(m.backdropPath, 'w780');
 
   return (
@@ -142,19 +143,19 @@ export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; ac
               {actions?.(m)}
             </div>
             <dl className="grid grid-cols-2 gap-3 pt-2 sm:grid-cols-4">
-              <Fact label={kind === 'movie' ? 'In theaters' : 'First aired'}>{fmt(m.releaseDate)}</Fact>
-              {kind === 'movie' && <Fact label="Streaming / digital">{fmt(m.digitalRelease)}</Fact>}
-              {kind === 'movie' && <Fact label="Disc">{fmt(m.physicalRelease)}</Fact>}
-              {kind === 'show' && <Fact label="Next episode">{fmt(m.nextAirDate)}</Fact>}
-              <Fact label="Status">{m.tmdbStatus}</Fact>
-              <Fact label="TMDB rating">{m.rating ? m.rating.toFixed(1) : null}</Fact>
+              <Fact label={t(kind === 'movie' ? 'In theaters' : 'First aired')}>{fmt(m.releaseDate)}</Fact>
+              {kind === 'movie' && <Fact label={t('Streaming / digital')}>{fmt(m.digitalRelease)}</Fact>}
+              {kind === 'movie' && <Fact label={t('Disc')}>{fmt(m.physicalRelease)}</Fact>}
+              {kind === 'show' && <Fact label={t('Next episode')}>{fmt(m.nextAirDate)}</Fact>}
+              <Fact label={t('Status')}>{m.tmdbStatus}</Fact>
+              <Fact label={t('TMDB rating')}>{m.rating ? m.rating.toFixed(1) : null}</Fact>
               {m.ratings.map((r) => (
                 <Fact key={r.source} label={r.source}>
                   {r.value}
                 </Fact>
               ))}
-              {m.watch && <Fact label="Watched">{watchText(m.kind, m.watch)}</Fact>}
-              <Fact label="On">{m.availability.servers.map(serverName).join(', ')}</Fact>
+              {m.watch && <Fact label={t('Watched')}>{watchText(m.kind, m.watch)}</Fact>}
+              <Fact label={t('On')}>{m.availability.servers.map(serverName).join(', ')}</Fact>
             </dl>
           </div>
         </div>
@@ -162,7 +163,7 @@ export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; ac
 
       {m.cast.length > 0 && (
         <section className="card">
-          <h2 className="mb-3 font-semibold">Cast</h2>
+          <h2 className="mb-3 font-semibold">{t('Cast')}</h2>
           <ul className="flex gap-3 overflow-x-auto pb-2">
             {m.cast.map((c) => (
               <li key={c.id} className="w-28 shrink-0">
@@ -184,7 +185,7 @@ export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; ac
 
       {kind === 'show' && m.seasons.length > 0 && (
         <section className="card">
-          <h2 className="mb-2 font-semibold">Seasons</h2>
+          <h2 className="mb-2 font-semibold">{t('Seasons')}</h2>
           <ul>
             {m.seasons
               .filter((s) => s.seasonNumber > 0 || s.onServer > 0)

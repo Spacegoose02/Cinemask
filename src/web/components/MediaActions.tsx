@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, formatAge, formatBytes, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { t } from '../lib/i18n';
 import type { MediaDetail } from '../pages/MediaDetail';
 import { PosterPicker, useCreateSeriesCollection } from './Extras';
 import { Modal } from './Modal';
@@ -405,20 +406,22 @@ interface StreamingHit {
 function QuotaLine({ quota, kind }: { quota: RequestQuota; kind: 'movie' | 'show' }) {
   const part = kind === 'movie' ? quota.movies : quota.seasons;
   if (quota.exempt || !part.limit) return null;
-  const period = quota.days === 7 ? 'this week' : `in ${quota.days} days`;
-  return (
-    <p className={`mt-3 text-xs ${part.remaining ? 'text-muted' : 'text-danger'}`}>
-      {part.remaining} of {part.limit} {kind === 'movie' ? 'movie' : 'season'} requests left {period}.
-    </p>
-  );
+  const vars = { left: part.remaining ?? 0, limit: part.limit, days: quota.days };
+  const text =
+    kind === 'movie'
+      ? quota.days === 7 ? t('{left} of {limit} movie requests left this week.', vars) : t('{left} of {limit} movie requests left in {days} days.', vars)
+      : quota.days === 7 ? t('{left} of {limit} season requests left this week.', vars) : t('{left} of {limit} season requests left in {days} days.', vars);
+  return <p className={`mt-3 text-xs ${part.remaining ? 'text-muted' : 'text-danger'}`}>{text}</p>;
 }
+
+const REQUEST_STATUS: Record<string, string> = { pending: 'Waiting for approval', approved: 'Approved', available: 'Available', declined: 'Declined' };
 
 /** "Streaming on Netflix", with the services' logos. */
 function StreamingNote({ hit }: { hit: StreamingHit }) {
   return (
     <span className="flex items-center gap-1.5 self-center text-sm text-muted">
       {hit.providers.slice(0, 3).map((p) => p.logoPath && <img key={p.id} src={`https://image.tmdb.org/t/p/w45${p.logoPath}`} alt="" className="h-5 w-5 rounded" />)}
-      Streaming on {hit.providers.map((p) => p.name).join(', ')}
+      {t('Streaming on {services}', { services: hit.providers.map((p) => p.name).join(', ') })}
     </span>
   );
 }
@@ -467,14 +470,17 @@ function RequestUpgrade({ m, profiles, onClose, onSent }: { m: MediaDetail; prof
   };
   const current = m.availability.resolution;
   return (
-    <Modal title={`Request a better copy of ${m.title}`} onClose={onClose}>
+    <Modal title={t('Request a better copy of {title}', { title: m.title })} onClose={onClose}>
       <div className="space-y-3">
         {error && <Alert>{error}</Alert>}
-        <p className="text-sm text-muted">{current ? `It's on the server in ${current}. ` : ''}A manager approves it, then a better release replaces the file.</p>
+        <p className="text-sm text-muted">
+          {current ? `${t("It's on the server in {quality}.", { quality: current })} ` : ''}
+          {t('A manager approves it, then a better release replaces the file.')}
+        </p>
         <label className="block">
-          <span className="label">Quality</span>
-          <select className="input" value={profileId} onChange={(e) => setProfileId(e.target.value ? Number(e.target.value) : '')} aria-label="Quality wanted">
-            <option value="">Let the manager choose</option>
+          <span className="label">{t('Quality')}</span>
+          <select className="input" value={profileId} onChange={(e) => setProfileId(e.target.value ? Number(e.target.value) : '')} aria-label={t('Quality wanted')}>
+            <option value="">{t('Let the manager choose')}</option>
             {profiles.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -484,7 +490,7 @@ function RequestUpgrade({ m, profiles, onClose, onSent }: { m: MediaDetail; prof
         </label>
         {m.kind === 'show' && onServerSeasons.length > 0 && (
           <fieldset className="space-y-1">
-            <legend className="label">Seasons</legend>
+            <legend className="label">{t('Seasons')}</legend>
             {onServerSeasons.map((s) => (
               <label key={s.seasonNumber} className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={seasons.includes(s.seasonNumber)} onChange={(e) => setSeasons(e.target.checked ? [...seasons, s.seasonNumber] : seasons.filter((x) => x !== s.seasonNumber))} />
@@ -494,11 +500,11 @@ function RequestUpgrade({ m, profiles, onClose, onSent }: { m: MediaDetail; prof
           </fieldset>
         )}
         <label className="block">
-          <span className="label">Note for the manager (optional)</span>
-          <input className="input" maxLength={300} value={note} placeholder="Like: it's blurry, or the sound is out of sync" onChange={(e) => setNote(e.target.value)} />
+          <span className="label">{t('Note for the manager (optional)')}</span>
+          <input className="input" maxLength={300} value={note} placeholder={t("Like: it's blurry, or the sound is out of sync")} onChange={(e) => setNote(e.target.value)} />
         </label>
         <button className="btn-primary" disabled={busy || (m.kind === 'show' && onServerSeasons.length > 0 && !seasons.length)} onClick={send}>
-          {busy ? 'Sending…' : 'Request upgrade'}
+          {t(busy ? 'Sending…' : 'Request upgrade')}
         </button>
       </div>
     </Modal>
@@ -545,8 +551,8 @@ export function MediaActions({ m }: { m: MediaDetail }) {
   // A user an admin trusts with this kind gets an approved request straight away.
   const requested = (r: unknown) => {
     const row = r as { status?: string; following?: boolean } | null;
-    if (row?.following) return "Someone already asked for this, so you've been added to their request. You'll hear when it's ready.";
-    return row?.status === 'approved' ? 'Added and searching.' : 'Requested. A manager will review it.';
+    if (row?.following) return t("Someone already asked for this, so you've been added to their request. You'll hear when it's ready.");
+    return t(row?.status === 'approved' ? 'Added and searching.' : 'Requested. A manager will review it.');
   };
   const hit = streaming.data?.hit ?? null;
   const blocked = !isManager && streaming.data?.mode === 'block' && !!hit;
@@ -578,10 +584,10 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           <button
             className="btn-primary"
             disabled={blocked}
-            title={blocked ? `On ${hit!.providers.map((p) => p.name).join(', ')}, so it can't be requested` : undefined}
+            title={blocked ? t("On {services}, so it can't be requested", { services: hit!.providers.map((p) => p.name).join(', ') }) : undefined}
             onClick={() => (m.kind === 'show' || !isManager ? (setSeasons(null), setFourK(false), setNote(''), setRequesting(true)) : !chosenRoot ? setAsking('download') : download(chosenRoot))}
           >
-            {isManager ? 'Download' : open || req?.status === 'available' ? 'Request more seasons' : 'Request'}
+            {t(isManager ? 'Download' : open || req?.status === 'available' ? 'Request more seasons' : 'Request')}
           </button>
         </>
       )}
@@ -595,20 +601,20 @@ export function MediaActions({ m }: { m: MediaDetail }) {
         </button>
       )}
       {!isManager && onServer && !upgradeAsk && (
-        <button className="btn-secondary" title="Ask a manager for a better copy, such as 1080p instead of SD" onClick={() => setAskingUpgrade(true)}>
-          Request upgrade
+        <button className="btn-secondary" title={t('Ask a manager for a better copy, such as 1080p instead of SD')} onClick={() => setAskingUpgrade(true)}>
+          {t('Request upgrade')}
         </button>
       )}
       {!isManager && upgradeAsk && (
         <span className="self-center text-sm text-muted">
-          Upgrade {upgradeAsk.status === 'pending' ? 'requested' : 'on its way'}
-          {upgradeAsk.requestedByName && !upgradeAsk.mine ? ` by ${upgradeAsk.requestedByName}` : ''}
+          {t(upgradeAsk.status === 'pending' ? 'Upgrade requested' : 'Upgrade on its way')}
+          {upgradeAsk.requestedByName && !upgradeAsk.mine ? ` ${t('by {name}', { name: upgradeAsk.requestedByName })}` : ''}
         </span>
       )}
       {isManager && upgradeAsk?.status === 'pending' && <span className="self-center text-sm text-muted">Upgrade requested by {upgradeAsk.requestedByName}</span>}
       {hit && <StreamingNote hit={hit} />}
-      {req && req.status !== 'declined' && (!mon || !isManager) && <span className="self-center text-sm text-muted">Requested by {req.requestedByName} · {req.status}</span>}
-      {req?.status === 'declined' && !open && <span className="self-center text-sm text-danger">Request declined{req.reason ? `: ${req.reason}` : ''}</span>}
+      {req && req.status !== 'declined' && (!mon || !isManager) && <span className="self-center text-sm text-muted">{t('Requested by {name}', { name: req.requestedByName ?? '' })} · {t(REQUEST_STATUS[req.status] ?? req.status)}</span>}
+      {req?.status === 'declined' && !open && <span className="self-center text-sm text-danger">{t('Request declined')}{req.reason ? `: ${req.reason}` : ''}</span>}
       {mon && isManager && 'profileId' in mon && (
         <>
           <select
@@ -673,16 +679,16 @@ export function MediaActions({ m }: { m: MediaDetail }) {
       {msg && msg.text && <Alert kind={msg.kind}>{msg.text}</Alert>}
       {posters && <PosterPicker kind={m.kind} tmdbId={m.tmdbId} onClose={() => setPosters(false)} />}
       {requesting && (
-        <Modal title={`Request ${m.title}`} onClose={() => setRequesting(false)}>
+        <Modal title={t('Request {title}', { title: m.title })} onClose={() => setRequesting(false)}>
           {m.kind === 'show' && (
             <>
-              <p className="mb-3 text-sm text-muted">Pick the seasons you want.</p>
+              <p className="mb-3 text-sm text-muted">{t('Pick the seasons you want.')}</p>
               <SeasonPicker seasons={m.seasons} value={picked} onChange={setSeasons} requested={requestedSeasons} />
             </>
           )}
           {hit && (
             <p className="mt-3 rounded-md border border-border bg-surface-2 p-2 text-sm">
-              Already on <strong>{hit.providers.map((p) => p.name).join(', ')}</strong>. You may not need to request it.
+              {t('Already on {services}. You may not need to request it.', { services: hit.providers.map((p) => p.name).join(', ') })}
             </p>
           )}
           {isManager && roots.length > 1 && (
@@ -693,13 +699,13 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           )}
           {!isManager && quota.data?.canRequest4k && (
             <label className="mt-3 flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={fourK} onChange={(e) => setFourK(e.target.checked)} /> Request in 4K
+              <input type="checkbox" checked={fourK} onChange={(e) => setFourK(e.target.checked)} /> {t('Request in 4K')}
             </label>
           )}
           {!isManager && (
             <label className="mt-3 block">
-              <span className="label">Note for the manager (optional)</span>
-              <input className="input" maxLength={300} value={note} placeholder="Like: the 2005 one, not the remake" onChange={(e) => setNote(e.target.value)} />
+              <span className="label">{t('Note for the manager (optional)')}</span>
+              <input className="input" maxLength={300} value={note} placeholder={t('Like: the 2005 one, not the remake')} onChange={(e) => setNote(e.target.value)} />
             </label>
           )}
           {quota.data && <QuotaLine quota={quota.data} kind={m.kind} />}
@@ -718,9 +724,15 @@ export function MediaActions({ m }: { m: MediaDetail }) {
               setRequesting(false);
             }}
           >
-            {isManager ? 'Download' : 'Request'}
-            {m.kind === 'show' ? ` ${picked.length} season${picked.length === 1 ? '' : 's'}` : ''}
-            {fourK ? ' in 4K' : ''}
+            {isManager
+              ? t('Download')
+              : m.kind === 'show'
+                ? picked.length === 1
+                  ? t('Request 1 season')
+                  : t('Request {n} seasons', { n: picked.length })
+                : t('Request')}
+            {isManager && m.kind === 'show' ? ` (${picked.length})` : ''}
+            {fourK ? ` · 4K` : ''}
           </button>
         </Modal>
       )}

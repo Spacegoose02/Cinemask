@@ -60,6 +60,13 @@ export async function monitorTitle(
 }
 
 /**
+ * Whether episodes of a season are monitored under a title's season choice. "Every season" (null)
+ * leaves specials (season 0) out, as Sonarr does; they're monitored when season 0 is picked, or one
+ * episode at a time.
+ */
+export const seasonMonitored = (wanted: number[] | null, season: number) => (wanted ? wanted.includes(season) : season !== 0);
+
+/**
  * Syncs a monitored show's episode list (titles, air dates) from TMDB. New episodes follow the
  * season choice; existing ones keep their own monitored flag unless resetMonitored is set.
  */
@@ -71,18 +78,20 @@ export async function refreshEpisodes(ctx: AppContext, row: MonitoredRow, resetM
   // Anime is numbered from the first episode of the show; count it in season order.
   let absolute = 0;
   for (const s of [...show.seasons].sort((a, b) => a.season_number - b.season_number)) {
-    if (s.season_number === 0) continue; // specials are opt-in by searching manually
     const season = await tmdb.season(row.tmdbId, s.season_number);
+    const special = s.season_number === 0;
     for (const e of [...season.episodes].sort((a, b) => a.episode_number - b.episode_number)) {
-      absolute++;
-      if (e.runtime) runtimes.push(e.runtime);
-      const isMonitored = !wantedSeasons || wantedSeasons.includes(s.season_number);
+      // Specials have no place in the absolute order and don't set the typical episode length.
+      if (!special) absolute++;
+      if (e.runtime && !special) runtimes.push(e.runtime);
+      const isMonitored = seasonMonitored(wantedSeasons, s.season_number);
+      const absoluteNumber = special ? null : absolute;
       ctx.db
         .insert(monitoredEpisodes)
-        .values({ monitoredId: row.id, season: s.season_number, episode: e.episode_number, title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, monitored: isMonitored, absoluteNumber: absolute })
+        .values({ monitoredId: row.id, season: s.season_number, episode: e.episode_number, title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, monitored: isMonitored, absoluteNumber })
         .onConflictDoUpdate({
           target: [monitoredEpisodes.monitoredId, monitoredEpisodes.season, monitoredEpisodes.episode],
-          set: { title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, absoluteNumber: absolute, ...(resetMonitored ? { monitored: isMonitored } : {}) },
+          set: { title: e.name, airDate: e.air_date, episodeType: e.episode_type ?? null, absoluteNumber, ...(resetMonitored ? { monitored: isMonitored } : {}) },
         })
         .run();
     }

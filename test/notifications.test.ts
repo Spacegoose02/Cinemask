@@ -149,3 +149,38 @@ describe('shared channels', () => {
     expect((await kid.req('POST', '/api/notifications/email/test', {})).statusCode).toBe(403);
   });
 });
+
+describe('weekly email', () => {
+  it('sends what is new and coming up to people who asked for it, at the chosen hour, and keeps kids to their titles', async () => {
+    const nodemailer = (await import('nodemailer')).default;
+    const sent: { to: string; subject: string; text: string; html: string }[] = [];
+    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail: async (m: (typeof sent)[number]) => (sent.push(m), {}) } as never);
+    await owner.req('PUT', '/api/settings/email', { enabled: true, host: 'smtp.digest.test', from: 'cm@example.com', digestDay: 0, digestHour: 9 });
+    const sqlite = t.app.ctx.dbHandle.sqlite;
+    const now = new Date(2026, 10, 8, 9, 5).getTime(); // a Sunday, 09:05
+    sqlite.prepare("INSERT INTO library_items (server, external_key, kind, title, year, tmdb_id, added_at) VALUES ('plex', 'n1', 'movie', 'Paddington', 2014, 116149, ?)").run(now - 86_400_000);
+    sqlite.prepare("INSERT INTO library_items (server, external_key, kind, title, year, tmdb_id, added_at) VALUES ('plex', 'n2', 'movie', 'Old One', 2001, 777, ?)").run(now - 30 * 86_400_000);
+    await kid.req('PUT', '/api/notifications/me', { push: false, email: true, digest: true, off: [], address: 'kid@example.com' });
+    await sib.req('PUT', '/api/notifications/me', { push: false, email: true, digest: false, off: [], address: 'sib@example.com' });
+    expect((await kid.req('GET', '/api/notifications/me')).json().digestAvailable).toBe(true);
+
+    const { weeklyDigest } = await import('../src/server/notify/digest.js');
+    expect(await weeklyDigest(t.app.ctx, new Date(now + 3600_000))).toBe(0); // wrong hour
+    expect(await weeklyDigest(t.app.ctx, new Date(now))).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.to).toBe('kid@example.com');
+    expect(sent[0]!.subject).toBe('This week on Cinemask: 1 new');
+    expect(sent[0]!.text).toContain('Paddington (2014)');
+    expect(sent[0]!.text).not.toContain('Old One');
+
+    // A kids profile with an age limit doesn't hear about titles above it.
+    sqlite.prepare("UPDATE users SET max_age = 7 WHERE username = 'kid'").run();
+    sqlite.prepare("UPDATE media SET certification = 'PG-13', min_age = 13 WHERE tmdb_id = 116149").run();
+    sent.length = 0;
+    expect(await weeklyDigest(t.app.ctx, new Date(now))).toBe(0);
+
+    // Preview on demand
+    expect((await sib.req('POST', '/api/notifications/digest/preview', {})).json()).toMatchObject({ ok: true });
+    expect(sent.at(-1)!.html).toContain('<h2');
+  });
+});

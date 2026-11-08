@@ -759,6 +759,239 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE users ADD COLUMN language TEXT;
     `,
   },
+  {
+    id: 28,
+    name: 'trash guides',
+    sql: `
+      ALTER TABLE custom_formats ADD COLUMN trash_id TEXT;
+      ALTER TABLE quality_profiles ADD COLUMN trash_app TEXT CHECK (trash_app IN ('radarr','sonarr'));
+      ALTER TABLE quality_profiles ADD COLUMN trash_id TEXT;
+      ALTER TABLE quality_profiles ADD COLUMN trash_synced_at INTEGER;
+    `,
+  },
+  {
+    id: 29,
+    name: 'two-factor sign-in',
+    sql: `
+      ALTER TABLE users ADD COLUMN totp_secret TEXT;
+      ALTER TABLE users ADD COLUMN totp_last_step INTEGER;
+      ALTER TABLE users ADD COLUMN recovery_codes TEXT;
+      CREATE TABLE passkeys (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        public_key TEXT NOT NULL,
+        counter INTEGER NOT NULL DEFAULT 0,
+        transports TEXT,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER
+      );
+      CREATE INDEX passkeys_user_idx ON passkeys(user_id);
+    `,
+  },
+  {
+    id: 30,
+    name: 'trakt',
+    // lists and watchlist_items are rebuilt for their source CHECKs; list_items would cascade away, so they're set aside.
+    sql: `
+      ALTER TABLE users ADD COLUMN trakt_token TEXT;
+      ALTER TABLE users ADD COLUMN trakt_user TEXT;
+      CREATE TABLE list_items_keep AS SELECT * FROM list_items;
+      CREATE TABLE lists_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('mdblist','tmdb_list','tmdb_discover','csv','trakt')),
+        config TEXT NOT NULL DEFAULT '{}',
+        kind TEXT CHECK (kind IN ('movie','show')),
+        auto_add INTEGER NOT NULL DEFAULT 0,
+        profile_id INTEGER REFERENCES quality_profiles(id) ON DELETE SET NULL,
+        search_on_add INTEGER NOT NULL DEFAULT 1,
+        sync_hours INTEGER NOT NULL DEFAULT 12,
+        last_sync_at INTEGER,
+        last_error TEXT,
+        item_count INTEGER NOT NULL DEFAULT 0,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      INSERT INTO lists_new SELECT * FROM lists;
+      DROP TABLE lists;
+      ALTER TABLE lists_new RENAME TO lists;
+      INSERT INTO list_items SELECT * FROM list_items_keep;
+      DROP TABLE list_items_keep;
+      CREATE TABLE watchlist_items_new (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        source TEXT NOT NULL CHECK (source IN ('plex','jellyfin','trakt')),
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        result TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, source, kind, tmdb_id)
+      );
+      INSERT INTO watchlist_items_new SELECT * FROM watchlist_items;
+      DROP TABLE watchlist_items;
+      ALTER TABLE watchlist_items_new RENAME TO watchlist_items;
+    `,
+  },
+  {
+    id: 31,
+    name: 'invites',
+    sql: `
+      CREATE TABLE invites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code_hash TEXT NOT NULL UNIQUE,
+        code TEXT NOT NULL,
+        label TEXT,
+        role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','manager','admin')),
+        max_age INTEGER,
+        can_request_4k INTEGER NOT NULL DEFAULT 0,
+        uses_left INTEGER,
+        used INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER,
+        plex_share INTEGER NOT NULL DEFAULT 0,
+        plex_sections TEXT,
+        jellyfin_account INTEGER NOT NULL DEFAULT 0,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE invite_uses (
+        invite_id INTEGER NOT NULL REFERENCES invites(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        used_at INTEGER NOT NULL,
+        note TEXT,
+        PRIMARY KEY (invite_id, user_id)
+      );
+    `,
+  },
+  {
+    id: 32,
+    name: 'now playing',
+    sql: `
+      CREATE TABLE plays (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        server TEXT NOT NULL CHECK (server IN ('plex','jellyfin','bingebandit','emby')),
+        session_id TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        user TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','episode','other')),
+        title TEXT NOT NULL,
+        show TEXT,
+        season INTEGER,
+        episode INTEGER,
+        year INTEGER,
+        tmdb_id INTEGER,
+        state TEXT NOT NULL,
+        position_ms INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        watched_ms INTEGER NOT NULL DEFAULT 0,
+        player TEXT,
+        platform TEXT,
+        decision TEXT NOT NULL,
+        quality TEXT,
+        bandwidth_kbps INTEGER,
+        local INTEGER,
+        control_id TEXT,
+        started_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        stopped_at INTEGER
+      );
+      CREATE UNIQUE INDEX plays_session_idx ON plays(server, session_id);
+      CREATE INDEX plays_started_idx ON plays(started_at);
+    `,
+  },
+  {
+    id: 33,
+    name: 'emby server',
+    // Rebuilt for the server CHECK, as in migration 18.
+    sql: `
+      CREATE TABLE library_episodes_keep AS SELECT * FROM library_episodes;
+      CREATE TABLE library_items_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        server TEXT NOT NULL CHECK (server IN ('plex','jellyfin','bingebandit','emby')),
+        external_key TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','show')),
+        title TEXT NOT NULL,
+        year INTEGER,
+        tmdb_id INTEGER,
+        tvdb_id INTEGER,
+        imdb_id TEXT,
+        resolution TEXT,
+        added_at INTEGER,
+        media_id INTEGER REFERENCES media(id) ON DELETE SET NULL,
+        view_count INTEGER,
+        last_viewed_at INTEGER,
+        labels TEXT,
+        library TEXT,
+        UNIQUE (server, external_key)
+      );
+      INSERT INTO library_items_new (id, server, external_key, kind, title, year, tmdb_id, tvdb_id, imdb_id, resolution, added_at, media_id, view_count, last_viewed_at, labels, library)
+        SELECT id, server, external_key, kind, title, year, tmdb_id, tvdb_id, imdb_id, resolution, added_at, media_id, view_count, last_viewed_at, labels, library FROM library_items;
+      DROP TABLE library_items;
+      ALTER TABLE library_items_new RENAME TO library_items;
+      CREATE INDEX library_items_media_idx ON library_items(media_id);
+      CREATE INDEX library_items_tmdb_idx ON library_items(kind, tmdb_id);
+      INSERT INTO library_episodes (id, library_item_id, season, episode, title, resolution, view_count, last_viewed_at)
+        SELECT id, library_item_id, season, episode, title, resolution, view_count, last_viewed_at FROM library_episodes_keep;
+      DROP TABLE library_episodes_keep;
+      CREATE TABLE match_overrides_new (
+        server TEXT NOT NULL CHECK (server IN ('plex','jellyfin','bingebandit','emby')),
+        external_key TEXT NOT NULL,
+        tmdb_id INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (server, external_key)
+      );
+      INSERT INTO match_overrides_new SELECT server, external_key, tmdb_id, created_at FROM match_overrides;
+      DROP TABLE match_overrides;
+      ALTER TABLE match_overrides_new RENAME TO match_overrides;
+    `,
+  },
+  {
+    id: 34,
+    name: 'poster overlays',
+    sql: `
+      CREATE TABLE poster_overlays (
+        server TEXT NOT NULL CHECK (server IN ('plex','jellyfin','bingebandit','emby')),
+        external_key TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        applied_at INTEGER NOT NULL,
+        PRIMARY KEY (server, external_key)
+      );
+    `,
+  },
+  {
+    id: 35,
+    name: 'music',
+    sql: `
+      CREATE TABLE albums (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mbid TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        artist TEXT NOT NULL,
+        artist_mbid TEXT,
+        year INTEGER,
+        type TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending','approved','declined','downloading','available','failed')),
+        requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        requested_by_name TEXT,
+        decided_by_name TEXT,
+        decided_at INTEGER,
+        reason TEXT,
+        path TEXT,
+        error TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX albums_status_idx ON albums(status);
+      CREATE TABLE music_artists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mbid TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        added_at INTEGER NOT NULL,
+        checked_at INTEGER
+      );
+      ALTER TABLE downloads ADD COLUMN album_id INTEGER REFERENCES albums(id) ON DELETE SET NULL;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

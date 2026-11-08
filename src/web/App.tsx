@@ -1,5 +1,6 @@
 import { ApiDocsPage } from './pages/ApiDocs';
 import { BooksPage } from './pages/Books';
+import { MusicPage } from './pages/Music';
 import { YoutubePage } from './pages/Youtube';
 import { useQuery } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
@@ -31,6 +32,8 @@ import { StoragePage } from './pages/Storage';
 import { FileDetails } from './components/FileDetails';
 import { SettingsPage } from './pages/Settings';
 import { SetupPage } from './pages/Setup';
+import { InvitePage } from './pages/Invite';
+import { NowPlayingPage } from './pages/NowPlaying';
 
 const panels = (m: MediaDetail) => (
   <>
@@ -67,6 +70,7 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage status={status.data!} />} />
+        <Route path="/invite/:code" element={<InvitePage />} />
         {/* Remember where they were going, so a shared link still opens after signing in. */}
         <Route path="*" element={<Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />} />
       </Routes>
@@ -76,12 +80,14 @@ export function App() {
     <Layout>
       <Routes>
         <Route path="/login" element={<Navigate to={afterSignIn(location.state)} replace />} />
+        <Route path="/invite/:code" element={<Navigate to="/" replace />} />
         <Route path="/" element={<HomePage />} />
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" actions={(m) => <MediaActions m={m} />} panels={panels} />} />
         <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} panels={panels} />} />
         <Route path="/books" element={<BooksPage />} />
+        <Route path="/music" element={<MusicPage />} />
         <Route path="/developer" element={<ApiDocsPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
@@ -108,6 +114,14 @@ export function App() {
           element={
             <RequireRole role="manager">
               <YoutubePage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/now-playing"
+          element={
+            <RequireRole role="manager">
+              <NowPlayingPage />
             </RequireRole>
           }
         />

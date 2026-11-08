@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Alert, Field } from '../../components/ui';
 import { api, formatDate, type Role } from '../../lib/api';
+import { Invites } from './Invites';
 import { useAuth } from '../../lib/auth';
 
 interface UserRow {
@@ -20,6 +21,7 @@ interface UserRow {
   maxAge: number | null;
   jellyfinUserId: string | null;
   hasPassword: boolean;
+  twoFactor: boolean;
   linked: { oidc: boolean; plex: boolean };
   locked: boolean;
   lastLoginAt: number | null;
@@ -97,6 +99,7 @@ export function UserSettings() {
   return (
     <div className="space-y-6">
       {error && <Alert>{error}</Alert>}
+      <Invites />
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead className="text-left text-muted">
@@ -175,7 +178,7 @@ export function UserSettings() {
                       </label>
                     )}
                   </td>
-                  <td className="p-3 text-xs text-muted">{[u.hasPassword && 'password', u.linked.oidc && 'SSO', u.linked.plex && 'Plex'].filter(Boolean).join(', ') || 'none'}</td>
+                  <td className="p-3 text-xs text-muted">{[u.hasPassword && 'password', u.twoFactor && 'two-factor', u.linked.oidc && 'SSO', u.linked.plex && 'Plex'].filter(Boolean).join(', ') || 'none'}</td>
                   <td className="p-3 text-xs text-muted">{formatDate(u.lastLoginAt)}</td>
                   <td className="p-3">
                     {editable && (
@@ -188,6 +191,11 @@ export function UserSettings() {
                         <button className="btn-secondary" onClick={() => resetPassword(u)}>
                           Reset password
                         </button>
+                        {u.twoFactor && (
+                          <button className="btn-secondary" onClick={() => confirm(`Turn off two-factor sign-in for ${u.username}? They can set it up again from Account.`) && void run(() => api(`/api/users/${u.id}/2fa`, { method: 'DELETE' }))}>
+                            Reset two-factor
+                          </button>
+                        )}
                         <button className="btn-secondary" onClick={() => patch(u.id, { disabled: !u.disabled })}>
                           {u.disabled ? 'Enable' : 'Disable'}
                         </button>

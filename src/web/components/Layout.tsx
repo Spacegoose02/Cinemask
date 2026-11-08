@@ -85,6 +85,9 @@ export function Layout({ children }: { children: ReactNode }) {
       <NavLink to="/books" className={linkClass}>
         {t('Books')}
       </NavLink>
+      <NavLink to="/music" className={linkClass}>
+        {t('Music')}
+      </NavLink>
       <NavLink to="/calendar" className={linkClass}>
         {t('Calendar')}
       </NavLink>
@@ -111,6 +114,11 @@ export function Layout({ children }: { children: ReactNode }) {
       {isManager && (
         <NavLink to="/downloads" className={(p) => `${linkClass(p)} flex items-center`}>
           {t('Downloads')} {badge(dlCount.data?.active)}
+        </NavLink>
+      )}
+      {isManager && (
+        <NavLink to="/now-playing" className={linkClass}>
+          {t('Now playing')}
         </NavLink>
       )}
       {isManager && (

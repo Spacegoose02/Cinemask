@@ -15,6 +15,8 @@ export interface Profile {
   minFormatScore: number;
   /** Upgrades continue past the cutoff quality until a file's format score reaches this (0: off). */
   upgradeUntilFormatScore: number;
+  /** The TRaSH Guides profile this one follows, if any. */
+  trash: { app: string; id: string; syncedAt: number | null } | null;
 }
 
 export function seedProfiles(ctx: AppContext) {
@@ -35,6 +37,7 @@ function toProfile(r: typeof qualityProfiles.$inferSelect): Profile {
     formatScores: JSON.parse(r.formatScores) as Record<string, number>,
     minFormatScore: r.minFormatScore,
     upgradeUntilFormatScore: r.upgradeUntilFormatScore,
+    trash: r.trashApp && r.trashId ? { app: r.trashApp, id: r.trashId, syncedAt: r.trashSyncedAt } : null,
   };
 }
 

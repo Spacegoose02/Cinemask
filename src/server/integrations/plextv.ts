@@ -99,3 +99,27 @@ export async function getWatchlist(h: PlexHeaders, token: string, max = 300): Pr
   }
   return out;
 }
+
+/**
+ * Shares the server with a Plex account (by email or username), as Plex's own "Share libraries"
+ * does: the person gets an invite on plex.tv. Library section keys are the server's own keys;
+ * plex.tv numbers them differently, so they're looked up first. Null shares every library.
+ */
+export async function shareServer(h: PlexHeaders, ownerToken: string, machineId: string, invited: string, sectionKeys: string[] | null): Promise<void> {
+  const res = await fetch(`https://plex.tv/api/servers/${encodeURIComponent(machineId)}`, { headers: { ...headers(h, ownerToken), Accept: 'application/xml' }, signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`plex.tv responded ${res.status} listing the server's libraries`);
+  const { XMLParser } = await import('fast-xml-parser');
+  const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' }).parse(await res.text()) as { MediaContainer?: { Server?: { Section?: { id: string; key: string } | { id: string; key: string }[] } } };
+  const raw = xml.MediaContainer?.Server?.Section ?? [];
+  const sections = Array.isArray(raw) ? raw : [raw];
+  const ids = sections.filter((sec) => !sectionKeys || sectionKeys.includes(String(sec.key))).map((sec) => Number(sec.id));
+  if (!ids.length) throw new Error('None of the chosen Plex libraries were found');
+  const share = await fetch(`${PLEX_TV}/shared_servers`, {
+    method: 'POST',
+    headers: { ...headers(h, ownerToken), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ machineIdentifier: machineId, librarySectionIds: ids, settings: { allowSync: true }, invitedEmail: invited }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  // 422: already shared with them.
+  if (!share.ok && share.status !== 422) throw new Error(`plex.tv responded ${share.status} sharing the server`);
+}

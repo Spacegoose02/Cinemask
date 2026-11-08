@@ -43,7 +43,74 @@ export const users = sqliteTable('users', {
   maxAge: integer('max_age'),
   /** Interface language (src/web/lib/i18n.ts). Null follows the browser. */
   language: text('language'),
+  /** Authenticator app secret (sealed with the instance key); null when not set up. See auth/twofactor.ts. */
+  totpSecret: text('totp_secret'),
+  /** The last 30-second step a code was accepted for, so a code can't be used twice. */
+  totpLastStep: integer('totp_last_step'),
+  /** JSON string[] of sha256 hashes of unused recovery codes. */
+  recoveryCodes: text('recovery_codes'),
+  /** The person's Trakt tokens (sealed JSON) and username, from linking in Account. */
+  traktToken: text('trakt_token'),
+  traktUser: text('trakt_user'),
 });
+
+/** Invite links that let someone make their own account (auth/invites.ts). Only a hash of the code is kept. */
+export const invites = sqliteTable('invites', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  codeHash: text('code_hash').notNull().unique(),
+  /** The code itself, sealed, so the link can be copied again later. */
+  code: text('code').notNull(),
+  label: text('label'),
+  role: text('role', { enum: ROLES }).notNull().default('user'),
+  maxAge: integer('max_age'),
+  canRequest4k: integer('can_request_4k', { mode: 'boolean' }).notNull().default(false),
+  /** How many accounts it can still make; null means no limit. */
+  usesLeft: integer('uses_left'),
+  used: integer('used').notNull().default(0),
+  expiresAt: integer('expires_at'),
+  /** Share the Plex server with people who join with Plex: null libraries means all of them (JSON string[] of section keys). */
+  plexShare: integer('plex_share', { mode: 'boolean' }).notNull().default(false),
+  plexSections: text('plex_sections'),
+  /** Also make a Jellyfin account with the same name and password. */
+  jellyfinAccount: integer('jellyfin_account', { mode: 'boolean' }).notNull().default(false),
+  createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const inviteUses = sqliteTable(
+  'invite_uses',
+  {
+    inviteId: integer('invite_id')
+      .notNull()
+      .references(() => invites.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    usedAt: integer('used_at').notNull(),
+    /** Anything that didn't work out (a Plex share or Jellyfin account), for the admin. */
+    note: text('note'),
+  },
+  (t) => [primaryKey({ columns: [t.inviteId, t.userId] })],
+);
+
+/** Passkeys (WebAuthn credentials) people sign in with. See auth/twofactor.ts. */
+export const passkeys = sqliteTable(
+  'passkeys',
+  {
+    /** The credential id, base64url. */
+    id: text('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    publicKey: text('public_key').notNull(), // base64url COSE key
+    counter: integer('counter').notNull().default(0),
+    transports: text('transports'), // JSON string[]
+    name: text('name').notNull(),
+    createdAt: integer('created_at').notNull(),
+    lastUsedAt: integer('last_used_at'),
+  },
+  (t) => [index('passkeys_user_idx').on(t.userId)],
+);
 
 export const sessions = sqliteTable(
   'sessions',
@@ -90,7 +157,7 @@ export const auditLog = sqliteTable(
 
 export const MEDIA_KINDS = ['movie', 'show'] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
-export const SERVERS = ['plex', 'jellyfin', 'bingebandit'] as const;
+export const SERVERS = ['plex', 'jellyfin', 'bingebandit', 'emby'] as const;
 export type ServerType = (typeof SERVERS)[number];
 
 /** Metadata for a movie or show, keyed by TMDB id. Filled from TMDB and cached. */
@@ -200,6 +267,10 @@ export const qualityProfiles = sqliteTable('quality_profiles', {
   minFormatScore: integer('min_format_score').notNull().default(0),
   /** Keep upgrading a file at the cutoff quality until its format score reaches this. 0 turns it off. */
   upgradeUntilFormatScore: integer('upgrade_until_format_score').notNull().default(0),
+  /** A TRaSH Guides profile this one follows (arr/trash.ts): 'radarr' or 'sonarr', its guide id, and the last sync. */
+  trashApp: text('trash_app', { enum: ['radarr', 'sonarr'] }),
+  trashId: text('trash_id'),
+  trashSyncedAt: integer('trash_synced_at'),
 });
 
 /** Named release rules (HDR, Atmos, a release group…) that quality profiles score. See arr/formats.ts. */
@@ -208,6 +279,8 @@ export const customFormats = sqliteTable('custom_formats', {
   name: text('name').notNull().unique(),
   rules: text('rules').notNull(), // JSON FormatRule[]
   createdAt: integer('created_at').notNull(),
+  /** The TRaSH Guides id of a format synced from the guides; null for formats made here. */
+  trashId: text('trash_id'),
 });
 
 /** A movie or show the app keeps an eye on: searches for it, downloads and upgrades it. */
@@ -390,6 +463,7 @@ export const downloads = sqliteTable(
     completedAt: integer('completed_at'),
     importedAt: integer('imported_at'),
     bookId: integer('book_id'), // set for audiobook/ebook grabs instead of monitoredId
+    albumId: integer('album_id'), // set for music grabs (music/service.ts)
     /** Download-client category or label it was sent with. */
     category: text('category'),
     /** Something worth knowing that didn't stop the download, e.g. bigger than the size limit. */
@@ -419,7 +493,7 @@ export const blocklist = sqliteTable('blocklist', {
   createdAt: integer('created_at').notNull(),
 });
 
-export const LIST_SOURCES = ['mdblist', 'tmdb_list', 'tmdb_discover', 'csv'] as const;
+export const LIST_SOURCES = ['mdblist', 'tmdb_list', 'tmdb_discover', 'csv', 'trakt'] as const;
 export type ListSource = (typeof LIST_SOURCES)[number];
 
 export const lists = sqliteTable('lists', {
@@ -723,7 +797,7 @@ export const issues = sqliteTable(
   (t) => [index('issues_status_idx').on(t.status), index('issues_title_idx').on(t.kind, t.tmdbId)],
 );
 
-export const WATCHLIST_SOURCES = ['plex', 'jellyfin'] as const;
+export const WATCHLIST_SOURCES = ['plex', 'jellyfin', 'trakt'] as const;
 
 /** Titles seen on a user's Plex watchlist or Jellyfin favourites, so each is only requested once. */
 export const watchlistItems = sqliteTable(
@@ -755,4 +829,91 @@ export const recycleBin = sqliteTable('recycle_bin', {
   reason: text('reason'),
   deletedByName: text('deleted_by_name'),
   deletedAt: integer('deleted_at').notNull(),
+});
+
+/** Plays seen on the media servers' session lists (playing/service.ts): Now playing and watch stats. */
+export const plays = sqliteTable(
+  'plays',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    server: text('server', { enum: SERVERS }).notNull(),
+    sessionId: text('session_id').notNull(),
+    /** Still in the server's session list. */
+    active: integer('active', { mode: 'boolean' }).notNull().default(true),
+    user: text('user').notNull(),
+    kind: text('kind', { enum: ['movie', 'episode', 'other'] }).notNull(),
+    title: text('title').notNull(),
+    show: text('show'),
+    season: integer('season'),
+    episode: integer('episode'),
+    year: integer('year'),
+    /** The movie's or show's TMDB id, when the library sync knows the item. */
+    tmdbId: integer('tmdb_id'),
+    state: text('state').notNull(),
+    positionMs: integer('position_ms').notNull().default(0),
+    durationMs: integer('duration_ms').notNull().default(0),
+    /** Time actually spent playing (not paused), added up between checks. */
+    watchedMs: integer('watched_ms').notNull().default(0),
+    player: text('player'),
+    platform: text('platform'),
+    decision: text('decision').notNull(),
+    quality: text('quality'),
+    bandwidthKbps: integer('bandwidth_kbps'),
+    local: integer('local', { mode: 'boolean' }),
+    controlId: text('control_id'),
+    startedAt: integer('started_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    stoppedAt: integer('stopped_at'),
+  },
+  (t) => [uniqueIndex('plays_session_idx').on(t.server, t.sessionId), index('plays_started_idx').on(t.startedAt)],
+);
+
+/** Posters with badges (posters/overlays.ts): what was last put on each server item, so unchanged ones are skipped. */
+export const posterOverlays = sqliteTable(
+  'poster_overlays',
+  {
+    server: text('server', { enum: SERVERS }).notNull(),
+    externalKey: text('external_key').notNull(),
+    /** Hash of the badges and the clean poster they were drawn on. */
+    hash: text('hash').notNull(),
+    appliedAt: integer('applied_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.server, t.externalKey] })],
+);
+
+export const ALBUM_STATUSES = ['pending', 'approved', 'declined', 'downloading', 'available', 'failed'] as const;
+export type AlbumStatus = (typeof ALBUM_STATUSES)[number];
+
+/** Album requests (music/service.ts): a MusicBrainz release group, downloaded from the indexers into the music folder. */
+export const albums = sqliteTable(
+  'albums',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    mbid: text('mbid').notNull().unique(),
+    title: text('title').notNull(),
+    artist: text('artist').notNull(),
+    artistMbid: text('artist_mbid'),
+    year: integer('year'),
+    type: text('type'),
+    status: text('status', { enum: ALBUM_STATUSES }).notNull(),
+    requestedBy: integer('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    requestedByName: text('requested_by_name'),
+    decidedByName: text('decided_by_name'),
+    decidedAt: integer('decided_at'),
+    reason: text('reason'),
+    path: text('path'),
+    error: text('error'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('albums_status_idx').on(t.status)],
+);
+
+/** Artists whose new albums are requested by themselves, like Lidarr's monitored artists. */
+export const musicArtists = sqliteTable('music_artists', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  mbid: text('mbid').notNull().unique(),
+  name: text('name').notNull(),
+  addedBy: integer('added_by').references(() => users.id, { onDelete: 'set null' }),
+  addedAt: integer('added_at').notNull(),
+  checkedAt: integer('checked_at'),
 });

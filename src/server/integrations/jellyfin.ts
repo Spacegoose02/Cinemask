@@ -1,5 +1,5 @@
 import { connectError, fetchJson, IntegrationError, normalizeResolution } from './http.js';
-import { rollUpViews, type MediaServerClient, type ServerItem } from './mediaserver.js';
+import { rollUpViews, type LiveSession, type MediaServerClient, type ServerItem } from './mediaserver.js';
 
 interface JfItem {
   Id: string;
@@ -32,14 +32,27 @@ function height(item: JfItem): number | undefined {
 }
 
 export class JellyfinClient implements MediaServerClient {
+  /** The name errors use. */
+  protected readonly service: string = 'Jellyfin';
+
   constructor(
-    private readonly url: string,
-    private readonly apiKey: string,
+    protected readonly url: string,
+    protected readonly apiKey: string,
   ) {}
 
-  private get<T>(path: string) {
+  /** How the API key is sent. Emby reads its own header. */
+  protected auth(): Record<string, string> {
+    return { Authorization: `MediaBrowser Token="${this.apiKey}"` };
+  }
+
+  protected get<T>(path: string) {
     const base = this.url.replace(/\/+$/, '');
-    return fetchJson<T>('Jellyfin', `${base}${path}`, { headers: { Authorization: `MediaBrowser Token="${this.apiKey}"` } }, 60_000);
+    return fetchJson<T>(this.service, `${base}${path}`, { headers: { ...this.auth(), Accept: 'application/json' } }, 60_000);
+  }
+
+  /** Every account on the server, with its admin flag. */
+  protected listUsers(): Promise<{ Id: string; Name: string; Policy?: { IsAdministrator?: boolean } }[]> {
+    return this.get('/Users');
   }
 
   async test() {
@@ -49,12 +62,12 @@ export class JellyfinClient implements MediaServerClient {
 
   async refresh() {
     const base = this.url.replace(/\/+$/, '');
-    await fetch(`${base}/Library/Refresh`, { method: 'POST', headers: { Authorization: `MediaBrowser Token="${this.apiKey}"` }, signal: AbortSignal.timeout(10_000) });
+    await fetch(`${base}/Library/Refresh`, { method: 'POST', headers: this.auth(), signal: AbortSignal.timeout(10_000) });
   }
 
   /** Jellyfin's user accounts, for linking one to a Cinemask user (its favourites are their watchlist). */
   async users(): Promise<{ id: string; name: string }[]> {
-    const users = await this.get<{ Id: string; Name: string }[]>('/Users');
+    const users = await this.listUsers();
     return users.map((u) => ({ id: u.Id, name: u.Name }));
   }
 
@@ -72,7 +85,7 @@ export class JellyfinClient implements MediaServerClient {
   /** Watched state lives per user in Jellyfin; read it as the first administrator, like Plex's server account. */
   private async adminUserId(): Promise<string | null> {
     try {
-      const users = await this.get<{ Id: string; Policy?: { IsAdministrator?: boolean } }[]>('/Users');
+      const users = await this.listUsers();
       return (users.find((u) => u.Policy?.IsAdministrator) ?? users[0])?.Id ?? null;
     } catch {
       return null;
@@ -118,21 +131,78 @@ export class JellyfinClient implements MediaServerClient {
 
   // ---------------- Writes: collections and posters ----------------
 
-  private async send(method: string, path: string, body?: string | Uint8Array, contentType?: string): Promise<Response> {
+  protected async send(method: string, path: string, body?: string | Uint8Array, contentType?: string): Promise<Response> {
     const base = this.url.replace(/\/+$/, '');
     let res: Response;
     try {
       res = await fetch(`${base}${path}`, {
         method,
         body,
-        headers: { Authorization: `MediaBrowser Token="${this.apiKey}"`, Accept: 'application/json', ...(contentType ? { 'Content-Type': contentType } : {}) },
+        headers: { ...this.auth(), Accept: 'application/json', ...(contentType ? { 'Content-Type': contentType } : {}) },
         signal: AbortSignal.timeout(30_000),
       });
     } catch (err) {
-      throw new IntegrationError('Jellyfin', connectError(err));
+      throw new IntegrationError(this.service, connectError(err));
     }
-    if (!res.ok) throw new IntegrationError('Jellyfin', `responded with HTTP ${res.status}`, res.status);
+    if (!res.ok) throw new IntegrationError(this.service, `responded with HTTP ${res.status}`, res.status);
     return res;
+  }
+
+  async sessions(): Promise<LiveSession[]> {
+    type S = {
+      Id: string;
+      UserName?: string;
+      Client?: string;
+      DeviceName?: string;
+      RemoteEndPoint?: string;
+      NowPlayingItem?: { Id: string; Name: string; Type: string; SeriesName?: string; SeriesId?: string; ParentIndexNumber?: number; IndexNumber?: number; ProductionYear?: number; RunTimeTicks?: number; Width?: number; Height?: number; MediaStreams?: { Type: string; Height?: number; Width?: number }[] };
+      PlayState?: { PositionTicks?: number; IsPaused?: boolean; PlayMethod?: string };
+      TranscodingInfo?: { IsVideoDirect?: boolean; IsAudioDirect?: boolean; Bitrate?: number };
+    };
+    const list = await this.get<S[]>('/Sessions?ActiveWithinSeconds=120');
+    return list
+      .filter((s) => s.NowPlayingItem)
+      .map((s) => {
+        const it = s.NowPlayingItem!;
+        const kind = it.Type === 'Movie' ? 'movie' : it.Type === 'Episode' ? 'episode' : 'other';
+        const method = s.PlayState?.PlayMethod;
+        const t = s.TranscodingInfo;
+        const decision = method === 'DirectPlay' ? 'direct' : method === 'Transcode' && !(t?.IsVideoDirect && t?.IsAudioDirect) ? 'transcode' : 'copy';
+        const video = it.MediaStreams?.find((m) => m.Type === 'Video');
+        const ip = (s.RemoteEndPoint ?? '').replace(/^::ffff:/, '');
+        return {
+          id: `${s.Id}:${it.Id}`,
+          controlId: s.Id,
+          user: s.UserName ?? 'Someone',
+          kind,
+          title: it.Name,
+          show: kind === 'episode' ? (it.SeriesName ?? null) : null,
+          season: kind === 'episode' ? (it.ParentIndexNumber ?? null) : null,
+          episode: kind === 'episode' ? (it.IndexNumber ?? null) : null,
+          year: it.ProductionYear ?? null,
+          itemKey: kind === 'episode' ? (it.SeriesId ?? null) : it.Id,
+          state: s.PlayState?.IsPaused ? 'paused' : 'playing',
+          positionMs: Math.round((s.PlayState?.PositionTicks ?? 0) / 10_000),
+          durationMs: Math.round((it.RunTimeTicks ?? 0) / 10_000),
+          player: s.Client ?? null,
+          platform: s.DeviceName ?? null,
+          decision,
+          quality: normalizeResolution(height({ MediaStreams: video ? [video] : [{ Type: 'Video', Width: it.Width, Height: it.Height }] } as JfItem)),
+          bandwidthKbps: t?.Bitrate ? Math.round(t.Bitrate / 1000) : null,
+          local: ip ? /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|fd|fe80)/.test(ip) : null,
+        } satisfies LiveSession;
+      });
+  }
+
+  async stopSession(controlId: string, reason: string) {
+    await this.send('POST', `/Sessions/${encodeURIComponent(controlId)}/Message`, JSON.stringify({ Header: 'Cinemask', Text: reason, TimeoutMs: 10_000 }), 'application/json').catch(() => undefined);
+    await this.send('POST', `/Sessions/${encodeURIComponent(controlId)}/Playing/Stop`);
+  }
+
+  /** Makes a Jellyfin account (for invites). Returns its id. */
+  async createUser(name: string, password: string): Promise<string> {
+    const r = (await (await this.send('POST', '/Users/New', JSON.stringify({ Name: name, Password: password }), 'application/json')).json()) as { Id: string };
+    return r.Id;
   }
 
   async createCollection(name: string, ids: string[]): Promise<string> {

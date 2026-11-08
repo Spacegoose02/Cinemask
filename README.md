@@ -2,9 +2,9 @@
 
 # Cinemask
 
-A self-hosted media manager for families running Plex or Jellyfin. It does what Sonarr, Radarr and Overseerr do, plus books and audiobooks, in one app with real user accounts, single sign-on and backups.
+A self-hosted media manager for families running Plex, Jellyfin or Emby. It does what Sonarr, Radarr, Lidarr and Overseerr do, plus books and audiobooks, in one app with real user accounts, single sign-on and backups.
 
-> **Status:** beta (0.11). Every phase of the [roadmap](docs/ROADMAP.md) is built and covered by automated tests. The integrations with Plex, Jellyfin, TMDB, indexers, download clients, Audiobookshelf and Shelfmark are tested against simulated services; please [report anything](https://github.com/Spacegoose02/cinemask/issues) that behaves differently with the real thing.
+> **Status:** beta (0.11). Every phase of the [roadmap](docs/ROADMAP.md) is built and covered by automated tests. The integrations with Plex, Jellyfin, Emby, TMDB, Trakt, MusicBrainz, the TRaSH Guides, indexers, download clients, Audiobookshelf and Shelfmark are tested against simulated services; please [report anything](https://github.com/Spacegoose02/cinemask/issues) that behaves differently with the real thing.
 
 ## Features
 
@@ -13,6 +13,8 @@ A self-hosted media manager for families running Plex or Jellyfin. It does what 
 - **Discover** by genre, network, streaming service, year, rating and language, with trending and popular rows.
 - A personal **home page** with rows you choose, a **calendar** of upcoming releases, **collections** and **lists**.
 - **Books**: request audiobooks and ebooks, browse your Audiobookshelf library, and find podcasts.
+- **Music**: find artists and albums on MusicBrainz and request them; follow an artist to get their new albums.
+- A **weekly email** of what arrived and what's coming, **Trakt** watchlist sync, and the everyday screens in Spanish, French, German and Dutch.
 - **Family ratings and reviews**, a "Family favorites" row and "Because you liked…" picks.
 - **Movie nights**: plan one, RSVP, and get a reminder before it starts.
 - **Games**: trivia and guess-the-scene rounds made from your own library, with a weekly leaderboard and daily streaks.
@@ -21,7 +23,10 @@ A self-hosted media manager for families running Plex or Jellyfin. It does what 
 
 **For whoever runs it**
 - **Downloads** like Sonarr and Radarr: indexers (or Prowlarr), quality profiles, automatic and manual search, RSS, nine download clients, renaming, hardlinked imports, failed-download retries and a blocklist.
-- **Library management**: rescan, rename, delete files or seasons, per-episode monitoring, posters and trailers pushed to Plex and Jellyfin.
+- **Library management**: rescan, rename, delete files or seasons, per-episode monitoring (specials included), posters and trailers pushed to Plex and Jellyfin, and Kometa-style **poster badges** (4K, score, New).
+- **Quality profiles from the TRaSH Guides**, kept in sync every week.
+- **Now playing**: who's watching what, transcodes and bandwidth, with watch stats, like Tautulli.
+- **Invite links** that create an account and share the Plex server or make a Jellyfin account.
 - **Collections** synced to Plex and Jellyfin, from TMDB collections, lists or by hand.
 - **Lists** from mdblist, TMDB, saved Discover searches and CSV exports (Yamtrack, IMDb, Letterboxd), with optional auto-download.
 - **Books**: downloads through Shelfmark or your indexers, imported into Audiobookshelf's folder layout.
@@ -32,6 +37,7 @@ A self-hosted media manager for families running Plex or Jellyfin. It does what 
 - Three roles (User, Manager, Admin) checked on every request, deny by default.
 - Passwords hashed with Argon2id, account lockout, rate-limited sign-in, CSRF protection, strict Content Security Policy.
 - Single sign-on with any OpenID Connect provider (Authelia, Authentik, Pocket ID, Keycloak, …) and Sign in with Plex.
+- **Two-factor sign-in** with an authenticator app or passkeys, and passwordless passkey sign-in.
 - Integration secrets encrypted at rest and never sent to the browser. Every file operation is confined to your media folders.
 - Automatic, optionally encrypted backups with off-server copies, and a backup before every upgrade.
 

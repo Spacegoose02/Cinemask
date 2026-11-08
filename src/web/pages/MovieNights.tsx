@@ -7,6 +7,7 @@ import { Alert, Field } from '../components/ui';
 import { api, hasRole } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { mediaPath, poster, type MediaKind } from '../lib/media';
+import { t } from '../lib/i18n';
 
 type Answer = 'yes' | 'maybe' | 'no';
 
@@ -59,19 +60,19 @@ function Edit({ night, onClose }: { night: MovieNight; onClose: () => void }) {
   return (
     <Modal title={`Change ${night.title}`} onClose={onClose}>
       <div className="space-y-3">
-        <Field label="When">
+        <Field label={t('When')}>
           <input type="datetime-local" className="input" value={at} onChange={(e) => setAt(e.target.value)} />
         </Field>
-        <Field label="Note">
+        <Field label={t('Note')}>
           <input className="input" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
         {error && <Alert>{error}</Alert>}
         <div className="flex justify-between">
           <button className="btn-primary" disabled={!at} title={at ? undefined : 'Pick a time'} onClick={() => run(() => api(`/api/movie-nights/${night.id}`, { method: 'PATCH', body: { startsAt: new Date(at).getTime(), note: note || null } }))}>
-            Save
+            {t('Save')}
           </button>
           <button className="btn-danger" onClick={() => confirm('Call off this movie night?') && run(() => api(`/api/movie-nights/${night.id}`, { method: 'DELETE' }))}>
-            Call it off
+            {t('Call it off')}
           </button>
         </div>
       </div>
@@ -123,7 +124,7 @@ function NightCard({ night, past }: { night: MovieNight; past: boolean }) {
             ))}
             {(night.mine || hasRole(me, 'manager')) && (
               <button className="btn-secondary ml-auto" onClick={() => setEditing(true)}>
-                Change
+                {t('Change')}
               </button>
             )}
           </div>
@@ -141,13 +142,13 @@ export function MovieNightsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Movie nights</h1>
+        <h1 className="text-2xl font-semibold">{t('Movie nights')}</h1>
         <p className="text-sm text-muted">Plan one from any movie or show's page with "Plan a movie night", then everyone can say if they're in.</p>
       </div>
       {q.error && <Alert>{(q.error as Error).message}</Alert>}
       {q.data && !upcoming.length && (
         <div className="card text-sm text-muted">
-          Nothing planned yet. Find something on the <Link to="/library" className="text-accent">Library</Link> or <Link to="/discover" className="text-accent">Discover</Link> page and plan a night around it.
+          Nothing planned yet. Find something on the <Link to="/library" className="text-accent">{t('Library')}</Link> or <Link to="/discover" className="text-accent">{t('Discover')}</Link> page and plan a night around it.
         </div>
       )}
       <ul className="space-y-3">
@@ -157,7 +158,7 @@ export function MovieNightsPage() {
       </ul>
       {past.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Last week</h2>
+          <h2 className="text-lg font-semibold">{t('Last week')}</h2>
           <ul className="space-y-3">
             {past.map((n) => (
               <NightCard key={n.id} night={n} past />

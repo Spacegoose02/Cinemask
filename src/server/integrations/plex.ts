@@ -1,5 +1,5 @@
 import { connectError, fetchJson, IntegrationError, normalizeResolution } from './http.js';
-import { rollUpViews, type MediaServerClient, type ServerItem } from './mediaserver.js';
+import { rollUpViews, type LiveSession, type MediaServerClient, type ServerItem } from './mediaserver.js';
 
 interface PlexGuid {
   id: string;
@@ -43,6 +43,65 @@ export class PlexClient implements MediaServerClient {
   async test() {
     const id = await this.get<{ friendlyName: string; version: string; machineIdentifier: string }>('/');
     return { name: id.friendlyName, version: id.version, machineId: id.machineIdentifier };
+  }
+
+  async sessions(): Promise<LiveSession[]> {
+    type S = {
+      sessionKey?: string;
+      ratingKey?: string;
+      type: string;
+      title: string;
+      grandparentTitle?: string;
+      grandparentRatingKey?: string;
+      parentIndex?: number;
+      index?: number;
+      year?: number;
+      viewOffset?: number;
+      duration?: number;
+      User?: { title?: string };
+      Player?: { title?: string; product?: string; platform?: string; state?: string; local?: boolean; machineIdentifier?: string };
+      Session?: { id?: string; bandwidth?: number; location?: string };
+      TranscodeSession?: { videoDecision?: string; audioDecision?: string };
+      Media?: { videoResolution?: string }[];
+    };
+    const r = await this.get<{ Metadata?: S[] }>('/status/sessions');
+    return (r.Metadata ?? []).map((m) => {
+      const t = m.TranscodeSession;
+      const decision = !t ? 'direct' : t.videoDecision === 'transcode' || t.audioDecision === 'transcode' ? 'transcode' : 'copy';
+      const kind = m.type === 'movie' ? 'movie' : m.type === 'episode' ? 'episode' : 'other';
+      return {
+        id: `${m.Session?.id ?? m.sessionKey}:${m.ratingKey}`,
+        controlId: m.Session?.id ?? String(m.sessionKey ?? ''),
+        user: m.User?.title ?? 'Someone',
+        kind,
+        title: m.title,
+        show: kind === 'episode' ? (m.grandparentTitle ?? null) : null,
+        season: kind === 'episode' ? (m.parentIndex ?? null) : null,
+        episode: kind === 'episode' ? (m.index ?? null) : null,
+        year: m.year ?? null,
+        itemKey: kind === 'episode' ? (m.grandparentRatingKey ?? null) : (m.ratingKey ?? null),
+        state: m.Player?.state === 'paused' ? 'paused' : m.Player?.state === 'buffering' ? 'buffering' : 'playing',
+        positionMs: m.viewOffset ?? 0,
+        durationMs: m.duration ?? 0,
+        player: m.Player?.title ?? m.Player?.product ?? null,
+        platform: m.Player?.platform ?? null,
+        decision,
+        quality: normalizeResolution(m.Media?.[0]?.videoResolution),
+        bandwidthKbps: m.Session?.bandwidth ?? null,
+        local: m.Player?.local ?? (m.Session?.location ? m.Session.location === 'lan' : null),
+      } satisfies LiveSession;
+    });
+  }
+
+  async stopSession(controlId: string, reason: string) {
+    const qs = new URLSearchParams({ sessionId: controlId, reason });
+    await this.send('GET', `/status/sessions/terminate?${qs.toString()}`);
+  }
+
+  /** The server's movie and show libraries, for picking which to share in an invite. */
+  async sections(): Promise<{ key: string; title: string; type: string }[]> {
+    const r = await this.get<{ Directory?: { key: string; type: string; title?: string }[] }>('/library/sections');
+    return (r.Directory ?? []).map((d) => ({ key: String(d.key), title: d.title ?? d.key, type: d.type }));
   }
 
   async fetchLibrary(): Promise<ServerItem[]> {

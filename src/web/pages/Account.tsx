@@ -9,6 +9,7 @@ import { ApiKeys } from '../components/ApiKeys';
 import { ThemePicker } from '../components/ThemePicker';
 import { NotificationPrefs } from '../components/NotificationPrefs';
 import { WatchlistSync } from '../components/WatchlistSync';
+import { TwoFactor } from '../components/TwoFactor';
 import { chooseLanguage, LANGUAGES, useT, type Language } from '../lib/i18n';
 
 interface SessionRow {
@@ -114,6 +115,8 @@ export function AccountPage() {
           Save password
         </button>
       </section>
+
+      <TwoFactor />
 
       {(status.data?.methods.oidc || status.data?.methods.plex) && (
         <section className="card space-y-3">

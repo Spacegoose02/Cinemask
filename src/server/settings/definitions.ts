@@ -104,6 +104,15 @@ export const SETTINGS = {
     }),
     secrets: ['apiKey'],
   },
+  emby: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      name: z.string().trim().max(100).default(''),
+      url: httpUrl.default(''),
+      apiKey: z.string().max(500).default(''),
+    }),
+    secrets: ['apiKey'],
+  },
   bingebandit: {
     schema: z.object({
       enabled: z.boolean().default(false),
@@ -123,6 +132,14 @@ export const SETTINGS = {
       region: z.string().trim().regex(/^[A-Z]{2}$/, 'Use a country code like US').default('US'),
     }),
     secrets: ['tmdbApiKey', 'mdblistApiKey'],
+  },
+  /** A Trakt app (trakt.tv/oauth/applications) so people can link Trakt for watchlists and lists. */
+  trakt: {
+    schema: z.object({
+      clientId: z.string().trim().max(200).regex(/^[\w-]*$/, 'The client id from your Trakt app').default(''),
+      clientSecret: z.string().max(200).default(''),
+    }),
+    secrets: ['clientSecret'],
   },
   library: {
     schema: z.object({
@@ -145,6 +162,7 @@ export const SETTINGS = {
       tvPath: z.string().trim().max(1000).default('/media/tv'),
       audiobooksPath: z.string().trim().max(1000).default('/media/audiobooks'),
       booksPath: z.string().trim().max(1000).default('/media/books'),
+      musicPath: z.string().trim().max(1000).default('/media/music'),
       /** hardlink keeps torrents seeding without using extra space (needs the same disk/share). */
       importMode: z.enum(['hardlink', 'copy', 'move']).default('hardlink'),
       /** Translate paths a download client reports (its own container) into paths here. */
@@ -386,6 +404,11 @@ export const SETTINGS = {
       password: z.string().max(500).default(''),
       from: z.union([z.literal(''), z.email().max(254)]).default(''),
       fromName: z.string().trim().max(100).default('Cinemask'),
+      /** The weekly "new this week and coming up" email people can turn on in Account → Notifications. */
+      digestEnabled: z.boolean().default(true),
+      /** Day of the week (0 is Sunday) and hour (0–23, in TZ) it goes out. */
+      digestDay: z.number().int().min(0).max(6).default(0),
+      digestHour: z.number().int().min(0).max(23).default(9),
     }),
     secrets: ['password'],
   },
@@ -396,6 +419,30 @@ export const SETTINGS = {
       privateKey: z.string().max(200).default(''),
     }),
     secrets: ['privateKey'],
+  },
+  music: {
+    schema: z.object({
+      /** Which releases to prefer: lossless (FLAC), lossy (MP3/AAC), or whichever is best seeded. */
+      format: z.enum(['any', 'lossless', 'lossy']).default('any'),
+      /** Followed artists' new albums are requested and downloaded by themselves. */
+      followNewReleases: z.boolean().default(true),
+    }),
+    secrets: [],
+  },
+  overlays: {
+    schema: z.object({
+      /** Draws badges on posters and pushes them to the media servers (posters/overlays.ts). */
+      enabled: z.boolean().default(false),
+      resolution: z.boolean().default(true),
+      rating: z.boolean().default(true),
+      /** "New" on titles added (or with episodes added) in this many days; 0 turns it off. */
+      newDays: z.number().int().min(0).max(90).default(14),
+      /** Returning, Ended or Canceled on shows. */
+      showStatus: z.boolean().default(false),
+      /** Age rating (PG-13, TV-Y7…). */
+      certification: z.boolean().default(false),
+    }),
+    secrets: [],
   },
   extras: {
     schema: z.object({

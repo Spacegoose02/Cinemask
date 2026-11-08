@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { mediaPath, poster, STATUS_LABEL, type Availability, type MediaCardData } from '../lib/media';
+import { t } from '../lib/i18n';
 
 const STATUS_STYLE: Record<Availability, string> = {
   on_server: 'bg-success text-bg',
@@ -73,7 +74,7 @@ export function MediaRow({ title, items, more }: { title: string; items: MediaCa
         <h2 className="text-lg font-semibold">{title}</h2>
         {more && (
           <Link to={more} className="text-sm text-muted hover:text-accent">
-            See all
+            {t('See all')}
           </Link>
         )}
       </div>
@@ -102,12 +103,12 @@ export function TrailerModal({ videoKey, site = 'YouTube', src, onClose }: { vid
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose} role="dialog" aria-modal="true">
       <div className="aspect-video w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
         {src ? (
-          <video className="h-full w-full rounded-lg bg-black" src={src} controls autoPlay title="Trailer" />
+          <video className="h-full w-full rounded-lg bg-black" src={src} controls autoPlay title={t('Trailer')} />
         ) : (
           <iframe
             className="h-full w-full rounded-lg"
             src={embedUrl(site, videoKey ?? '', true)}
-            title="Trailer"
+            title={t('Trailer')}
             referrerPolicy="strict-origin-when-cross-origin"
             allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
             allowFullScreen

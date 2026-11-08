@@ -6,6 +6,8 @@ import { Alert, Field } from '../components/ui';
 import { api, type AuthStatus } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { signInWithPlex } from '../lib/plex';
+import { passkeysSupported, signInWithPasskey } from '../lib/passkeys';
+import { useT } from '../lib/i18n';
 
 const SSO_ERRORS: Record<string, string> = {
   sso_disabled: 'Single sign-on is not set up.',
@@ -21,15 +23,18 @@ const SSO_ERRORS: Record<string, string> = {
 
 export function LoginPage({ status }: { status: AuthStatus }) {
   const qc = useQueryClient();
+  const t = useT();
   const [params] = useSearchParams();
   const { expired } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(() => {
     const code = params.get('error');
-    return code ? (SSO_ERRORS[code] ?? 'Sign-in failed.') : '';
+    return code ? t(SSO_ERRORS[code] ?? 'Sign-in failed.') : '';
   });
   const [busy, setBusy] = useState(false);
+  const [second, setSecond] = useState<{ token: string; methods: string[] } | null>(null);
+  const [code, setCode] = useState('');
 
   // Once signed in, the app sends them on to the page they were trying to open.
   const done = async () => {
@@ -41,7 +46,12 @@ export function LoginPage({ status }: { status: AuthStatus }) {
     setBusy(true);
     setError('');
     try {
-      await api('/api/auth/login', { body: { username, password } });
+      const res = await api<{ ok: boolean; twoFactor?: { token: string; methods: string[] } }>('/api/auth/login', { body: { username, password } });
+      if (res.twoFactor) {
+        setSecond(res.twoFactor);
+        setPassword('');
+        return;
+      }
       await done();
     } catch (err) {
       setError((err as Error).message);
@@ -49,6 +59,57 @@ export function LoginPage({ status }: { status: AuthStatus }) {
       setBusy(false);
     }
   };
+
+  const withBusy = async (fn: () => Promise<unknown>) => {
+    setError('');
+    setBusy(true);
+    try {
+      await fn();
+      await done();
+    } catch (err) {
+      const e = err as Error;
+      // The person closed the passkey prompt: nothing to report.
+      if (e.name !== 'NotAllowedError') setError(e.message);
+      if (/Sign in again|took too long/.test(e.message)) setSecond(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitCode = (e: React.FormEvent) => {
+    e.preventDefault();
+    void withBusy(() => api('/api/auth/login/2fa', { body: { token: second!.token, code } }));
+  };
+
+  if (second) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
+        <Brand />
+        <div className="card w-full max-w-sm space-y-4">
+          <h1 className="text-xl font-semibold">{t('One more step')}</h1>
+          {error && <Alert>{error}</Alert>}
+          {second.methods.includes('passkey') && passkeysSupported() && (
+            <button className="btn-primary w-full" disabled={busy} onClick={() => void withBusy(() => signInWithPasskey(second.token))}>
+              {t('Use a passkey')}
+            </button>
+          )}
+          {(second.methods.includes('totp') || second.methods.includes('recovery')) && (
+            <form onSubmit={submitCode} className="space-y-3">
+              <Field label={t(second.methods.includes('totp') ? 'Code from your authenticator app' : 'Recovery code')} hint={second.methods.includes('recovery') ? t('Lost your phone? A recovery code works here too.') : undefined}>
+                <input className="input" autoComplete="one-time-code" inputMode={second.methods.includes('totp') ? 'numeric' : 'text'} autoFocus value={code} onChange={(e) => setCode(e.target.value)} required />
+              </Field>
+              <button className="btn-secondary w-full" disabled={busy || !code}>
+                {t('Sign in')}
+              </button>
+            </form>
+          )}
+          <button className="text-sm text-muted underline" onClick={() => (setSecond(null), setCode(''), setError(''))}>
+            {t('Start again')}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const plex = async () => {
     setError('');
@@ -67,9 +128,9 @@ export function LoginPage({ status }: { status: AuthStatus }) {
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
       <Brand />
       <div className="card w-full max-w-sm space-y-4">
-        <h1 className="text-xl font-semibold">Sign in</h1>
+        <h1 className="text-xl font-semibold">{t('Sign in')}</h1>
         {error && <Alert>{error}</Alert>}
-        {!error && expired && <Alert kind="info">You were signed out. Sign in again to carry on.</Alert>}
+        {!error && expired && <Alert kind="info">{t('You were signed out. Sign in again to carry on.')}</Alert>}
         {status.methods.oidc && (
           <a className="btn-primary w-full" href="/api/auth/oidc/start">
             {status.methods.oidc.label}
@@ -77,21 +138,26 @@ export function LoginPage({ status }: { status: AuthStatus }) {
         )}
         {status.methods.plex && (
           <button className="btn-secondary w-full" onClick={plex} disabled={busy}>
-            Sign in with Plex
+            {t('Sign in with Plex')}
           </button>
         )}
-        {(status.methods.oidc || status.methods.plex) && <div className="text-center text-xs text-muted">or</div>}
+        {status.methods.passkey && passkeysSupported() && (
+          <button className="btn-secondary w-full" onClick={() => void withBusy(() => signInWithPasskey())} disabled={busy}>
+            {t('Sign in with a passkey')}
+          </button>
+        )}
+        {(status.methods.oidc || status.methods.plex || (status.methods.passkey && passkeysSupported())) && <div className="text-center text-xs text-muted">{t('or')}</div>}
         <form onSubmit={submit} className="space-y-3">
-          <Field label="Username">
+          <Field label={t('Username')}>
             <input className="input" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
           </Field>
-          <Field label="Password">
+          <Field label={t('Password')}>
             <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </Field>
           <button className="btn-secondary w-full" disabled={busy}>
-            Sign in with password
+            {t('Sign in with password')}
           </button>
-          {!status.methods.local && <p className="hint">Password sign-in is limited to the owner account.</p>}
+          {!status.methods.local && <p className="hint">{t('Password sign-in is limited to the owner account.')}</p>}
         </form>
       </div>
     </div>
