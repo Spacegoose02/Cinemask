@@ -863,6 +863,42 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    id: 32,
+    name: 'now playing',
+    sql: `
+      CREATE TABLE plays (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        server TEXT NOT NULL CHECK (server IN ('plex','jellyfin','bingebandit','emby')),
+        session_id TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        user TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('movie','episode','other')),
+        title TEXT NOT NULL,
+        show TEXT,
+        season INTEGER,
+        episode INTEGER,
+        year INTEGER,
+        tmdb_id INTEGER,
+        state TEXT NOT NULL,
+        position_ms INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        watched_ms INTEGER NOT NULL DEFAULT 0,
+        player TEXT,
+        platform TEXT,
+        decision TEXT NOT NULL,
+        quality TEXT,
+        bandwidth_kbps INTEGER,
+        local INTEGER,
+        control_id TEXT,
+        started_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        stopped_at INTEGER
+      );
+      CREATE UNIQUE INDEX plays_session_idx ON plays(server, session_id);
+      CREATE INDEX plays_started_idx ON plays(started_at);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

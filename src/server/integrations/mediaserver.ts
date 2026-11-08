@@ -28,8 +28,39 @@ export function rollUpViews(item: ServerItem) {
   item.lastViewedAt = last || null;
 }
 
+/** Something being played right now, from the server's own list of sessions. */
+export interface LiveSession {
+  /** Stable for one play of one item on one device. */
+  id: string;
+  /** What to pass to stopSession. */
+  controlId: string;
+  user: string;
+  kind: 'movie' | 'episode' | 'other';
+  title: string;
+  show: string | null;
+  season: number | null;
+  episode: number | null;
+  year: number | null;
+  /** The movie's or show's key on the server (library_items.external_key), to find its TMDB id. */
+  itemKey: string | null;
+  state: 'playing' | 'paused' | 'buffering';
+  positionMs: number;
+  durationMs: number;
+  player: string | null;
+  platform: string | null;
+  /** How the server sends it: as it is, remuxed, or converted. */
+  decision: 'direct' | 'copy' | 'transcode';
+  quality: string | null;
+  bandwidthKbps: number | null;
+  local: boolean | null;
+}
+
 export interface MediaServerClient {
   test(): Promise<{ name: string; version: string; machineId?: string }>;
   /** Every movie and show (with episodes) on the server. */
   fetchLibrary(): Promise<ServerItem[]>;
+  /** What's playing now (Now playing). */
+  sessions?(): Promise<LiveSession[]>;
+  /** Stops a stream, with a message for the viewer where the server can show one. */
+  stopSession?(controlId: string, reason: string): Promise<void>;
 }

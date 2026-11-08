@@ -3,6 +3,7 @@ import { syncAllWatchlists } from '../watchlist/service.js';
 import { storageJob } from '../storage/service.js';
 import { weeklyDigest } from '../notify/digest.js';
 import { syncLinkedProfiles } from '../arr/trash.js';
+import { trackPlays } from '../playing/service.js';
 import cron, { type ScheduledTask } from 'node-cron';
 import type { FastifyInstance } from 'fastify';
 import { lt } from 'drizzle-orm';
@@ -84,6 +85,8 @@ export class Scheduler {
       cron.schedule('*/15 * * * *', this.once('seeding', () => cleanUpSeeding(this.app.ctx))),
       // Profiles that follow the TRaSH Guides pick up the guides' changes once a week.
       cron.schedule('15 4 * * 0', this.once('trash-guides', () => syncLinkedProfiles(this.app.ctx))),
+      // What's playing on the media servers, for Now playing and watch stats.
+      cron.schedule('* * * * *', this.once('now-playing', () => trackPlays(this.app.ctx))),
       // The weekly email, at the day and hour in Settings → Notifications.
       cron.schedule('0 * * * *', this.once('digest', async () => weeklyDigest(this.app.ctx))),
       // Empties the old part of the recycle bin and applies the delete rules (Settings → Storage).

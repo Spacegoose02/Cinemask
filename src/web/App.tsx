@@ -32,6 +32,7 @@ import { FileDetails } from './components/FileDetails';
 import { SettingsPage } from './pages/Settings';
 import { SetupPage } from './pages/Setup';
 import { InvitePage } from './pages/Invite';
+import { NowPlayingPage } from './pages/NowPlaying';
 
 const panels = (m: MediaDetail) => (
   <>
@@ -111,6 +112,14 @@ export function App() {
           element={
             <RequireRole role="manager">
               <YoutubePage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/now-playing"
+          element={
+            <RequireRole role="manager">
+              <NowPlayingPage />
             </RequireRole>
           }
         />

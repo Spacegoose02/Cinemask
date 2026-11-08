@@ -1,5 +1,5 @@
 import { connectError, fetchJson, IntegrationError, normalizeResolution } from './http.js';
-import { rollUpViews, type MediaServerClient, type ServerItem } from './mediaserver.js';
+import { rollUpViews, type LiveSession, type MediaServerClient, type ServerItem } from './mediaserver.js';
 
 interface JfItem {
   Id: string;
@@ -133,6 +133,57 @@ export class JellyfinClient implements MediaServerClient {
     }
     if (!res.ok) throw new IntegrationError('Jellyfin', `responded with HTTP ${res.status}`, res.status);
     return res;
+  }
+
+  async sessions(): Promise<LiveSession[]> {
+    type S = {
+      Id: string;
+      UserName?: string;
+      Client?: string;
+      DeviceName?: string;
+      RemoteEndPoint?: string;
+      NowPlayingItem?: { Id: string; Name: string; Type: string; SeriesName?: string; SeriesId?: string; ParentIndexNumber?: number; IndexNumber?: number; ProductionYear?: number; RunTimeTicks?: number; Width?: number; Height?: number; MediaStreams?: { Type: string; Height?: number; Width?: number }[] };
+      PlayState?: { PositionTicks?: number; IsPaused?: boolean; PlayMethod?: string };
+      TranscodingInfo?: { IsVideoDirect?: boolean; IsAudioDirect?: boolean; Bitrate?: number };
+    };
+    const list = await this.get<S[]>('/Sessions?ActiveWithinSeconds=120');
+    return list
+      .filter((s) => s.NowPlayingItem)
+      .map((s) => {
+        const it = s.NowPlayingItem!;
+        const kind = it.Type === 'Movie' ? 'movie' : it.Type === 'Episode' ? 'episode' : 'other';
+        const method = s.PlayState?.PlayMethod;
+        const t = s.TranscodingInfo;
+        const decision = method === 'DirectPlay' ? 'direct' : method === 'Transcode' && !(t?.IsVideoDirect && t?.IsAudioDirect) ? 'transcode' : 'copy';
+        const video = it.MediaStreams?.find((m) => m.Type === 'Video');
+        const ip = (s.RemoteEndPoint ?? '').replace(/^::ffff:/, '');
+        return {
+          id: `${s.Id}:${it.Id}`,
+          controlId: s.Id,
+          user: s.UserName ?? 'Someone',
+          kind,
+          title: it.Name,
+          show: kind === 'episode' ? (it.SeriesName ?? null) : null,
+          season: kind === 'episode' ? (it.ParentIndexNumber ?? null) : null,
+          episode: kind === 'episode' ? (it.IndexNumber ?? null) : null,
+          year: it.ProductionYear ?? null,
+          itemKey: kind === 'episode' ? (it.SeriesId ?? null) : it.Id,
+          state: s.PlayState?.IsPaused ? 'paused' : 'playing',
+          positionMs: Math.round((s.PlayState?.PositionTicks ?? 0) / 10_000),
+          durationMs: Math.round((it.RunTimeTicks ?? 0) / 10_000),
+          player: s.Client ?? null,
+          platform: s.DeviceName ?? null,
+          decision,
+          quality: normalizeResolution(height({ MediaStreams: video ? [video] : [{ Type: 'Video', Width: it.Width, Height: it.Height }] } as JfItem)),
+          bandwidthKbps: t?.Bitrate ? Math.round(t.Bitrate / 1000) : null,
+          local: ip ? /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|fd|fe80)/.test(ip) : null,
+        } satisfies LiveSession;
+      });
+  }
+
+  async stopSession(controlId: string, reason: string) {
+    await this.send('POST', `/Sessions/${encodeURIComponent(controlId)}/Message`, JSON.stringify({ Header: 'Cinemask', Text: reason, TimeoutMs: 10_000 }), 'application/json').catch(() => undefined);
+    await this.send('POST', `/Sessions/${encodeURIComponent(controlId)}/Playing/Stop`);
   }
 
   /** Makes a Jellyfin account (for invites). Returns its id. */

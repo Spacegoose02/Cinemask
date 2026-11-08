@@ -14,6 +14,7 @@ const messages: Record<string, string> = {
   "Wrapped": "Resumen",
   "Monitored": "Vigilados",
   "Downloads": "Descargas",
+  "Now playing": "Reproduciendo",
   "Storage": "Almacenamiento",
   "YouTube": "YouTube",
   "Settings": "Ajustes",

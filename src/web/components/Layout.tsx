@@ -114,6 +114,11 @@ export function Layout({ children }: { children: ReactNode }) {
         </NavLink>
       )}
       {isManager && (
+        <NavLink to="/now-playing" className={linkClass}>
+          {t('Now playing')}
+        </NavLink>
+      )}
+      {isManager && (
         <NavLink to="/storage" className={linkClass}>
           {t('Storage')}
         </NavLink>

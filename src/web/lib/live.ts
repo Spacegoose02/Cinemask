@@ -26,6 +26,7 @@ const TOPIC_QUERIES: Record<string, string[]> = {
   home: ['home-layout', 'home-row'],
   users: ['users', 'sessions', 'watchlist-me', 'invites'],
   invites: ['invites', 'users'],
+  playing: ['now-playing', 'watch-stats'],
   trash: ['profiles', 'custom-formats'],
   trakt: ['trakt-me', 'watchlist-me'],
   backups: ['backups'],

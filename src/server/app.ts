@@ -38,6 +38,7 @@ import { plexAuthRoutes } from './auth/plex.js';
 import { authRoutes } from './auth/routes.js';
 import { twoFactorRoutes } from './auth/twofactor.js';
 import { inviteRoutes } from './auth/invites.js';
+import { playingRoutes } from './playing/routes.js';
 import { apiKeyRoutes } from './auth/apikey-routes.js';
 import { backupRoutes } from './backup/routes.js';
 import { BackupService, writeBackupArchive } from './backup/service.js';
@@ -145,6 +146,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   await app.register(authRoutes);
   await app.register(twoFactorRoutes);
   await app.register(inviteRoutes);
+  await app.register(playingRoutes);
   await app.register(apiKeyRoutes);
   await app.register(oidcRoutes);
   await app.register(plexAuthRoutes);

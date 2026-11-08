@@ -829,3 +829,40 @@ export const recycleBin = sqliteTable('recycle_bin', {
   deletedByName: text('deleted_by_name'),
   deletedAt: integer('deleted_at').notNull(),
 });
+
+/** Plays seen on the media servers' session lists (playing/service.ts): Now playing and watch stats. */
+export const plays = sqliteTable(
+  'plays',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    server: text('server', { enum: SERVERS }).notNull(),
+    sessionId: text('session_id').notNull(),
+    /** Still in the server's session list. */
+    active: integer('active', { mode: 'boolean' }).notNull().default(true),
+    user: text('user').notNull(),
+    kind: text('kind', { enum: ['movie', 'episode', 'other'] }).notNull(),
+    title: text('title').notNull(),
+    show: text('show'),
+    season: integer('season'),
+    episode: integer('episode'),
+    year: integer('year'),
+    /** The movie's or show's TMDB id, when the library sync knows the item. */
+    tmdbId: integer('tmdb_id'),
+    state: text('state').notNull(),
+    positionMs: integer('position_ms').notNull().default(0),
+    durationMs: integer('duration_ms').notNull().default(0),
+    /** Time actually spent playing (not paused), added up between checks. */
+    watchedMs: integer('watched_ms').notNull().default(0),
+    player: text('player'),
+    platform: text('platform'),
+    decision: text('decision').notNull(),
+    quality: text('quality'),
+    bandwidthKbps: integer('bandwidth_kbps'),
+    local: integer('local', { mode: 'boolean' }),
+    controlId: text('control_id'),
+    startedAt: integer('started_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    stoppedAt: integer('stopped_at'),
+  },
+  (t) => [uniqueIndex('plays_session_idx').on(t.server, t.sessionId), index('plays_started_idx').on(t.startedAt)],
+);
