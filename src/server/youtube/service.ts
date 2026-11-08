@@ -330,10 +330,15 @@ export async function addChannel(
     .get()!;
 }
 
-/** Looks for new videos on one channel. */
+/**
+ * Looks for new videos on one channel. `requeue` is for right after its mode changes: an "all"
+ * channel lists every video rather than the newest, and a playlists channel that downloads on its
+ * own also queues videos in its playlists that were listed earlier but skipped.
+ */
 export async function checkChannel(
   ctx: AppContext,
   ch: ChannelRow,
+  requeue = false,
 ): Promise<number> {
   let added = 0;
   try {
@@ -345,9 +350,25 @@ export async function checkChannel(
           `https://www.youtube.com/playlist?list=${p.id}`,
         );
         added += recordVideos(ctx, ch.id, r.entries, ch.pick ? "skipped" : "wanted", p.id);
+        const ids = (r.entries ?? [])
+          .map((e) => e.id)
+          .filter((id): id is string => Boolean(id && VIDEO_ID.test(id)));
+        if (requeue && !ch.pick && ids.length)
+          ctx.db
+            .update(youtubeVideos)
+            .set({ status: "wanted" })
+            .where(
+              and(
+                eq(youtubeVideos.channelId, ch.id),
+                eq(youtubeVideos.status, "skipped"),
+                inArray(youtubeVideos.videoId, ids),
+              ),
+            )
+            .run();
       }
     } else {
-      const r = await flatVideos(ctx, ch.url, CHECK_DEPTH);
+      // Right after switching to every video, list the whole channel, not just the newest.
+      const r = await flatVideos(ctx, ch.url, requeue && ch.mode === "all" ? undefined : CHECK_DEPTH);
       added += recordVideos(ctx, ch.id, r.entries, ch.pick ? "skipped" : "wanted");
     }
     if (added) importExisting(ctx, ch.id);

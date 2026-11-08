@@ -227,6 +227,68 @@ describe("YouTube subscriptions", () => {
     ).toEqual({ done: 1, wanted: 1 });
   });
 
+  it("a subscription can move between picking by hand, new videos only and the rest", async () => {
+    const ch = (
+      await owner.req("POST", "/api/youtube/channels", {
+        url: "https://www.youtube.com/@bluey",
+        mode: "all",
+        pick: true,
+      })
+    ).json();
+    const patch = async (body: object) =>
+      (await owner.req("PATCH", `/api/youtube/channels/${ch.id}`, body)).json();
+
+    // Picking by hand to new videos only: what was listed stays skipped, new uploads download.
+    expect(await patch({ mode: "new", pick: false })).toMatchObject({
+      mode: "new",
+      pick: false,
+      counts: { skipped: 2 },
+    });
+    fs.writeFileSync(path.join(path.dirname(bin), "new-video"), "");
+    await owner.req("POST", `/api/youtube/channels/${ch.id}/check`);
+    const queued = (
+      await owner.req("GET", `/api/youtube/channels/${ch.id}/videos?status=wanted`)
+    ).json();
+    const downloading = (
+      await owner.req("GET", `/api/youtube/channels/${ch.id}/videos?status=downloading`)
+    ).json();
+    const done = (
+      await owner.req("GET", `/api/youtube/channels/${ch.id}/videos?status=done`)
+    ).json();
+    expect(queued.total + downloading.total + done.total).toBe(1);
+    await downloadWanted(t.app.ctx);
+
+    // Back to picking by hand: anything queued goes back on the list. (Paused, so it stays queued.)
+    await patch({ enabled: false });
+    const one = (
+      await owner.req("GET", `/api/youtube/channels/${ch.id}/videos?status=skipped`)
+    ).json().videos[0].id;
+    expect(
+      (await owner.req("POST", "/api/youtube/videos/download", { ids: [one] })).json(),
+    ).toEqual({ queued: 1 });
+    expect((await patch({ enabled: true, pick: true })).counts).toEqual({
+      done: 1,
+      skipped: 2,
+    });
+
+    // Picking by hand to every video: everything skipped is queued.
+    expect((await patch({ mode: "all", pick: false })).counts).toEqual({
+      done: 1,
+      wanted: 2,
+    });
+    await downloadWanted(t.app.ctx);
+
+    // To playlists: the playlist's videos are listed and queued.
+    expect(
+      (await patch({ mode: "playlists", playlists: [{ id: "PLsongs00001", title: "Songs" }] }))
+        .counts,
+    ).toMatchObject({ wanted: 1 });
+    expect((await patch({ mode: "playlists" })).mode).toBe("playlists");
+    expect(
+      (await owner.req("PATCH", `/api/youtube/channels/${ch.id}`, { mode: "playlists", playlists: [] })).statusCode,
+    ).toBe(400);
+  });
+
   it("pick mode lists everything, downloads only what is ticked, and leaves new uploads to pick", async () => {
     const res = await owner.req("POST", "/api/youtube/channels", {
       url: "https://www.youtube.com/@bluey",

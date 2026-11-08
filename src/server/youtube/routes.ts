@@ -159,6 +159,7 @@ export async function youtubeRoutes(app: FastifyInstance) {
         body.playlists ?? (c.playlists ? JSON.parse(c.playlists) : []);
       if (mode === "playlists" && !lists.length)
         throw badRequest("Pick at least one playlist");
+      const pick = body.pick ?? c.pick;
       const changes: Partial<ChannelRow> = {};
       if (body.enabled !== undefined) changes.enabled = body.enabled;
       if (body.pick !== undefined) changes.pick = body.pick;
@@ -173,22 +174,34 @@ export async function youtubeRoutes(app: FastifyInstance) {
           .set(changes)
           .where(eq(youtubeChannels.id, id))
           .run();
-      // Switching to "all" queues what was skipped when the channel was added, unless videos are picked by hand.
-      if (body.mode === "all" && c.mode !== "all" && !(body.pick ?? c.pick))
+      const setStatus = (from: "wanted" | "skipped", to: "wanted" | "skipped") =>
         ctx.db
           .update(youtubeVideos)
-          .set({ status: "wanted" })
+          .set({ status: to })
           .where(
             and(
               eq(youtubeVideos.channelId, id),
-              eq(youtubeVideos.status, "skipped"),
+              eq(youtubeVideos.status, from),
             ),
           )
           .run();
+      // Switching to picking by hand takes back queued videos that haven't started.
+      if (pick && !c.pick) setStatus("wanted", "skipped");
+      // Switching to every video, downloaded on its own, queues what was skipped.
+      if (mode === "all" && !pick && (c.mode !== "all" || c.pick))
+        setStatus("skipped", "wanted");
       audit(ctx.db, req, "youtube.updated", { target: c.name, details: body });
-      if (body.mode || body.playlists)
-        await checkChannel(ctx, getChannel(id)).catch(() => undefined);
-      return view(getChannel(id));
+      const moved =
+        mode !== c.mode ||
+        pick !== c.pick ||
+        (body.playlists !== undefined &&
+          JSON.stringify(lists) !== (c.playlists ?? "[]"));
+      if (moved)
+        await checkChannel(ctx, getChannel(id), true).catch(() => undefined);
+      const result = view(getChannel(id));
+      if (!pick && (c.pick || mode !== c.mode))
+        void downloadWanted(ctx).catch(() => undefined);
+      return result;
     },
   );
 
