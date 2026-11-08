@@ -3,6 +3,9 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.34.0] - 2026-11-08
+
 ### Added
 - **Specials.** A show's specials (season 0) are now listed with its episodes, unmonitored. Monitor them one at a time, or pick season 0 with the show's seasons, and they're searched for, downloaded and imported like any other episode.
 - **Weekly email.** With email set up, people can turn on a weekly email in Account → Notifications: what arrived on the servers this week, what's coming out in the next, and any movie nights. Kids profiles only hear about titles for their age. Settings → Notifications picks the day and hour, and "Send me this week's" shows what it looks like.
@@ -15,10 +18,6 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **Poster overlays.** Settings → Media servers can put badges on posters, Kometa-style: the resolution (4K, 1080p…), the TMDB score, a "New" or "New episodes" banner for recent additions, a show's status and the age rating. They're drawn on the poster chosen in Cinemask (or TMDB's), so badges never stack, and uploaded to Plex, Jellyfin, Emby and BingeBandit every night; only titles whose badges changed are redone. There's a preview, an "Update posters now" button, and "Remove all badges" puts the clean posters back.
 - **Music.** A new Music page finds artists and albums on MusicBrainz (covers from the Cover Art Archive). Albums are requested and approved like books, downloaded from the indexers' audio categories (Settings → Media management picks lossless, lossy or either) and imported as Artist/Album (Year)/ into the new music folder, with covers and cue sheets, then the media servers rescan. Managers can follow an artist so their new studio albums are requested and downloaded by themselves.
 - **More of the app in Spanish, French, German and Dutch.** Signing in, search, requests, the library, Discover, title pages (requesting, upgrades, problem reports), the calendar, movie nights, books and music now follow the chosen language, not just the menu. Admin settings stay in English for now.
-
-## [0.34.0] - 2026-11-08
-
-### Added
 - **Change a YouTube subscription's mode.** Each channel on the YouTube page has a **Change mode** button to move it between new videos only, every video, picking by hand and chosen playlists. Moving to every video queues what was skipped; moving to picking by hand takes back queued videos that haven't started; moving to new videos only leaves what was listed for you to fetch one at a time. Downloaded videos stay. (It replaces the "Get every video" button.)
 
 ## [0.33.0] - 2026-11-05
