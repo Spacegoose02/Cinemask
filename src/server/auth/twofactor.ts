@@ -93,12 +93,33 @@ export function matchTotp(secret: Buffer, code: string, now = Date.now()): numbe
 
 const RECOVERY_COUNT = 10;
 
+/**
+ * Recovery codes are stored as salted scrypt hashes ("scrypt:salt:hash"), so a copy of the
+ * database doesn't give them away. One salt per set keeps checking a code to a single scrypt run.
+ */
+const recoveryHash = (code: string, salt: string) => crypto.scryptSync(normalizeRecovery(code), Buffer.from(salt, 'base64url'), 32).toString('base64url');
+
 function newRecoveryCodes(): { codes: string[]; hashes: string[] } {
   const codes = Array.from({ length: RECOVERY_COUNT }, () => {
     const raw = base32Encode(crypto.randomBytes(7)).slice(0, 10).toLowerCase();
     return `${raw.slice(0, 5)}-${raw.slice(5)}`;
   });
-  return { codes, hashes: codes.map((c) => sha256(normalizeRecovery(c))) };
+  const salt = crypto.randomBytes(16).toString('base64url');
+  return { codes, hashes: codes.map((c) => `scrypt:${salt}:${recoveryHash(c, salt)}`) };
+}
+
+/** The stored entry a recovery code matches, if any. */
+function findRecovery(stored: string[], code: string): string | null {
+  const hashed = new Map<string, Buffer>();
+  for (const entry of stored) {
+    const [kind, salt, hash] = entry.split(':');
+    if (kind !== 'scrypt' || !salt || !hash) continue;
+    if (!hashed.has(salt)) hashed.set(salt, Buffer.from(recoveryHash(code, salt)));
+    const want = Buffer.from(hash);
+    const got = hashed.get(salt)!;
+    if (want.length === got.length && crypto.timingSafeEqual(want, got)) return entry;
+  }
+  return null;
 }
 
 const normalizeRecovery = (c: string) => c.toLowerCase().replace(/[^a-z2-7]/g, '');
@@ -137,8 +158,8 @@ function checkCode(ctx: AppContext, user: UserRow, code: string): 'totp' | 'reco
     return 'totp';
   }
   const hashes: string[] = user.recoveryCodes ? JSON.parse(user.recoveryCodes) : [];
-  const h = sha256(normalizeRecovery(trimmed));
-  if (normalizeRecovery(trimmed).length !== 10 || !hashes.includes(h)) return null;
+  const h = normalizeRecovery(trimmed).length === 10 ? findRecovery(hashes, trimmed) : null;
+  if (!h) return null;
   ctx.db
     .update(users)
     .set({ recoveryCodes: JSON.stringify(hashes.filter((x) => x !== h)) })
