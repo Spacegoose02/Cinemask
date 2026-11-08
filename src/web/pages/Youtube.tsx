@@ -213,9 +213,73 @@ function Videos({ channel }: { channel: Channel }) {
   );
 }
 
+type Choice = Mode | 'pick';
+const CHOICE_HINT: Record<Choice, string> = {
+  new: 'New uploads download from now on. Videos you skipped stay listed for you to fetch one at a time.',
+  all: 'Everything on the channel that isn\'t downloaded yet is queued, and new uploads follow.',
+  pick: 'Nothing downloads on its own. Videos waiting in the queue go back on the list for you to tick.',
+  playlists: 'Videos in the playlists you pick download, and new ones added to them follow.',
+};
+
+function ChangeMode({ channel, onClose, onSaved }: { channel: Channel; onClose: () => void; onSaved: (text: string) => void }) {
+  const qc = useQueryClient();
+  const current: Choice = channel.pick ? 'pick' : channel.mode;
+  const [mode, setMode] = useState<Choice>(current);
+  const [picked, setPicked] = useState<Playlist[]>(channel.playlists);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const body =
+        mode === 'pick'
+          ? // Picking by hand keeps listing every video, whatever the channel followed before.
+            { mode: channel.mode === 'playlists' ? 'all' : channel.mode, pick: true }
+          : { mode, pick: false, ...(mode === 'playlists' ? { playlists: picked } : {}) };
+      const ch = await api<Channel>(`/api/youtube/channels/${channel.id}`, { method: 'PATCH', body });
+      await qc.invalidateQueries({ queryKey: ['yt-channels'] });
+      await qc.invalidateQueries({ queryKey: ['yt-videos', channel.id] });
+      const queued = (ch.counts.wanted ?? 0) + (ch.counts.downloading ?? 0);
+      onSaved(queued ? `Saved. ${queued} video(s) to download.` : 'Saved.');
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const unchanged = mode === current && (mode !== 'playlists' || JSON.stringify(picked.map((p) => p.id).sort()) === JSON.stringify(channel.playlists.map((p) => p.id).sort()));
+  return (
+    <Modal title={`Change what downloads from ${channel.name}`} onClose={onClose}>
+      <div className="space-y-3">
+        <Field label="Download">
+          <select className="input" value={mode} onChange={(e) => setMode(e.target.value as Choice)}>
+            <option value="new">New videos from now on</option>
+            <option value="all">Every video on the channel</option>
+            <option value="pick">Let me pick from the channel's videos</option>
+            <option value="playlists">Only the playlists I pick</option>
+          </select>
+        </Field>
+        {mode === 'playlists' && (
+          <Field label="Playlists">
+            <PlaylistPicker url={channel.url} value={picked} onChange={setPicked} />
+          </Field>
+        )}
+        <p className="text-sm text-muted">{CHOICE_HINT[mode]} Videos already downloaded stay.</p>
+        {error && <Alert>{error}</Alert>}
+        <button className="btn-primary" disabled={busy || unchanged || (mode === 'playlists' && !picked.length)} onClick={save}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function ChannelCard({ c, startOpen }: { c: Channel; startOpen?: boolean }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(Boolean(startOpen));
+  const [changing, setChanging] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const run = async (fn: () => Promise<string | void>) => {
     setMsg(null);
@@ -262,11 +326,9 @@ function ChannelCard({ c, startOpen }: { c: Channel; startOpen?: boolean }) {
           >
             Import from folder
           </button>
-          {c.mode === 'new' && !c.pick && (
-            <button className="btn-secondary" onClick={() => confirm(`Download every video from ${c.name}?`) && run(async () => void (await api(`/api/youtube/channels/${c.id}`, { method: 'PATCH', body: { mode: 'all' } })))}>
-              Get every video
-            </button>
-          )}
+          <button className="btn-secondary" onClick={() => setChanging(true)}>
+            Change mode
+          </button>
           <button className="btn-secondary" onClick={() => run(async () => void (await api(`/api/youtube/channels/${c.id}`, { method: 'PATCH', body: { enabled: !c.enabled } })))}>
             {c.enabled ? 'Pause' : 'Resume'}
           </button>
@@ -276,7 +338,8 @@ function ChannelCard({ c, startOpen }: { c: Channel; startOpen?: boolean }) {
         </div>
       </div>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
-      {open && <Videos channel={c} />}
+      {open && <Videos key={String(c.pick)} channel={c} />}
+      {changing && <ChangeMode channel={c} onClose={() => setChanging(false)} onSaved={(text) => setMsg({ kind: 'success', text })} />}
     </li>
   );
 }

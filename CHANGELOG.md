@@ -4,6 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- **Change a YouTube subscription's mode.** Each channel on the YouTube page has a **Change mode** button to move it between new videos only, every video, picking by hand and chosen playlists. Moving to every video queues what was skipped; moving to picking by hand takes back queued videos that haven't started; moving to new videos only leaves what was listed for you to fetch one at a time. Downloaded videos stay. (It replaces the "Get every video" button.)
+
 ## [0.33.0] - 2026-11-05
 
 ### Added
