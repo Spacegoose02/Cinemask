@@ -24,7 +24,6 @@ Already done in 0.9 (no work needed): delete episodes, seasons and movies; downl
 
 ## Known gaps
 
-- Specials (season 0) are not added to monitored episodes, so the per-episode tools can't act on them.
 - Removing a download with "Blocklist and retry" marks it `removed` in history although a retry search runs.
 
 ## How the newer pieces fit

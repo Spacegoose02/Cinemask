@@ -15,7 +15,7 @@ import { bingeBanditFolders } from './bingebandit-folders.js';
 import { CLIENT_PROTOCOL, createClient } from './clients.js';
 import { startLinkDownload } from './direct.js';
 import { listProwlarrIndexers, testIndexer } from './indexers.js';
-import { excludeFromAutoMonitor, monitorTitle, refreshEpisodes, upgradeCandidates, wantedTarget } from './monitor.js';
+import { excludeFromAutoMonitor, monitorTitle, seasonMonitored, refreshEpisodes, upgradeCandidates, wantedTarget } from './monitor.js';
 import { defaultProfileId, getProfile, listProfiles } from './profiles.js';
 import { parseRelease } from './parser.js';
 import { QUALITY_IDS } from './quality.js';
@@ -278,7 +278,7 @@ export async function arrRoutes(app: FastifyInstance) {
     if (Object.keys(changes).length) db().update(monitored).set(changes).where(eq(monitored.id, id)).run();
     if (body.seasons !== undefined && before.kind === 'show') {
       for (const e of db().select().from(monitoredEpisodes).where(eq(monitoredEpisodes.monitoredId, id)).all()) {
-        db().update(monitoredEpisodes).set({ monitored: !body.seasons || body.seasons.includes(e.season) }).where(eq(monitoredEpisodes.id, e.id)).run();
+        db().update(monitoredEpisodes).set({ monitored: seasonMonitored(body.seasons ?? null, e.season) }).where(eq(monitoredEpisodes.id, e.id)).run();
       }
     }
     const after = getMonitored(id);

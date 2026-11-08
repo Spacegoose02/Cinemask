@@ -3,6 +3,8 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+- **Specials.** A show's specials (season 0) are now listed with its episodes, unmonitored. Monitor them one at a time, or pick season 0 with the show's seasons, and they're searched for, downloaded and imported like any other episode.
 
 ## [0.34.0] - 2026-11-08
 
