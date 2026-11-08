@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-11-08
+
 ### Fixed
 - **YouTube downloads.** Every YouTube video (channel subscriptions and trailers) could fail with "This video is not available". YouTube now only serves most videos, made-for-kids ones especially, to players that can run its JavaScript, and yt-dlp only looks for Deno by itself. Cinemask now hands yt-dlp the Node that already runs it.
 
