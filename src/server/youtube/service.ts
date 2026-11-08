@@ -11,7 +11,7 @@ import {
 import { refreshMediaServers } from "../arr/tracker.js";
 import { sanitizeSegment } from "../arr/naming.js";
 import { insideRoot } from "../lib/paths.js";
-import { ytDlpBinary } from "../trailers/service.js";
+import { ytDlpBaseArgs, ytDlpBinary } from "../trailers/service.js";
 import { localDay } from '../lib/dates.js';
 
 export type ChannelRow = typeof youtubeChannels.$inferSelect;
@@ -65,7 +65,7 @@ function ytDlp(
   return new Promise((resolve, reject) => {
     execFile(
       bin,
-      ["--no-progress", "--no-warnings", ...args],
+      [...ytDlpBaseArgs(), "--no-progress", "--no-warnings", ...args],
       { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 },
       (err, stdout, stderr) => {
         if (err)
