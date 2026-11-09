@@ -11,7 +11,7 @@ import type { MediaCardData } from '../lib/media';
 export interface ListRow {
   id: number;
   name: string;
-  source: 'mdblist' | 'tmdb_list' | 'tmdb_discover' | 'csv' | 'trakt';
+  source: 'mdblist' | 'tmdb_list' | 'tmdb_discover' | 'csv' | 'trakt' | 'watchmask';
   kind: 'movie' | 'show' | null;
   autoAdd: boolean;
   profileId: number | null;
@@ -22,7 +22,7 @@ export interface ListRow {
   itemCount: number;
 }
 
-const SOURCE_LABEL = { mdblist: 'mdblist', tmdb_list: 'TMDB list', tmdb_discover: 'Discover search', csv: 'Imported file', trakt: 'Trakt' };
+const SOURCE_LABEL = { mdblist: 'mdblist', tmdb_list: 'TMDB list', tmdb_discover: 'Discover search', csv: 'Imported file', trakt: 'Trakt', watchmask: 'Watchmask' };
 
 function ListSettings({ list, onClose }: { list: ListRow; onClose: () => void }) {
   const qc = useQueryClient();
@@ -129,7 +129,7 @@ function AddList({ onClose }: { onClose: () => void }) {
         </Field>
         {tab === 'url' ? (
           <>
-            <Field label="List link" hint="An mdblist.com list (needs the mdblist key in Settings → Metadata), a themoviedb.org list, or a trakt.tv list or chart such as trakt.tv/movies/trending (needs the Trakt app in Settings → Metadata). To follow a Discover search, use Save as list on the Discover page.">
+            <Field label="List link" hint="An mdblist.com list (needs the mdblist key in Settings → Metadata), a themoviedb.org list, a trakt.tv list or chart such as trakt.tv/movies/trending (needs the Trakt app in Settings → Metadata), or a list on your Watchmask such as track.example.com/list/68 (needs Watchmask connected in Settings → Metadata). To follow a Discover search, use Save as list on the Discover page.">
               <input className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mdblist.com/lists/user/list-name" />
             </Field>
             <Toggle label="Download new titles automatically" checked={autoAdd} onChange={setAutoAdd} />
@@ -172,7 +172,7 @@ export function ListsPage() {
         )}
       </div>
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
-      {lists.data && !lists.data.length && <div className="card text-sm text-muted">No lists yet. {isManager ? 'Add one from mdblist, TMDB or Trakt, import a CSV, or save a Discover search.' : 'A manager can add some.'}</div>}
+      {lists.data && !lists.data.length && <div className="card text-sm text-muted">No lists yet. {isManager ? 'Add one from mdblist, TMDB, Trakt or Watchmask, import a CSV, or save a Discover search.' : 'A manager can add some.'}</div>}
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {lists.data?.map((l) => (
           <li key={l.id} className="card space-y-2">

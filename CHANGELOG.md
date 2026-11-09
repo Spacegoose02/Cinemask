@@ -4,6 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- **Watchmask.** Connect your Watchmask in Settings → Metadata with an app token that has only the lists:read and lists:write permissions (it can be locked to the lists Cinemask may change). Managers then get "Add to <your default list>" and a Watchmask lists picker on every movie and show page, so a new Lifetime movie can go straight onto your Watchmask Lifetime list. Managers can also follow a Watchmask list on Lists by pasting its link, such as track.example.com/list/68, with the same scheduled sync and optional auto-download as other lists. Adds and removals are in the audit log, and only links on the connected Watchmask address are followed.
+
 ## [0.34.1] - 2026-11-08
 
 ### Fixed

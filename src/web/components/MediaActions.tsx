@@ -8,6 +8,7 @@ import { PosterPicker, useCreateSeriesCollection } from './Extras';
 import { Modal } from './Modal';
 import { Alert } from './ui';
 import { ReportProblem } from './ReportProblem';
+import { WatchmaskButtons } from './WatchmaskLists';
 
 interface Profile {
   id: number;
@@ -670,6 +671,7 @@ export function MediaActions({ m }: { m: MediaDetail }) {
           Change poster
         </button>
       )}
+      {isManager && <WatchmaskButtons m={m} />}
       {isManager && m.collection && (
         <button className="btn-secondary" onClick={() => run(() => createSeries(m.collection!), '')}>
           Add {m.collection.name} to your media servers

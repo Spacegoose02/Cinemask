@@ -29,6 +29,7 @@ import { notificationRoutes } from './notify/routes.js';
 import { issueRoutes } from './issues/routes.js';
 import { mediaFileRoutes } from './files/media-routes.js';
 import { watchlistRoutes } from './watchlist/routes.js';
+import { watchmaskRoutes } from './watchmask/routes.js';
 import { storageRoutes } from './storage/routes.js';
 import { compatRoutes } from './compat/routes.js';
 import { arrRoutes } from './arr/routes.js';
@@ -186,6 +187,7 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
   await app.register(issueRoutes);
   await app.register(mediaFileRoutes);
   await app.register(watchlistRoutes);
+  await app.register(watchmaskRoutes);
   await app.register(storageRoutes);
   await app.register(compatRoutes);
 

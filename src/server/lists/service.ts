@@ -9,6 +9,7 @@ import { monitorTitle } from '../arr/monitor.js';
 import { defaultProfileId, getProfile } from '../arr/profiles.js';
 import { autoSearch } from '../arr/search.js';
 import { traktList, traktPath } from '../integrations/trakt.js';
+import { requireWatchmask } from '../watchmask/service.js';
 
 export interface ListItem {
   kind: MediaKind;
@@ -89,6 +90,11 @@ export async function fetchItems(ctx: AppContext, list: Pick<ListRow, 'source' |
       const path = String(cfg.path ?? '');
       if (!traktPath(new URL(`https://trakt.tv${path.replace(/\/items$/, '')}`))) throw new Error('Not a Trakt list');
       items = (await traktList(ctx, path)).filter((i): i is typeof i & { tmdbId: number } => i.tmdbId !== null).map((i) => ({ kind: i.kind, tmdbId: i.tmdbId, title: i.title, year: i.year, posterPath: null }));
+      break;
+    }
+    case 'watchmask': {
+      const wm = requireWatchmask(ctx);
+      items = await wm.listItems(await wm.resolveList(String(cfg.ref ?? '')));
       break;
     }
     case 'csv':

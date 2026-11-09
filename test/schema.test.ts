@@ -71,6 +71,29 @@ describe('migration 19 (BingeBandit collections)', () => {
   });
 });
 
+describe('migration 36 (Watchmask lists)', () => {
+  it('keeps lists and their items while allowing Watchmask as a source', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    db.exec('CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL)');
+    for (const m of MIGRATIONS.filter((m) => m.id < 36)) {
+      db.exec(m.sql);
+      db.prepare('INSERT INTO schema_migrations VALUES (?, ?, ?)').run(m.id, m.name, 0);
+    }
+    db.exec("INSERT INTO lists (id, name, source, config, auto_add, sync_hours, item_count, created_at) VALUES (4, 'Trending', 'trakt', '{}', 1, 6, 1, 1)");
+    db.exec("INSERT INTO list_items VALUES (4, 'movie', 116149, 'Paddington', 2014, NULL, 0)");
+    migrate(db);
+    expect(db.prepare('SELECT id, name, source, auto_add, sync_hours, item_count FROM lists').all()).toEqual([{ id: 4, name: 'Trending', source: 'trakt', auto_add: 1, sync_hours: 6, item_count: 1 }]);
+    expect(db.prepare('SELECT list_id, tmdb_id FROM list_items').all()).toEqual([{ list_id: 4, tmdb_id: 116149 }]);
+    db.prepare('INSERT INTO lists (name, source, config, created_at) VALUES (?, ?, ?, 1)').run('Lifetime', 'watchmask', '{"ref":"68"}');
+    expect(() => db.exec("INSERT INTO lists (name, source, created_at) VALUES ('Bad', 'nope', 1)")).toThrow();
+    db.exec('DELETE FROM lists WHERE id = 4');
+    expect(db.prepare('SELECT count(*) AS n FROM list_items').get()).toEqual({ n: 0 });
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+    db.close();
+  });
+});
+
 describe('OIDC group mapping', () => {
   const base = SETTINGS.auth.schema.parse({}).oidc;
   it('leaves roles alone when no groups are configured', () => {

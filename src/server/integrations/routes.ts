@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { AudiobookshelfClient } from './audiobookshelf.js';
 import { ReadMeABookClient } from './readmeabook.js';
 import { ShelfmarkClient } from './shelfmark.js';
+import { WatchmaskClient } from './watchmask.js';
 import { audit } from '../audit/log.js';
 import { plexHeaders } from '../auth/plex.js';
 import { HttpError } from '../lib/errors.js';
@@ -26,7 +27,7 @@ export async function integrationRoutes(app: FastifyInstance) {
   };
 
   app.post('/api/integrations/:service/test', { config: { access: 'admin' } }, async (req) => {
-    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'emby', 'bingebandit', 'tmdb', 'mdblist', 'audiobookshelf', 'shelfmark', 'readmeabook']) }), req.params);
+    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'emby', 'bingebandit', 'tmdb', 'mdblist', 'audiobookshelf', 'shelfmark', 'readmeabook', 'watchmask']) }), req.params);
     const result = await run(async () => {
       switch (service) {
         case 'plex': {
@@ -81,6 +82,11 @@ export async function integrationRoutes(app: FastifyInstance) {
           const s = ctx.settings.get('readmeabook');
           if (!s.url || !s.apiToken) throw new Error('Enter the ReadMeABook URL and API token first');
           return new ReadMeABookClient(s.url, s.apiToken).test();
+        }
+        case 'watchmask': {
+          const s = ctx.settings.get('watchmask');
+          if (!s.url || !s.token) throw new Error('Enter the Watchmask address and app token first');
+          return new WatchmaskClient(s.url, s.token).test();
         }
       }
     });
