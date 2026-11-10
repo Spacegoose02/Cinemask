@@ -367,6 +367,19 @@ export const SETTINGS = {
     }),
     secrets: ['apiToken'],
   },
+  /** Watchmask (self-hosted tracker): add titles to its lists, and follow its lists on Lists. */
+  watchmask: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      /** e.g. https://track.example.com */
+      url: httpUrl.default(''),
+      /** A Watchmask app token (flp_…) with lists:read and lists:write. */
+      token: z.string().max(500).default(''),
+      /** The list the one-tap "Add to Watchmask" button uses, e.g. a Lifetime movies list. */
+      defaultListId: z.number().int().positive().nullable().default(null),
+    }),
+    secrets: ['token'],
+  },
   notifications: {
     schema: z.object({
       /** Sends the chosen events to the shared channels below. Personal push and email are set per person. */

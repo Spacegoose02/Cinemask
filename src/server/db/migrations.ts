@@ -992,6 +992,35 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       ALTER TABLE downloads ADD COLUMN album_id INTEGER REFERENCES albums(id) ON DELETE SET NULL;
     `,
   },
+  {
+    id: 36,
+    name: 'watchmask lists',
+    // lists is rebuilt for its source CHECK; list_items would cascade away, so they're set aside.
+    sql: `
+      CREATE TABLE list_items_keep AS SELECT * FROM list_items;
+      CREATE TABLE lists_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('mdblist','tmdb_list','tmdb_discover','csv','trakt','watchmask')),
+        config TEXT NOT NULL DEFAULT '{}',
+        kind TEXT CHECK (kind IN ('movie','show')),
+        auto_add INTEGER NOT NULL DEFAULT 0,
+        profile_id INTEGER REFERENCES quality_profiles(id) ON DELETE SET NULL,
+        search_on_add INTEGER NOT NULL DEFAULT 1,
+        sync_hours INTEGER NOT NULL DEFAULT 12,
+        last_sync_at INTEGER,
+        last_error TEXT,
+        item_count INTEGER NOT NULL DEFAULT 0,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      INSERT INTO lists_new SELECT * FROM lists;
+      DROP TABLE lists;
+      ALTER TABLE lists_new RENAME TO lists;
+      INSERT INTO list_items SELECT * FROM list_items_keep;
+      DROP TABLE list_items_keep;
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

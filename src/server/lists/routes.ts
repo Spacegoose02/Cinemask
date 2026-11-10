@@ -8,6 +8,7 @@ import { availabilityFor } from '../library/service.js';
 import { badRequest, notFound } from '../lib/errors.js';
 import { forViewer } from '../kids/ratings.js';
 import { parse } from '../lib/validate.js';
+import { watchmaskClient, watchmaskListRef } from '../watchmask/service.js';
 import { itemsFromCsv, parseListUrl, replaceItems, syncList, type ListItem } from './service.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
@@ -34,6 +35,14 @@ export async function listRoutes(app: FastifyInstance) {
     if (!l) throw notFound('List not found');
     return l;
   };
+  /** The list id or public link name in a link to the connected Watchmask, e.g. its /list/68. */
+  const watchmaskRefFor = (url: string) => {
+    try {
+      return watchmaskListRef(ctx, new URL(url.trim()));
+    } catch {
+      return null;
+    }
+  };
   const view = (l: typeof lists.$inferSelect) => ({ ...l, config: JSON.parse(l.config) as unknown });
   const trySync = async (id: number) => {
     try {
@@ -53,7 +62,7 @@ export async function listRoutes(app: FastifyInstance) {
     return { list: view(list), items: await forViewer(ctx, req.user!.id, withAvailability(ctx, items)) };
   });
 
-  /** Adds a list from a pasted mdblist, TMDB or Trakt URL, or a saved Discover search. */
+  /** Adds a list from a pasted mdblist, TMDB, Trakt or Watchmask URL, or a saved Discover search. */
   app.post('/api/lists', { config: { access: 'manager' } }, async (req) => {
     const body = parse(
       z.object({
@@ -63,14 +72,19 @@ export async function listRoutes(app: FastifyInstance) {
       }),
       req.body,
     );
-    let source: 'mdblist' | 'tmdb_list' | 'tmdb_discover' | 'trakt';
+    let source: 'mdblist' | 'tmdb_list' | 'tmdb_discover' | 'trakt' | 'watchmask';
     let config: Record<string, unknown>;
+    const wmRef = body.url ? watchmaskRefFor(body.url) : null;
     if (body.discover) {
       source = 'tmdb_discover';
       config = body.discover;
+    } else if (wmRef) {
+      if (!watchmaskClient(ctx)) throw badRequest('Switch on Watchmask in Settings → Metadata to follow its lists');
+      source = 'watchmask';
+      config = { ref: wmRef };
     } else {
       const parsed = body.url ? parseListUrl(body.url) : null;
-      if (!parsed || parsed.source === 'csv') throw badRequest('Paste an mdblist.com, themoviedb.org or trakt.tv list link');
+      if (!parsed || parsed.source === 'csv' || parsed.source === 'watchmask') throw badRequest('Paste an mdblist.com, themoviedb.org, trakt.tv or Watchmask list link');
       source = parsed.source;
       config = parsed.config;
     }

@@ -4,7 +4,7 @@
 
 A self-hosted media manager for families running Plex, Jellyfin or Emby. It does what Sonarr, Radarr, Lidarr and Overseerr do, plus books and audiobooks, in one app with real user accounts, single sign-on and backups.
 
-> **Status:** beta (0.11). Every phase of the [roadmap](docs/ROADMAP.md) is built and covered by automated tests. The integrations with Plex, Jellyfin, Emby, TMDB, Trakt, MusicBrainz, the TRaSH Guides, indexers, download clients, Audiobookshelf and Shelfmark are tested against simulated services; please [report anything](https://github.com/Spacegoose02/cinemask/issues) that behaves differently with the real thing.
+> **Status:** beta (0.11). Every phase of the [roadmap](docs/ROADMAP.md) is built and covered by automated tests. The integrations with Plex, Jellyfin, Emby, TMDB, Trakt, Watchmask, MusicBrainz, the TRaSH Guides, indexers, download clients, Audiobookshelf and Shelfmark are tested against simulated services; please [report anything](https://github.com/Spacegoose02/cinemask/issues) that behaves differently with the real thing.
 
 ## Features
 

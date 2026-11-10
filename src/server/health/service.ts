@@ -12,6 +12,7 @@ import { JellyfinClient } from '../integrations/jellyfin.js';
 import { EmbyClient } from '../integrations/emby.js';
 import { PlexClient } from '../integrations/plex.js';
 import { tmdbClient, type LibrarySync } from '../library/service.js';
+import { watchmaskClient } from '../watchmask/service.js';
 
 export type HealthLevel = 'ok' | 'warning' | 'error';
 
@@ -117,6 +118,8 @@ export async function runHealthChecks(ctx: AppContext, deps: { backups: BackupSe
   if (sm) pending.push(connection('shelfmark', 'Shelfmark', 'books', () => sm.test()));
   const rmab = readMeABookClient(ctx);
   if (rmab) pending.push(connection('readmeabook', 'ReadMeABook', 'books', () => rmab.test()));
+  const wm = watchmaskClient(ctx);
+  if (wm) pending.push(connection('watchmask', 'Watchmask', 'metadata', () => wm.test()));
   const meta = ctx.settings.get('metadata');
   pending.push(
     meta.tmdbApiKey

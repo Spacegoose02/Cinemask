@@ -493,7 +493,7 @@ export const blocklist = sqliteTable('blocklist', {
   createdAt: integer('created_at').notNull(),
 });
 
-export const LIST_SOURCES = ['mdblist', 'tmdb_list', 'tmdb_discover', 'csv', 'trakt'] as const;
+export const LIST_SOURCES = ['mdblist', 'tmdb_list', 'tmdb_discover', 'csv', 'trakt', 'watchmask'] as const;
 export type ListSource = (typeof LIST_SOURCES)[number];
 
 export const lists = sqliteTable('lists', {

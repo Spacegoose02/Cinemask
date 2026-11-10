@@ -1,4 +1,5 @@
-import { Field, SecretInput } from '../../components/ui';
+import { Field, SecretInput, Toggle } from '../../components/ui';
+import { useWatchmaskLists } from '../../components/WatchmaskLists';
 import { useSettingsSection } from '../../lib/settings';
 import { SaveBar } from './SaveBar';
 import { TestButton } from './TestButton';
@@ -6,7 +7,9 @@ import { TestButton } from './TestButton';
 export function MetadataSettings() {
   const s = useSettingsSection('metadata');
   const trakt = useSettingsSection('trakt');
-  if (s.loading || trakt.loading) return null;
+  const wm = useSettingsSection('watchmask');
+  const wmLists = useWatchmaskLists(Boolean(wm.values?.enabled && wm.values?.url && wm.secretsSet?.['token']));
+  if (s.loading || trakt.loading || wm.loading) return null;
   return (
     <div className="max-w-2xl space-y-6">
       <section className="card space-y-4">
@@ -39,6 +42,39 @@ export function MetadataSettings() {
           </Field>
         </div>
         <SaveBar onSave={trakt.save} saving={trakt.saving} message={trakt.message} />
+      </section>
+      <section className="card space-y-4">
+        <h2 className="font-semibold">Watchmask</h2>
+        <p className="text-sm text-muted">
+          Optional. Lets managers add a movie or show to your Watchmask lists from its page, with a one-tap button for the default list, and follow Watchmask lists on Lists by pasting a link such as
+          <span className="font-mono"> track.example.com/list/68</span>.
+        </p>
+        <Toggle label="Connect Watchmask" checked={wm.values.enabled} onChange={(v) => wm.set('enabled', v)} />
+        <Field label="Address">
+          <input className="input" value={wm.values.url} onChange={(e) => wm.set('url', e.target.value.trim())} placeholder="https://track.example.com" />
+        </Field>
+        <Field
+          label="App token"
+          hint="In Watchmask, open Settings → Integrations → App tokens and create one with only the lists:read and lists:write permissions. To keep Cinemask away from your other lists, lock the token to the lists it may change."
+        >
+          <SecretInput isSet={wm.secretsSet['token']!} value={wm.secrets['token']} onChange={(v) => wm.setSecret('token', v)} />
+        </Field>
+        <Field label="Default list" hint="The list the one-tap Add button on movie and show pages uses.">
+          {wmLists.data?.connected ? (
+            <select className="input" value={wm.values.defaultListId ?? ''} onChange={(e) => wm.set('defaultListId', e.target.value ? Number(e.target.value) : null)}>
+              <option value="">None (just the list picker)</option>
+              {wmLists.data.lists.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-sm text-muted">{wmLists.error ? (wmLists.error as Error).message : 'Switch it on, save the address and token, then pick a list here.'}</p>
+          )}
+        </Field>
+        <TestButton service="watchmask" beforeTest={wm.save} />
+        <SaveBar onSave={wm.save} saving={wm.saving} message={wm.message} />
       </section>
       <section className="card space-y-4">
         <h2 className="font-semibold">Region and language</h2>

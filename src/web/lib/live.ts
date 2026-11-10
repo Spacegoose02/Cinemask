@@ -42,6 +42,9 @@ const TOPIC_QUERIES: Record<string, string[]> = {
   issues: ['issues', 'issue-count', 'title-issues'],
   watchlist: ['watchlist-me'],
   storage: ['storage', 'files', 'monitored-overview'],
+  watchmask: ['watchmask-lists', 'watchmask-member'],
+  // Saving the Watchmask address or token changes which lists exist.
+  settings: ['watchmask-lists', 'watchmask-member'],
 };
 
 function invalidate(qc: QueryClient, topics: Set<string>) {
