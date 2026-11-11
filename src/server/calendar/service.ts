@@ -119,7 +119,9 @@ export async function refreshMonitored(ctx: AppContext): Promise<void> {
   for (const row of ctx.db.select().from(monitored).all()) {
     try {
       await refreshMetadata(ctx, row.kind, row.tmdbId);
-      if (row.kind === 'show' && row.monitored) await refreshEpisodes(ctx, row);
+      // Every show, monitored or not: its Seasons section lists these episodes. An unmonitored show
+      // never searches, so new episodes on it are only listed.
+      if (row.kind === 'show') await refreshEpisodes(ctx, row);
     } catch {
       // TMDB hiccup: try again next run
     }

@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { excludeFromAutoMonitor } from '../arr/monitor.js';
+import { excludeFromAutoMonitor, refreshEpisodes } from '../arr/monitor.js';
 import { audit } from '../audit/log.js';
 import { monitored, monitoredEpisodes } from '../db/schema.js';
 import { refreshMediaServers } from '../arr/tracker.js';
@@ -67,7 +67,12 @@ export async function fileRoutes(app: FastifyInstance) {
 
   app.post('/api/monitored/:id/scan', { config: { access: 'manager' } }, async (req) => {
     const { id } = parse(idParam, req.params);
-    const row = getRow(id);
+    let row = getRow(id);
+    // Pick up episodes TMDB added since the last sync first, so their files are matched too.
+    if (row.kind === 'show') {
+      await refreshEpisodes(ctx, row).catch(() => undefined);
+      row = getRow(id);
+    }
     const result = safely(() => scanFolder(ctx, row));
     audit(ctx.db, req, 'files.scanned', { target: row.title, details: result });
     // Files just found: fetch a trailer for them when automatic trailers are on.
