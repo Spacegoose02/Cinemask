@@ -2,6 +2,7 @@ import { and, eq, gte, lte, or } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { media, monitored, monitoredEpisodes } from '../db/schema.js';
 import { refreshEpisodes } from '../arr/monitor.js';
+import { scanFolder } from '../files/service.js';
 import { refreshMetadata } from '../library/service.js';
 import { episodesOnServer } from '../library/service.js';
 
@@ -114,14 +115,23 @@ export function calendar(ctx: AppContext, start: string, end: string): CalendarE
   return entries.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
 }
 
-/** Keeps release dates and episode lists of monitored titles current, so the calendar picks up new episodes. */
+/**
+ * Keeps release dates and episode lists of managed titles current, so the calendar and Seasons pick up
+ * new episodes and the missing search (hourly) can grab the ones a monitored show wants.
+ */
 export async function refreshMonitored(ctx: AppContext): Promise<void> {
   for (const row of ctx.db.select().from(monitored).all()) {
     try {
       await refreshMetadata(ctx, row.kind, row.tmdbId);
       // Every show, monitored or not: its Seasons section lists these episodes. An unmonitored show
       // never searches, so new episodes on it are only listed.
-      if (row.kind === 'show') await refreshEpisodes(ctx, row);
+      if (row.kind !== 'show') continue;
+      const count = () => ctx.db.select({ id: monitoredEpisodes.id }).from(monitoredEpisodes).where(eq(monitoredEpisodes.monitoredId, row.id)).all().length;
+      const before = count();
+      await refreshEpisodes(ctx, row);
+      // New episodes whose files are already in the folder get matched now, so the hourly
+      // missing search doesn't download them again.
+      if (count() > before && row.path) scanFolder(ctx, row);
     } catch {
       // TMDB hiccup: try again next run
     }
