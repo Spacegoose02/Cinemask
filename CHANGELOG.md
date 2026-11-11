@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-11-11
+
+### Changed
+- **One Seasons section on show pages.** Managers no longer see a show's seasons twice (Seasons, then Files) plus a separate "What's in the files" list. Folder actions (Read files, Fetch subtitles…) sit at the top of Seasons, each season has its Search, Manual, Upgrade and Delete buttons, and each episode shows its file, what's in it and whether it's been watched. Everyone else, shows that aren't managed, and movies look the same as before.
+
 ## [0.35.0] - 2026-11-10
 
 ### Added
