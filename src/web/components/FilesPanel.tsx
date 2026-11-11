@@ -266,10 +266,10 @@ export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNo
   const isShow = m.kind === 'show';
   // What ffprobe found in each file, shown under its episode. Movies keep their own "What's in the files".
   const details = useQuery({ queryKey: ['file-details', mon?.id], queryFn: () => api<{ files: DetailFile[] }>(`/api/monitored/${mon!.id}/details`), enabled: isShow && Boolean(mon) });
-  // Watched marks from the media server, for the open season only.
+  // TMDB's episodes and the media server's watched marks, for the open season only.
   const played = useQuery({
     queryKey: ['season', m.tmdbId, openSeason],
-    queryFn: () => api<{ episodes: { episodeNumber: number; viewCount: number | null }[] }>(`/api/media/show/${m.tmdbId}/season/${openSeason}`),
+    queryFn: () => api<{ episodes: { episodeNumber: number; name: string; airDate: string | null; viewCount: number | null }[] }>(`/api/media/show/${m.tmdbId}/season/${openSeason}`),
     enabled: isShow && Boolean(mon) && openSeason !== null,
   });
   const navigate = useNavigate();
@@ -335,7 +335,8 @@ export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNo
   };
   const fileFor = (p: string | null) => (p ? files.data?.files.find((f) => f.path === p) : undefined);
 
-  const seasons = [...new Set(mon.episodes.map((e) => e.season))].sort((a, b) => a - b);
+  // TMDB's seasons too, so one added since Cinemask last synced the episode list still shows.
+  const seasons = [...new Set([...mon.episodes.map((e) => e.season), ...m.seasons.filter((x) => x.seasonNumber > 0 || x.onServer > 0).map((x) => x.seasonNumber)])].sort((a, b) => a - b);
   const detailFor = (p: string | null) => (p ? details.data?.files.find((f) => f.path === p) : undefined);
   const seasonName = (s: number) => m.seasons.find((x) => x.seasonNumber === s)?.name ?? (s === 0 ? 'Specials' : `Season ${s}`);
   const views = (episode: number) => played.data?.episodes.find((x) => x.episodeNumber === episode)?.viewCount ?? 0;
@@ -523,6 +524,19 @@ export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNo
                         </li>
                       );
                     })}
+                    {/* On TMDB but not in Cinemask's episode list yet (it syncs twice a day, and on Rescan folder). */}
+                    {played.data?.episodes
+                      .filter((x) => !eps.some((e) => e.episode === x.episodeNumber))
+                      .map((x) => (
+                        <li key={`tmdb-${x.episodeNumber}`} className="flex flex-wrap items-center justify-between gap-2 rounded px-2 py-1.5 hover:bg-surface-2">
+                          <span className="min-w-0 pl-6">
+                            <span className="text-muted">E{pad(x.episodeNumber)}</span> {x.name}
+                            <span className="block text-xs text-muted">
+                              {x.airDate && x.airDate <= today() ? 'Aired' : `Airs ${x.airDate ?? 'TBA'}`} · new on TMDB, use Rescan folder to add it here
+                            </span>
+                          </span>
+                        </li>
+                      ))}
                   </ul>
                 )}
               </li>
