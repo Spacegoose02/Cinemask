@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.35.2] - 2026-11-11
+
+### Fixed
+- **Missing episodes in Seasons.** Shows managed with "Manage this show" but not monitored never picked up episodes TMDB added later, so those episodes were missing from the Seasons section and their files on disk weren't matched. The twice-daily refresh now updates every managed show's episode list (unmonitored shows still never search), Rescan folder updates it first so new files match right away, and an open season also lists episodes and seasons TMDB has that haven't been synced yet.
+
 ## [0.35.1] - 2026-11-11
 
 ### Changed
