@@ -3,6 +3,7 @@ import { BooksPage } from './pages/Books';
 import { MusicPage } from './pages/Music';
 import { YoutubePage } from './pages/Youtube';
 import { useQuery } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { api, hasRole, type AuthStatus, type Role } from './lib/api';
@@ -38,10 +39,12 @@ import { NowPlayingPage } from './pages/NowPlaying';
 const panels = (m: MediaDetail) => (
   <>
     <FamilyPanel m={m} />
-    <FilesPanel m={m} />
+    {/* A show's files are in its Seasons section instead (see `seasons`). */}
+    {m.kind === 'movie' && <FilesPanel m={m} />}
     <FileDetails m={m} />
   </>
 );
+const seasons = (m: MediaDetail, standard: ReactNode) => <FilesPanel m={m} standard={standard} />;
 
 /** Where to go after signing in: the page they first asked for, if it's one of ours. */
 function afterSignIn(state: unknown): string {
@@ -85,7 +88,7 @@ export function App() {
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" actions={(m) => <MediaActions m={m} />} panels={panels} />} />
-        <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} panels={panels} />} />
+        <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} panels={panels} seasons={seasons} />} />
         <Route path="/books" element={<BooksPage />} />
         <Route path="/music" element={<MusicPage />} />
         <Route path="/developer" element={<ApiDocsPage />} />

@@ -1,11 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, formatBytes, hasRole, localDay } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { t } from '../lib/i18n';
 import { mediaPath } from '../lib/media';
 import type { MediaDetail } from '../pages/MediaDetail';
 import { TrailerManager } from './Extras';
+import { fetchSubtitles, FileInfoLines, readFiles, type DetailFile } from './FileDetails';
 import { MatchPicker } from './MatchPicker';
 import { ManualSearch } from './MediaActions';
 import { Modal } from './Modal';
@@ -182,7 +184,6 @@ function RemoveModal({ mon, onClose }: { mon: MonitoredView; onClose: () => void
   );
 }
 
-/** Files on disk for a monitored movie or show, with rename, delete and per-episode search. Managers only. */
 /**
  * A title on Plex or Jellyfin that Cinemask doesn't manage yet. Managing it finds its folder, so the
  * files can be deleted, renamed and upgraded. Nothing is searched for.
@@ -223,7 +224,12 @@ function StartManaging({ m, folder }: { m: MediaDetail; folder: string | null })
   );
 }
 
-export function FilesPanel({ m }: { m: MediaDetail }) {
+/**
+ * Files on disk for a monitored movie or show, with rename, delete and per-episode search. Managers only.
+ * For a show this is its Seasons section: each season and episode carries its files, what's in them and
+ * its actions. `standard` (the plain season list) shows instead for everyone else and unmanaged shows.
+ */
+export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNode }) {
   const { me } = useAuth();
   const qc = useQueryClient();
   const isManager = hasRole(me, 'manager');
@@ -257,11 +263,32 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
   const [manual, setManual] = useState<{ season: number; episode?: number } | null>(null);
   const [openSeason, setOpenSeason] = useState<number | null>(null);
   const [matching, setMatching] = useState(false);
+  const isShow = m.kind === 'show';
+  // What ffprobe found in each file, shown under its episode. Movies keep their own "What's in the files".
+  const details = useQuery({ queryKey: ['file-details', mon?.id], queryFn: () => api<{ files: DetailFile[] }>(`/api/monitored/${mon!.id}/details`), enabled: isShow && Boolean(mon) });
+  // Watched marks from the media server, for the open season only.
+  const played = useQuery({
+    queryKey: ['season', m.tmdbId, openSeason],
+    queryFn: () => api<{ episodes: { episodeNumber: number; viewCount: number | null }[] }>(`/api/media/show/${m.tmdbId}/season/${openSeason}`),
+    enabled: isShow && Boolean(mon) && openSeason !== null,
+  });
   const navigate = useNavigate();
-  if (!isManager) return null;
-  if (!mon) return lookup.data && (m.availability.status === 'on_server' || m.availability.status === 'partial') ? <StartManaging m={m} folder={lookup.data.folder ?? null} /> : null;
+  if (!isManager) return <>{standard}</>;
+  if (!mon)
+    return (
+      <>
+        {standard}
+        {lookup.data && (m.availability.status === 'on_server' || m.availability.status === 'partial') && <StartManaging m={m} folder={lookup.data.folder ?? null} />}
+      </>
+    );
 
-  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] }), qc.invalidateQueries({ queryKey: ['files', mon.id] }), qc.invalidateQueries({ queryKey: ['activity', mon.id] })]);
+  const refresh = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] }),
+      qc.invalidateQueries({ queryKey: ['files', mon.id] }),
+      qc.invalidateQueries({ queryKey: ['activity', mon.id] }),
+      qc.invalidateQueries({ queryKey: ['file-details', mon.id] }),
+    ]);
   // The newest download for an episode (or the movie); a failure only matters while there's still no file.
   const downloadFor = (season?: number, episode?: number) =>
     activity.data?.find((a) => (season === undefined ? true : a.episodes?.season === season && a.episodes.episodes.includes(episode!)));
@@ -309,12 +336,15 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
   const fileFor = (p: string | null) => (p ? files.data?.files.find((f) => f.path === p) : undefined);
 
   const seasons = [...new Set(mon.episodes.map((e) => e.season))].sort((a, b) => a - b);
+  const detailFor = (p: string | null) => (p ? details.data?.files.find((f) => f.path === p) : undefined);
+  const seasonName = (s: number) => m.seasons.find((x) => x.seasonNumber === s)?.name ?? (s === 0 ? 'Specials' : `Season ${s}`);
+  const views = (episode: number) => played.data?.episodes.find((x) => x.episodeNumber === episode)?.viewCount ?? 0;
 
   return (
     <section className="card space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="font-semibold">Files</h2>
+          <h2 className="font-semibold">{isShow ? t('Seasons') : 'Files'}</h2>
           <div className="break-all text-xs text-muted">
             {files.data?.folder ?? 'No folder yet'}
             {files.data && files.data.totalSize > 0 && ` · ${formatBytes(files.data.totalSize)}`}
@@ -332,6 +362,16 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
           <button className="btn-secondary" onClick={() => setRenaming(true)}>
             Rename
           </button>
+          {isShow && files.data && files.data.files.length > 0 && (
+            <>
+              <button className="btn-secondary" title="Reads every file again to see its picture, audio and subtitles" onClick={() => run(() => readFiles(mon.id), (r: string) => r)}>
+                Read files
+              </button>
+              <button className="btn-secondary" title="Downloads subtitles in your languages for files that have none" onClick={() => run(() => fetchSubtitles(mon.id), (r: string) => r)}>
+                Fetch subtitles
+              </button>
+            </>
+          )}
           <button className="btn-secondary" onClick={() => setTrailers(true)}>
             Trailers
           </button>
@@ -380,14 +420,20 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
             const have = eps.filter((e) => e.filePath).length;
             const allMonitored = eps.every((e) => e.monitored);
             const isOpen = openSeason === s;
+            const problems = eps.reduce((n, e) => n + (detailFor(e.filePath)?.info?.problems.length ?? 0), 0);
             return (
               <li key={s} className="border-b border-border last:border-0">
                 <div className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <button className="flex items-center gap-2 text-left font-medium" onClick={() => setOpenSeason(isOpen ? null : s)} aria-expanded={isOpen}>
-                    {s === 0 ? 'Specials' : `Season ${s}`}
+                    {seasonName(s)}
                     <span className={`text-sm font-normal ${have === eps.length ? 'text-success' : 'text-muted'}`}>
                       {have} / {eps.length} files
                     </span>
+                    {problems > 0 && (
+                      <span className="text-sm font-normal text-warning">
+                        · {problems} thing{problems === 1 ? '' : 's'} to check
+                      </span>
+                    )}
                   </button>
                   <div className="flex flex-wrap gap-2 text-sm">
                     <label className="flex items-center gap-1 text-muted">
@@ -419,6 +465,8 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
                       const f = fileFor(e.filePath);
                       const aired = e.airDate && e.airDate <= today();
                       const dl = downloadFor(s, e.episode);
+                      const d = detailFor(e.filePath);
+                      const plays = views(e.episode);
                       return (
                         <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 rounded px-2 py-1.5 hover:bg-surface-2">
                           <div className="flex min-w-0 items-center gap-2">
@@ -430,6 +478,11 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
                             />
                             <span className="min-w-0">
                               <span className="text-muted">E{pad(e.episode)}</span> {e.title}
+                              {plays > 0 && (
+                                <span className="ml-2 text-xs text-success" title={`Played ${plays} ${plays === 1 ? 'time' : 'times'}`}>
+                                  ✓ Watched
+                                </span>
+                              )}
                               <span className="block text-xs text-muted">
                                 {e.filePath ? (
                                   <>
@@ -441,6 +494,11 @@ export function FilesPanel({ m }: { m: MediaDetail }) {
                                   `Airs ${e.airDate ?? 'TBA'}`
                                 )}
                               </span>
+                              {d && (
+                                <span className="block text-xs" title={d.release ?? d.path}>
+                                  <FileInfoLines info={d.info} />
+                                </span>
+                              )}
                               {dl && (!e.filePath || ACTIVE(dl)) && (
                                 <span className="block text-xs">
                                   <DownloadStatus a={dl} />

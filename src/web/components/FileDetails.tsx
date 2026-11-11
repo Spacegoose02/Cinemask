@@ -18,7 +18,7 @@ interface FileInfo {
   problems: string[];
 }
 
-interface DetailFile {
+export interface DetailFile {
   path: string;
   release: string | null;
   formatScore: number | null;
@@ -31,7 +31,41 @@ const channels = (n: number | null) => (n === 8 ? '7.1' : n === 6 ? '5.1' : n ==
 const pad = (n: number) => String(n).padStart(2, '0');
 const subLang = (f: string) => /\.([a-z]{2,3})(\.(sdh|forced|hi))?\.\w+$/i.exec(f)?.[1] ?? '?';
 
-/** Managers: what's really in each file (picture, HDR, audio and subtitle languages), and subtitles. */
+/** What ffprobe found in one file: picture, HDR, audio and subtitle languages, and anything to check. */
+export function FileInfoLines({ info }: { info: FileInfo | null }) {
+  if (!info) return <div className="text-xs text-muted">Not read yet.</div>;
+  return (
+    <>
+      <div>{[info.resolution && `${info.resolution} (${info.width}×${info.height})`, info.videoCodec?.toUpperCase(), info.hdr ?? 'SDR', info.durationMin && `${info.durationMin} min`].filter(Boolean).join(' · ')}</div>
+      <div className="text-xs text-muted">
+        Audio: {info.audio.map((a) => [a.language?.toUpperCase() ?? '?', a.codec.toUpperCase(), channels(a.channels)].filter(Boolean).join(' ')).join(', ') || 'none'}
+        {' · '}Subtitles: {[...info.subtitles.map((s) => `${s.language?.toUpperCase() ?? '?'}${s.forced ? ' (forced)' : ''}`), ...info.externalSubtitles.map((x) => `${subLang(x).toUpperCase()} (file)`)].join(', ') || 'none'}
+      </div>
+      {info.problems.map((p) => (
+        <div key={p} className="text-xs text-warning">
+          {p}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** Reads every file of a monitored title again with ffprobe. Returns the message to show. */
+export async function readFiles(id: number): Promise<string> {
+  const r = await api<{ probed: number }>(`/api/monitored/${id}/probe`, { body: {} });
+  return `Read ${r.probed} file(s).`;
+}
+
+/** Downloads subtitles in the household's languages for files without them. Returns the message to show. */
+export async function fetchSubtitles(id: number): Promise<string> {
+  const r = await api<{ saved: string[]; missing: string[] }>(`/api/monitored/${id}/subtitles`, { body: {} });
+  return r.saved.length ? `Saved ${r.saved.length} subtitle file(s).${r.missing.length ? ` None found for ${r.missing.length}.` : ''}` : r.missing.length ? `No subtitles found for ${r.missing.join(', ')}.` : 'Every file already has subtitles in your languages.';
+}
+
+/**
+ * Managers: what's really in each file of a movie, and subtitles. A show's files are read out under
+ * each episode in its Seasons section instead (FilesPanel), so a long show isn't one huge list.
+ */
 export function FileDetails({ m }: { m: MediaDetail }) {
   const { me } = useAuth();
   const qc = useQueryClient();
@@ -41,7 +75,7 @@ export function FileDetails({ m }: { m: MediaDetail }) {
   const q = useQuery({ queryKey: ['file-details', id], queryFn: () => api<{ files: DetailFile[] }>(`/api/monitored/${id}/details`), enabled: isManager && !!id });
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  if (!isManager || !id || !q.data?.files.length) return null;
+  if (!isManager || m.kind === 'show' || !id || !q.data?.files.length) return null;
   const files = q.data.files;
   const problems = files.reduce((n, f) => n + (f.info?.problems.length ?? 0), 0);
 
@@ -65,19 +99,10 @@ export function FileDetails({ m }: { m: MediaDetail }) {
           What's in the files {problems > 0 && <span className="ml-1 text-sm font-normal text-warning">· {problems} thing{problems === 1 ? '' : 's'} to check</span>}
         </h2>
         <div className="flex gap-2">
-          <button className="btn-secondary" disabled={busy} onClick={() => run(async () => `Read ${(await api<{ probed: number }>(`/api/monitored/${id}/probe`, { body: {} })).probed} file(s).`)}>
+          <button className="btn-secondary" disabled={busy} onClick={() => run(() => readFiles(id))}>
             Read again
           </button>
-          <button
-            className="btn-secondary"
-            disabled={busy}
-            onClick={() =>
-              run(async () => {
-                const r = await api<{ saved: string[]; missing: string[] }>(`/api/monitored/${id}/subtitles`, { body: {} });
-                return r.saved.length ? `Saved ${r.saved.length} subtitle file(s).${r.missing.length ? ` None found for ${r.missing.length}.` : ''}` : r.missing.length ? `No subtitles found for ${r.missing.join(', ')}.` : 'Every file already has subtitles in your languages.';
-              })
-            }
-          >
+          <button className="btn-secondary" disabled={busy} onClick={() => run(() => fetchSubtitles(id))}>
             Fetch subtitles
           </button>
         </div>
@@ -91,24 +116,7 @@ export function FileDetails({ m }: { m: MediaDetail }) {
               {f.release ?? f.path.split('/').pop()}
               {f.formatScore ? ` · score ${f.formatScore}` : ''}
             </div>
-            {f.info ? (
-              <>
-                <div>
-                  {[f.info.resolution && `${f.info.resolution} (${f.info.width}×${f.info.height})`, f.info.videoCodec?.toUpperCase(), f.info.hdr ?? 'SDR', f.info.durationMin && `${f.info.durationMin} min`].filter(Boolean).join(' · ')}
-                </div>
-                <div className="text-xs text-muted">
-                  Audio: {f.info.audio.map((a) => [a.language?.toUpperCase() ?? '?', a.codec.toUpperCase(), channels(a.channels)].filter(Boolean).join(' ')).join(', ') || 'none'}
-                  {' · '}Subtitles: {[...f.info.subtitles.map((s) => `${s.language?.toUpperCase() ?? '?'}${s.forced ? ' (forced)' : ''}`), ...f.info.externalSubtitles.map((x) => `${subLang(x).toUpperCase()} (file)`)].join(', ') || 'none'}
-                </div>
-                {f.info.problems.map((p) => (
-                  <div key={p} className="text-xs text-warning">
-                    {p}
-                  </div>
-                ))}
-              </>
-            ) : (
-              <div className="text-xs text-muted">Not read yet.</div>
-            )}
+            <FileInfoLines info={f.info} />
           </li>
         ))}
       </ul>
