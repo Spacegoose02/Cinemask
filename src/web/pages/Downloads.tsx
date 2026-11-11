@@ -247,6 +247,8 @@ interface ImportableFile {
   modifiedAt: number;
   guess: { kind: MediaKind; title: string; year: number | null; season: number | null; episodes: number[]; quality: string };
   imported: boolean;
+  /** A downloaded episode that matched no known episode, held in the review folder. */
+  review: boolean;
 }
 
 const guessText = (g: ImportableFile['guess']) =>
@@ -294,7 +296,7 @@ function ImportDialog({ file, onDone, onClose }: { file: ImportableFile; onDone:
         <label className="block">
           <span className="label">How</span>
           <select className="input" value={mode} onChange={(e) => setMode(e.target.value)}>
-            <option value="">As set in Media management</option>
+            <option value="">{file.review ? 'Move it out of Needs review into the library' : 'As set in Media management'}</option>
             <option value="move">Move it into the library</option>
             <option value="copy">Copy it, leave the original</option>
             <option value="hardlink">Hardlink (keeps seeding, no extra space)</option>
@@ -317,6 +319,7 @@ function ManualImport() {
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const list = useQuery({ queryKey: ['manual-import'], queryFn: () => api<{ folders: { name: string; path: string }[]; files: ImportableFile[] }>('/api/manual-import') });
   const files = (list.data?.files ?? []).filter((f) => showImported || !f.imported);
+  const waiting = files.filter((f) => f.review).length;
   const remove = async (f: ImportableFile) => {
     const seeding = f.folder === 'Downloads' ? ' If it is still seeding in your torrent client, the torrent will stop working.' : '';
     if (!confirm(`Delete ${f.name} from disk? This can't be undone.${seeding}`)) return;
@@ -342,6 +345,11 @@ function ManualImport() {
           Refresh
         </button>
       </div>
+      {waiting > 0 && (
+        <Alert kind="info">
+          {waiting === 1 ? '1 downloaded episode' : `${waiting} downloaded episodes`} didn't match an episode Cinemask knows about yet, so {waiting === 1 ? 'it is' : 'they are'} waiting in Needs review. Import each one as the right episode, or delete it.
+        </Alert>
+      )}
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       {list.error && <Alert>{(list.error as Error).message}</Alert>}
       <ul className="space-y-2">
@@ -350,6 +358,7 @@ function ManualImport() {
             <div className="min-w-0">
               <div className="break-all text-sm font-medium">{f.name}</div>
               <div className="text-xs text-muted">{[f.folder, formatBytes(f.size), formatDate(f.modifiedAt), guessText(f.guess), f.imported ? 'already imported' : null].filter(Boolean).join(' · ')}</div>
+              {f.review && <div className="text-xs text-warning">Didn't match a known episode. Say which one it is.</div>}
             </div>
             <div className="flex gap-2">
               <button className="btn-primary text-xs" onClick={() => setFile(f)}>

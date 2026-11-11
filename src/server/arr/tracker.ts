@@ -151,12 +151,15 @@ export async function trackDownloads(ctx: AppContext): Promise<void> {
         // A download that arrived packed (RAR, 7z, zip) is unpacked first; the unpacked copy goes once it's imported.
         const location = locateDownload(ctx, item.outputPath);
         const unpacked = await unpackDownload(ctx, location);
-        const r = importDownload(ctx, d.id, item.outputPath);
+        const r = importDownload(ctx, d.id, item.outputPath, { holdUnmatched: true });
         if (unpacked) removeUnpacked(location);
         if (r.imported.length) {
           imported = true;
           const row = ctx.db.select().from(monitored).where(eq(monitored.id, d.monitoredId)).get();
           if (row) void autoTrailer(ctx, row).catch(() => undefined);
+        }
+        // Episodes held for review have their own copy in the review folder, so the client's is done with too.
+        if (r.imported.length || r.held.length) {
           if (ctx.settings.get('media').removeCompletedDownloads) {
             // Torrents with a seeding goal stay until it's met (see cleanUpSeeding).
             if (d.protocol === 'torrent' && seedGoal(ctx) && !seedingDone(ctx, item)) ctx.db.update(downloads).set({ seeding: true }).where(eq(downloads.id, d.id)).run();

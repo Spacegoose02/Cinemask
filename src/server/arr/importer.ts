@@ -137,6 +137,31 @@ const inside = insideRoot;
 export interface ImportResult {
   imported: string[];
   skipped: string[];
+  /** Episode files that matched nothing known, put in the review folder to be imported by hand. */
+  held: string[];
+}
+
+/** The folder, inside the downloads folder, where episodes that couldn't be placed wait for review. */
+export const REVIEW_FOLDER = 'Needs review';
+
+/** Where unmatched episode files wait to be imported by hand (Downloads → Import), or null with no usable downloads folder. */
+export function reviewDir(ctx: AppContext): string | null {
+  const downloadsPath = ctx.settings.get('media').downloadsPath;
+  return downloadsPath && fs.existsSync(downloadsPath) ? path.join(downloadsPath, REVIEW_FOLDER) : null;
+}
+
+/**
+ * Puts a downloaded file that matched no known episode in the review folder, under a folder named
+ * after the show so manual import can guess it. Returns where it went, or null when there's nowhere to put it.
+ */
+function holdForReview(ctx: AppContext, show: { title: string; year: number | null }, file: string, mode: 'hardlink' | 'copy' | 'move'): string | null {
+  const dir = reviewDir(ctx);
+  if (!dir) return null;
+  const name = `${show.title}${show.year ? ` (${show.year})` : ''}`.replace(/[\\/:*?"<>|]/g, '').trim() || 'Unknown show';
+  const dest = path.join(dir, name, path.basename(file));
+  if (!inside(dir, dest)) return null;
+  placeFile(file, dest, mode);
+  return dest;
 }
 
 export interface ImportOptions {
@@ -145,6 +170,8 @@ export interface ImportOptions {
   episode?: { season: number; episodes: number[] };
   /** Imported by hand: replaces the current file even when it looks as good. */
   replace?: boolean;
+  /** Episode files that match nothing known go to the review folder instead of failing the download. */
+  holdUnmatched?: boolean;
 }
 
 export function importDownload(ctx: AppContext, downloadId: number, sourcePath: string, opts: ImportOptions = {}): ImportResult {
@@ -173,7 +200,8 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
       `No video files found at ${sourcePath}, and nothing by that name in the downloads, watch or library folders. If the download client sees its folders at different paths, add a remote path mapping in Settings → Media management from ${clientDir} to the same folder as Cinemask sees it.`,
     );
   }
-  const result: ImportResult = { imported: [], skipped: [] };
+  const result: ImportResult = { imported: [], skipped: [], held: [] };
+  const heldWhy: string[] = [];
   // The release's custom format score under the title's profile, kept with the file so later
   // releases can be compared with it.
   const profile = getProfile(ctx, row.profileId);
@@ -207,6 +235,14 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     const root = rootOf(ctx, row).path;
     const seriesFolder = row.path ?? path.join(root, renderName(naming.seriesFolder, { seriesTitle: row.title, year: row.year, tmdbId: row.tmdbId }));
     const grabbed = dl.episodes ? (JSON.parse(dl.episodes) as { season: number; episodes: number[] }) : null;
+    // A file that matches no episode Cinemask knows of (not synced yet, or misnamed) waits for review instead.
+    const unmatched = (file: string, why: string) => {
+      const held = opts.holdUnmatched ? holdForReview(ctx, row, file, mode ?? mediaSettings.importMode) : null;
+      if (held) {
+        result.held.push(held);
+        heldWhy.push(`${path.basename(file)}: ${why}`);
+      } else result.skipped.push(`${path.basename(file)}: ${why}`);
+    };
     for (const file of files) {
       const parsed = parseRelease(path.basename(file));
       // A file named by air date ("20.20.2025.10.17") is the episode that aired that day.
@@ -223,14 +259,14 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
       const season = opts.episode?.season ?? dated?.season ?? bySeason[0]?.season ?? parsed.season ?? grabbed?.season ?? null;
       const eps = opts.episode?.episodes ?? (dated ? [dated.episode] : bySeason.length ? bySeason.map((e) => e.episode) : parsed.episodes.length ? parsed.episodes : grabbed?.episodes.length === 1 ? grabbed.episodes : []);
       if (season === null || !eps.length) {
-        result.skipped.push(`${path.basename(file)}: could not tell which episode it is`);
+        unmatched(file, 'could not tell which episode it is');
         continue;
       }
       const epRows = eps
         .map((n) => ctx.db.select().from(monitoredEpisodes).where(and(eq(monitoredEpisodes.monitoredId, row.id), eq(monitoredEpisodes.season, season), eq(monitoredEpisodes.episode, n))).get())
         .filter((e): e is NonNullable<typeof e> => Boolean(e));
       if (!epRows.length) {
-        result.skipped.push(`${path.basename(file)}: S${season}E${eps.join('E')} is not a known episode`);
+        unmatched(file, `S${season}E${eps.join('E')} is not a known episode`);
         continue;
       }
       const quality = parsed.quality !== 'Unknown' ? parsed.quality : (dl.quality ?? 'Unknown');
@@ -253,8 +289,11 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     ctx.db.update(monitored).set({ path: seriesFolder }).where(eq(monitored.id, row.id)).run();
   }
 
+  const review = result.held.length
+    ? `${result.held.length === 1 ? '1 file' : `${result.held.length} files`} didn't match a known episode and ${result.held.length === 1 ? 'waits' : 'wait'} in Downloads → Import (${REVIEW_FOLDER}): ${heldWhy.join('; ')}`
+    : null;
   if (result.imported.length) {
-    ctx.db.update(downloads).set({ status: 'imported', importedAt: Date.now(), outputPath: sourcePath, error: null }).where(eq(downloads.id, dl.id)).run();
+    ctx.db.update(downloads).set({ status: 'imported', importedAt: Date.now(), outputPath: sourcePath, error: null, ...(review ? { warning: review } : {}) }).where(eq(downloads.id, dl.id)).run();
     // A movie's file answers every approved request for it. A show's upgrade request is done once
     // the last upgrade download for it is in (its other requests wait for the library sync).
     const othersUpgrading = () =>
@@ -275,6 +314,10 @@ export function importDownload(ctx: AppContext, downloadId: number, sourcePath: 
     // Read what's really in the new files, and fetch subtitles, in the background.
     void afterImport(ctx, row.id);
     notify(ctx, { event: 'download.imported', title: 'Download imported', message: `${row.title}${row.year ? ` (${row.year})` : ''} is ready to watch`, data: { kind: row.kind, tmdbId: row.tmdbId, release: dl.title } });
+  } else if (result.held.length) {
+    // Nothing went in, but nothing failed either: the files are waiting for someone to say what they are.
+    ctx.db.update(downloads).set({ status: 'imported', importedAt: Date.now(), outputPath: sourcePath, error: null, warning: review }).where(eq(downloads.id, dl.id)).run();
+    notify(ctx, { event: 'download.imported', title: 'Download needs review', message: `${row.title}: ${review}`, data: { kind: row.kind, tmdbId: row.tmdbId, release: dl.title } });
   } else {
     ctx.db.update(downloads).set({ status: 'failed', error: result.skipped.join('; ') || 'Nothing to import' }).where(eq(downloads.id, dl.id)).run();
   }

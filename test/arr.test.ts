@@ -571,6 +571,61 @@ describe('request → download → import', () => {
     expect(fs.readdirSync(season).sort()).toEqual(['Bluey - S01E01 - Ep 1.mkv', 'Bluey - S01E02 - Ep 2.mkv', 'Bluey - S01E03 - Ep 3.mkv']);
   });
 
+  it('holds downloaded episodes it cannot place for review instead of failing, and imports them from there', async () => {
+    await owner.req('POST', '/api/monitored', { kind: 'show', tmdbId: 82728, search: true });
+    await vi.waitFor(() => expect(added).toHaveLength(1));
+    const folder = path.join(dl, 'Bluey.S01.1080p.WEB-DL');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'Bluey.S01E01.1080p.WEB-DL.mkv'), 'ep1');
+    fs.writeFileSync(path.join(folder, 'Bluey.S01E99.1080p.WEB-DL.mkv'), 'new episode');
+    fs.writeFileSync(path.join(folder, 'bonus.mkv'), 'no idea');
+    qbitTorrents = [{ hash: 'h2', name: 'Bluey', progress: 1, state: 'uploading', size: 5, content_path: folder, save_path: dl, tags: 'mm-1' }];
+    await trackDownloads(t.app.ctx);
+
+    expect(fs.readdirSync(path.join(media, 'tv', 'Bluey (2018)', 'Season 01'))).toHaveLength(1);
+    const review = path.join(dl, 'Needs review', 'Bluey (2018)');
+    expect(fs.readdirSync(review).sort()).toEqual(['Bluey.S01E99.1080p.WEB-DL.mkv', 'bonus.mkv']);
+    const d = (await owner.req('GET', '/api/downloads?history=true')).json().find((x: { title: string }) => x.title === 'Bluey.S01.1080p.WEB-DL.AAC2.0-GRP');
+    expect(d.status).toBe('imported');
+    expect(d.warning).toMatch(/2 files didn't match a known episode.*S1E99 is not a known episode.*could not tell/);
+
+    // Listed once, under Needs review, as an episode of the show; users can't see or import them.
+    expect((await kid.req('GET', '/api/manual-import')).statusCode).toBe(403);
+    const list = (await owner.req('GET', '/api/manual-import')).json();
+    const held = list.files.filter((f: { review: boolean }) => f.review);
+    expect(held.map((f: { name: string; folder: string }) => [f.folder, f.name]).sort()).toEqual([
+      ['Needs review', path.join('Bluey (2018)', 'Bluey.S01E99.1080p.WEB-DL.mkv')],
+      ['Needs review', path.join('Bluey (2018)', 'bonus.mkv')],
+    ]);
+    expect(list.files.filter((f: { path: string }) => f.path.includes('Needs review'))).toHaveLength(2);
+    expect(held[0].guess).toMatchObject({ kind: 'show', title: 'Bluey', year: 2018 });
+
+    // Imported by hand, a held file moves out, and the show's folder goes once it's empty.
+    const bonus = path.join(review, 'bonus.mkv');
+    expect((await kid.req('POST', '/api/manual-import', { path: bonus, kind: 'show', tmdbId: 82728, season: 1, episodes: [2] })).statusCode).toBe(403);
+    expect((await owner.req('POST', '/api/manual-import', { path: bonus, kind: 'show', tmdbId: 82728, season: 1, episodes: [2] })).statusCode).toBe(200);
+    expect(fs.existsSync(bonus)).toBe(false);
+    expect(fs.readdirSync(path.join(media, 'tv', 'Bluey (2018)', 'Season 01'))).toHaveLength(2);
+    expect((await owner.req('POST', '/api/manual-import/delete', { path: path.join(review, 'Bluey.S01E99.1080p.WEB-DL.mkv') })).statusCode).toBe(200);
+    expect(fs.existsSync(review)).toBe(false);
+  });
+
+  it('a download with only unknown episodes waits for review rather than failing', async () => {
+    await owner.req('POST', '/api/monitored', { kind: 'show', tmdbId: 82728, search: true });
+    await vi.waitFor(() => expect(added).toHaveLength(1));
+    const folder = path.join(dl, 'Bluey.S01.1080p.WEB-DL');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'Bluey.S05E01.1080p.WEB-DL.mkv'), 'next season');
+    qbitTorrents = [{ hash: 'h2', name: 'Bluey', progress: 1, state: 'uploading', size: 5, content_path: folder, save_path: dl, tags: 'mm-1' }];
+    await trackDownloads(t.app.ctx);
+    const d = (await owner.req('GET', '/api/downloads?history=true')).json().find((x: { title: string }) => x.title === 'Bluey.S01.1080p.WEB-DL.AAC2.0-GRP');
+    expect(d).toMatchObject({ status: 'imported', error: null });
+    expect(d.warning).toMatch(/1 file didn't match a known episode and waits in Downloads → Import/);
+    expect(fs.existsSync(path.join(dl, 'Needs review', 'Bluey (2018)', 'Bluey.S05E01.1080p.WEB-DL.mkv'))).toBe(true);
+    // Hardlinked by default, so the torrent keeps seeding.
+    expect(fs.existsSync(path.join(folder, 'Bluey.S05E01.1080p.WEB-DL.mkv'))).toBe(true);
+  });
+
   const indexerReturns = (items: { title: string; seeders?: number; size?: number }[]) =>
     fakeFetch({
       ...tmdbRoutes,

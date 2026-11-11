@@ -4,6 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Changed
+- **Unmatched episodes wait for review instead of failing the download.** When a finished download has a file Cinemask can't match to a known episode (the episode isn't synced yet, or the file is misnamed), the file now goes to a **Needs review** folder inside the downloads folder (hardlinked by default, so torrents keep seeding) and the download is marked imported with a note saying what's waiting. Downloads → Import lists these files first, already guessed as an episode of the right show. Pick the season and episode and it moves into the library (the show's review folder goes once it's empty), or delete it.
+
 ## [0.35.2] - 2026-11-11
 
 ### Fixed
