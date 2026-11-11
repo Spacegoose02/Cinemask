@@ -272,6 +272,18 @@ export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNo
     queryFn: () => api<{ episodes: { episodeNumber: number; name: string; airDate: string | null; viewCount: number | null }[] }>(`/api/media/show/${m.tmdbId}/season/${openSeason}`),
     enabled: isShow && Boolean(mon) && openSeason !== null,
   });
+  // TMDB lists an episode Cinemask hasn't synced yet (the sync runs twice a day): sync now, once, so it
+  // shows with its file and buttons and, on a monitored show, gets searched like any other.
+  const synced = useRef(false);
+  useEffect(() => {
+    if (!mon || synced.current || !played.data || openSeason === null) return;
+    const behind = played.data.episodes.some((x) => !mon.episodes.some((e) => e.season === openSeason && e.episode === x.episodeNumber));
+    if (!behind) return;
+    synced.current = true;
+    void api(`/api/monitored/${mon.id}/scan`, { body: {} })
+      .then(() => Promise.all([qc.invalidateQueries({ queryKey: ['lookup', m.kind, m.tmdbId] }), qc.invalidateQueries({ queryKey: ['files', mon.id] }), qc.invalidateQueries({ queryKey: ['file-details', mon.id] })]))
+      .catch(() => undefined);
+  }, [played.data, mon, openSeason, m.kind, m.tmdbId, qc]);
   const navigate = useNavigate();
   if (!isManager) return <>{standard}</>;
   if (!mon)
@@ -524,7 +536,7 @@ export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNo
                         </li>
                       );
                     })}
-                    {/* On TMDB but not in Cinemask's episode list yet (it syncs twice a day, and on Rescan folder). */}
+                    {/* On TMDB but not in Cinemask's episode list yet: shown while the sync below runs. */}
                     {played.data?.episodes
                       .filter((x) => !eps.some((e) => e.episode === x.episodeNumber))
                       .map((x) => (
@@ -532,7 +544,7 @@ export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNo
                           <span className="min-w-0 pl-6">
                             <span className="text-muted">E{pad(x.episodeNumber)}</span> {x.name}
                             <span className="block text-xs text-muted">
-                              {x.airDate && x.airDate <= today() ? 'Aired' : `Airs ${x.airDate ?? 'TBA'}`} · new on TMDB, use Rescan folder to add it here
+                              {x.airDate && x.airDate <= today() ? 'Aired' : `Airs ${x.airDate ?? 'TBA'}`} · new on TMDB, adding it…
                             </span>
                           </span>
                         </li>
