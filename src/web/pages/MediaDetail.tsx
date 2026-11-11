@@ -105,7 +105,21 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; actions?: (m: MediaDetail) => ReactNode; panels?: (m: MediaDetail) => ReactNode }) {
+/**
+ * `seasons` can replace a show's Seasons section, and gets the standard one to fall back on. Managers see
+ * their files and file actions inside it this way, instead of in a second list of the same seasons.
+ */
+export function MediaDetailPage({
+  kind,
+  actions,
+  panels,
+  seasons,
+}: {
+  kind: MediaKind;
+  actions?: (m: MediaDetail) => ReactNode;
+  panels?: (m: MediaDetail) => ReactNode;
+  seasons?: (m: MediaDetail, standard: ReactNode) => ReactNode;
+}) {
   const { tmdbId } = useParams();
   const [trailer, setTrailer] = useState<'online' | number | null>(null);
   const q = useQuery({ queryKey: ['media', kind, tmdbId], queryFn: () => api<MediaDetail>(`/api/media/${kind}/${tmdbId}`) });
@@ -115,6 +129,19 @@ export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; ac
   const m = q.data;
   if (!m) return <div className="text-muted">{t('Loading…')}</div>;
   const backdrop = poster(m.backdropPath, 'w780');
+  const standardSeasons =
+    kind === 'show' && m.seasons.length > 0 ? (
+      <section className="card">
+        <h2 className="mb-2 font-semibold">{t('Seasons')}</h2>
+        <ul>
+          {m.seasons
+            .filter((s) => s.seasonNumber > 0 || s.onServer > 0)
+            .map((s) => (
+              <SeasonRow key={s.seasonNumber} tmdbId={m.tmdbId} season={s} />
+            ))}
+        </ul>
+      </section>
+    ) : null;
 
   return (
     <div className="space-y-6">
@@ -183,18 +210,7 @@ export function MediaDetailPage({ kind, actions, panels }: { kind: MediaKind; ac
         </section>
       )}
 
-      {kind === 'show' && m.seasons.length > 0 && (
-        <section className="card">
-          <h2 className="mb-2 font-semibold">{t('Seasons')}</h2>
-          <ul>
-            {m.seasons
-              .filter((s) => s.seasonNumber > 0 || s.onServer > 0)
-              .map((s) => (
-                <SeasonRow key={s.seasonNumber} tmdbId={m.tmdbId} season={s} />
-              ))}
-          </ul>
-        </section>
-      )}
+      {kind === 'show' && (seasons ? seasons(m, standardSeasons) : standardSeasons)}
       {panels?.(m)}
       {trailer === 'online' && m.trailerKey && <TrailerModal videoKey={m.trailerKey} onClose={() => setTrailer(null)} />}
       {typeof trailer === 'number' && <TrailerModal src={`/api/trailers/${kind}/${m.tmdbId}/${trailer}`} onClose={() => setTrailer(null)} />}
