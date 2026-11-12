@@ -4,8 +4,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.35.3] - 2026-11-11
+
 ### Changed
 - **Unmatched episodes wait for review instead of failing the download.** When a finished download has a file Cinemask can't match to a known episode (the episode isn't synced yet, or the file is misnamed), the file now goes to a **Needs review** folder inside the downloads folder (hardlinked by default, so torrents keep seeding) and the download is marked imported with a note saying what's waiting. Downloads → Import lists these files first, already guessed as an episode of the right show. Pick the season and episode and it moves into the library (the show's review folder goes once it's empty), or delete it.
+
+### Fixed
+- **New episodes show up without a rescan.** Opening a season that TMDB lists more episodes for than Cinemask has synced now syncs it on its own, instead of asking you to press Rescan folder. When the twice-daily refresh adds episodes it also scans the folder, so files already on disk are matched before the missing search would download them again.
 
 ## [0.35.2] - 2026-11-11
 
