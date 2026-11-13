@@ -142,7 +142,7 @@ export function RequestsPage() {
         {list.data?.map((r) => (
           <li key={r.id} className="card flex flex-wrap items-center gap-4 p-3">
             <Link to={mediaPath(r.kind, r.tmdbId)} className="w-14 shrink-0 overflow-hidden rounded border border-border bg-surface-2">
-              {r.posterPath ? <img src={poster(r.posterPath, 'w185')!} alt="" className="w-full" /> : <div className="aspect-[2/3]" />}
+              {r.posterPath ? <img src={poster(r.posterPath, 'w185')!} alt="" loading="lazy" decoding="async" className="w-full" /> : <div className="aspect-[2/3]" />}
             </Link>
             <div className="min-w-0 flex-1">
               <Link to={mediaPath(r.kind, r.tmdbId)} className="font-medium hover:text-accent">

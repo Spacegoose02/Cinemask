@@ -100,7 +100,7 @@ function NightCard({ night, past }: { night: MovieNight; past: boolean }) {
   return (
     <li className={`card flex gap-4 ${past ? 'opacity-70' : ''}`}>
       <Link to={mediaPath(night.kind, night.tmdbId)} className="w-20 shrink-0 overflow-hidden rounded-md border border-border bg-surface-2 sm:w-24">
-        {img ? <img src={img} alt="" className="w-full" /> : <div className="aspect-[2/3]" />}
+        {img ? <img src={img} alt="" loading="lazy" decoding="async" className="w-full" /> : <div className="aspect-[2/3]" />}
       </Link>
       <div className="min-w-0 flex-1 space-y-2">
         <div>

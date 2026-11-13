@@ -201,6 +201,15 @@ describe('file management, calendar and health', () => {
     await owner.req('PATCH', `/api/monitored/${movie.id}`, { monitored: false });
     o = await byTitle();
     expect(o.Bluey).toMatchObject({ status: 'partial', episodes: { aired: 3, missing: 1 } });
+    // The episode on a media server counts as there.
+    const sqlite = t.app.ctx.dbHandle.sqlite;
+    const tmdbId = (sqlite.prepare('SELECT tmdb_id FROM monitored WHERE id = ?').get(show) as { tmdb_id: number }).tmdb_id;
+    const item = sqlite.prepare("INSERT INTO library_items (server, external_key, kind, title, tmdb_id) VALUES ('bingebandit', 'bb-1', 'show', 'Bluey', ?)").run(tmdbId).lastInsertRowid;
+    sqlite.prepare('INSERT INTO library_episodes (library_item_id, season, episode) VALUES (?, 1, 1)').run(item);
+    expect((await byTitle()).Bluey).toMatchObject({ status: 'downloaded', episodes: { aired: 3, missing: 0 } });
+    sqlite.prepare('DELETE FROM library_items WHERE id = ?').run(item);
+    o = await byTitle();
+    expect(o.Bluey).toMatchObject({ status: 'partial', episodes: { aired: 3, missing: 1 } });
     expect(o.Paddington.monitored).toBe(false);
     expect(o.Paddington).toMatchObject({ profile: expect.any(String), ended: false, nextAir: null });
   });

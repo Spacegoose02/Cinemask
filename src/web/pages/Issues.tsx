@@ -76,7 +76,7 @@ export function IssuesPage() {
         {list.data?.map((i) => (
           <li key={i.id} className="card flex flex-wrap items-start gap-4 p-3">
             <Link to={mediaPath(i.kind, i.tmdbId)} className="w-14 shrink-0 overflow-hidden rounded border border-border bg-surface-2">
-              {i.posterPath ? <img src={poster(i.posterPath, 'w185')!} alt="" className="w-full" /> : <div className="aspect-[2/3]" />}
+              {i.posterPath ? <img src={poster(i.posterPath, 'w185')!} alt="" loading="lazy" decoding="async" className="w-full" /> : <div className="aspect-[2/3]" />}
             </Link>
             <div className="min-w-0 flex-1 space-y-1">
               <Link to={mediaPath(i.kind, i.tmdbId)} className="font-medium hover:text-accent">

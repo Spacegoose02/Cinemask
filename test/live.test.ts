@@ -122,4 +122,24 @@ describe('live updates', () => {
     expect(topicForRoute('/api/events')).toBeNull();
     expect(topicForRoute('/api/requests/:id/approve')).toBe('requests');
   });
+
+  it('only announces a frequent job that wrote something, and progress-only tracker runs narrowly', async () => {
+    const heard: string[] = [];
+    const off = t.app.ctx.live.subscribe((e) => heard.push(e.topic));
+    const run = (name: string, fn: () => Promise<unknown>) => t.scheduler['once'](name, fn)();
+    const write = () => t.app.ctx.dbHandle.sqlite.prepare("INSERT OR REPLACE INTO http_cache (key, body, expires_at) VALUES ('live-test', '{}', 0)").run();
+    // Nothing written: the tabs aren't told to refetch.
+    await run('track', async () => false);
+    await run('now-playing', async () => 0);
+    expect(heard).toEqual([]);
+    // Downloads only moved along: just the download views.
+    await run('track', async () => (write(), false));
+    // Something finished: everything that shows downloads or files.
+    await run('track', async () => (write(), true));
+    await run('now-playing', async () => (write(), 1));
+    // Jobs that run rarely still always announce.
+    await run('lists', async () => undefined);
+    off();
+    expect(heard).toEqual(['download-progress', 'downloads', 'playing', 'lists']);
+  });
 });

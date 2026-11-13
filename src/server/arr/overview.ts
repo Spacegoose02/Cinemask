@@ -1,7 +1,8 @@
-import { and, eq, gte, lte } from 'drizzle-orm';
+import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { libraryEpisodes, libraryItems, media, monitored, monitoredEpisodes, type MediaKind } from '../db/schema.js';
 import { listProfiles } from './profiles.js';
+import { episodesOnServerFor } from '../library/service.js';
 import { localDay } from '../lib/dates.js';
 
 export type OverviewStatus = 'downloaded' | 'missing' | 'partial' | 'upcoming';
@@ -35,58 +36,73 @@ const ENDED = new Set(['Ended', 'Canceled', 'Cancelled']);
  */
 export function monitoredOverview(ctx: AppContext): OverviewRow[] {
   const day = today();
-  const meta = new Map(
-    ctx.db
-      .select({ kind: media.kind, tmdbId: media.tmdbId, posterPath: media.posterPath, releaseDate: media.releaseDate, digitalRelease: media.digitalRelease, physicalRelease: media.physicalRelease, tmdbStatus: media.tmdbStatus })
-      .from(media)
-      .all()
-      .map((m) => [`${m.kind}:${m.tmdbId}`, m]),
-  );
   const profiles = new Map(listProfiles(ctx).map((p) => [p.id, p.name]));
-  const onServer = new Set(ctx.db.select({ kind: libraryItems.kind, tmdbId: libraryItems.tmdbId }).from(libraryItems).all().map((i) => `${i.kind}:${i.tmdbId}`));
-  const serverEpisodes = new Set(
-    ctx.db
-      .select({ tmdbId: libraryItems.tmdbId, season: libraryEpisodes.season, episode: libraryEpisodes.episode })
-      .from(libraryEpisodes)
-      .innerJoin(libraryItems, eq(libraryItems.id, libraryEpisodes.libraryItemId))
-      .all()
-      .map((e) => `${e.tmdbId}:${e.season}:${e.episode}`),
-  );
-  // Per show: aired monitored episodes, the ones Cinemask has no file for ("season:episode"), and the next air date.
-  const episodes = new Map<number, { aired: number; noFile: string[]; next: string | null }>();
-  for (const e of ctx.db.select().from(monitoredEpisodes).all()) {
-    const c = episodes.get(e.monitoredId) ?? { aired: 0, noFile: [], next: null };
-    episodes.set(e.monitoredId, c);
-    if (e.season === 0 || !e.airDate) continue;
-    if (e.airDate > day) {
-      if (!c.next || e.airDate < c.next) c.next = e.airDate;
-      continue;
-    }
-    if (!e.monitored) continue;
-    c.aired++;
-    if (!e.filePath) c.noFile.push(`${e.season}:${e.episode}`);
-  }
-
-  return ctx.db
-    .select()
+  // Only the columns the grid needs: file details (ffprobe JSON) on every row made this slow on big libraries.
+  const titles = ctx.db
+    .select({
+      id: monitored.id,
+      kind: monitored.kind,
+      tmdbId: monitored.tmdbId,
+      title: monitored.title,
+      year: monitored.year,
+      monitored: monitored.monitored,
+      profileId: monitored.profileId,
+      hasFile: sql<number>`${monitored.filePath} IS NOT NULL`,
+      posterPath: media.posterPath,
+      releaseDate: media.releaseDate,
+      digitalRelease: media.digitalRelease,
+      physicalRelease: media.physicalRelease,
+      tmdbStatus: media.tmdbStatus,
+    })
     .from(monitored)
-    .all()
+    .leftJoin(media, and(eq(media.kind, monitored.kind), eq(media.tmdbId, monitored.tmdbId)))
+    .all();
+  const moviesOnServer = new Set(
+    ctx.db
+      .selectDistinct({ tmdbId: libraryItems.tmdbId })
+      .from(libraryItems)
+      .where(eq(libraryItems.kind, 'movie'))
+      .all()
+      .map((i) => i.tmdbId),
+  );
+  // Per show, counted in SQLite: aired monitored episodes, how many have no file here or on a media server, and the next air date.
+  // Specials (season 0) never count. Doing this in JS meant loading every episode of every server first.
+  const aired = sql`${monitoredEpisodes.season} > 0 AND ${monitoredEpisodes.airDate} <= ${day} AND ${monitoredEpisodes.monitored}`;
+  const episodes = new Map(
+    ctx.db
+      .select({
+        id: monitoredEpisodes.monitoredId,
+        aired: sql<number>`coalesce(sum(${aired}), 0)`,
+        missing: sql<number>`coalesce(sum(${aired} AND ${monitoredEpisodes.filePath} IS NULL AND NOT EXISTS (
+          SELECT 1 FROM ${libraryItems} JOIN ${libraryEpisodes} ON ${libraryEpisodes.libraryItemId} = ${libraryItems.id}
+          WHERE ${libraryItems.kind} = 'show' AND ${libraryItems.tmdbId} = ${monitored.tmdbId}
+            AND ${libraryEpisodes.season} = ${monitoredEpisodes.season} AND ${libraryEpisodes.episode} = ${monitoredEpisodes.episode})), 0)`,
+        next: sql<string | null>`min(CASE WHEN ${monitoredEpisodes.season} > 0 AND ${monitoredEpisodes.airDate} > ${day} THEN ${monitoredEpisodes.airDate} END)`,
+      })
+      .from(monitoredEpisodes)
+      .innerJoin(monitored, eq(monitored.id, monitoredEpisodes.monitoredId))
+      .groupBy(monitoredEpisodes.monitoredId)
+      .all()
+      .map((r) => [r.id, r]),
+  );
+
+  return titles
     .map((row) => {
-      const m = meta.get(`${row.kind}:${row.tmdbId}`);
       let status: OverviewStatus;
       let eps: OverviewRow['episodes'] = null;
       let nextAir: string | null = null;
       if (row.kind === 'movie') {
-        const dates = [m?.releaseDate, m?.digitalRelease, m?.physicalRelease].filter((d): d is string => Boolean(d));
+        const dates = [row.releaseDate, row.digitalRelease, row.physicalRelease].filter((d): d is string => Boolean(d));
         const released = dates.some((d) => d <= day);
-        status = row.filePath || onServer.has(`movie:${row.tmdbId}`) ? 'downloaded' : released ? 'missing' : 'upcoming';
+        status = row.hasFile || moviesOnServer.has(row.tmdbId) ? 'downloaded' : released ? 'missing' : 'upcoming';
         if (status !== 'downloaded') nextAir = dates.filter((d) => d > day).sort()[0] ?? null;
       } else {
-        const c = episodes.get(row.id) ?? { aired: 0, noFile: [], next: null };
-        const missing = c.noFile.filter((k) => !serverEpisodes.has(`${row.tmdbId}:${k}`)).length;
-        eps = { aired: c.aired, missing };
-        status = !c.aired ? 'upcoming' : missing === 0 ? 'downloaded' : missing === c.aired ? 'missing' : 'partial';
-        nextAir = c.next;
+        const c = episodes.get(row.id);
+        const aired = c?.aired ?? 0;
+        const missing = c?.missing ?? 0;
+        eps = { aired, missing };
+        status = !aired ? 'upcoming' : missing === 0 ? 'downloaded' : missing === aired ? 'missing' : 'partial';
+        nextAir = c?.next ?? null;
       }
       return {
         id: row.id,
@@ -94,12 +110,12 @@ export function monitoredOverview(ctx: AppContext): OverviewRow[] {
         tmdbId: row.tmdbId,
         title: row.title,
         year: row.year,
-        posterPath: m?.posterPath ?? null,
+        posterPath: row.posterPath ?? null,
         monitored: row.monitored,
         status,
         episodes: eps,
         profile: profiles.get(row.profileId) ?? null,
-        ended: ENDED.has(m?.tmdbStatus ?? ''),
+        ended: ENDED.has(row.tmdbStatus ?? ''),
         nextAir,
       };
     })
@@ -141,14 +157,8 @@ export function airing(ctx: AppContext, days: number): { next: AiringEpisode[]; 
     .leftJoin(media, and(eq(media.kind, 'show'), eq(media.tmdbId, monitored.tmdbId)))
     .where(and(eq(monitored.monitored, true), gte(monitoredEpisodes.airDate, shift(day, -days)), lte(monitoredEpisodes.airDate, shift(day, days))))
     .all();
-  const onServer = new Set(
-    ctx.db
-      .select({ tmdbId: libraryItems.tmdbId, season: libraryEpisodes.season, episode: libraryEpisodes.episode })
-      .from(libraryEpisodes)
-      .innerJoin(libraryItems, eq(libraryItems.id, libraryEpisodes.libraryItemId))
-      .all()
-      .map((e) => `${e.tmdbId}:${e.season}:${e.episode}`),
-  );
+  const onServer = new Set<string>();
+  for (const [tmdbId, eps] of episodesOnServerFor(ctx, rows.map((r) => r.tmdbId))) for (const k of eps.keys()) onServer.add(`${tmdbId}:${k}`);
   const toEpisode = (r: (typeof rows)[number]): AiringEpisode => ({
     tmdbId: r.tmdbId,
     title: r.title,

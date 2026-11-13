@@ -192,7 +192,7 @@ function MovieNightsRow() {
       <div className="flex gap-3 overflow-x-auto pb-2">
         {upcoming.map((n) => (
           <Link key={n.id} to="/movie-nights" className="card flex w-72 shrink-0 gap-3 p-3 hover:border-accent">
-            <div className="w-14 shrink-0 overflow-hidden rounded border border-border bg-surface-2">{n.posterPath ? <img src={poster(n.posterPath, 'w185')!} alt="" className="w-full" /> : <div className="aspect-[2/3]" />}</div>
+            <div className="w-14 shrink-0 overflow-hidden rounded border border-border bg-surface-2">{n.posterPath ? <img src={poster(n.posterPath, 'w185')!} alt="" loading="lazy" decoding="async" className="w-full" /> : <div className="aspect-[2/3]" />}</div>
             <div className="min-w-0 text-sm">
               <div className="text-xs text-accent">{nightWhen(n.startsAt)}</div>
               <div className="truncate font-semibold">{n.title}</div>

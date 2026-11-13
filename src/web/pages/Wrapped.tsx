@@ -62,7 +62,7 @@ function Poster({ path, title, to, children }: { path: string | null; title: str
   const img = poster(path, 'w185');
   const body = (
     <div className="flex items-center gap-4">
-      <div className="w-20 shrink-0 overflow-hidden rounded-md border border-border bg-surface-2">{img ? <img src={img} alt="" className="w-full" /> : <div className="aspect-[2/3]" />}</div>
+      <div className="w-20 shrink-0 overflow-hidden rounded-md border border-border bg-surface-2">{img ? <img src={img} alt="" loading="lazy" decoding="async" className="w-full" /> : <div className="aspect-[2/3]" />}</div>
       <div>
         <div className="text-lg font-semibold">{title}</div>
         {children}

@@ -55,6 +55,15 @@ export const JOB_TOPICS: Record<string, LiveEvent> = {
   'music-artists': { topic: 'music', access: 'user' },
 };
 
+/**
+ * Jobs that run every minute or few and usually find nothing new. They only announce a run that wrote
+ * something, so open tabs aren't told to refetch their pages every minute for nothing.
+ */
+export const QUIET_JOBS = new Set(['track', 'watch-folder', 'rss', 'missing', 'shelfmark', 'readmeabook', 'youtube-download', 'now-playing', 'watchlists']);
+
+/** A tracker run that only moved progress bars: just the download views refetch, not every page that shows files. */
+export const PROGRESS_EVENT: LiveEvent = { topic: 'download-progress', access: 'manager' };
+
 /** Writes under these never need to reach other tabs. */
 const QUIET = new Set(['auth', 'events', 'setup', 'health']);
 
