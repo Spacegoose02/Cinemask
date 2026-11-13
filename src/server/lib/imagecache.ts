@@ -53,16 +53,20 @@ export class ImageCache {
 
   private read(key: string): CachedImage | null {
     const file = this.file(key);
+    let fd: number | null = null;
     try {
-      const stat = fs.statSync(file);
-      if (Date.now() - stat.mtimeMs > MAX_AGE_MS) return null;
-      const raw = fs.readFileSync(file);
+      // One open file for both the age check and the read, so a concurrent rewrite can't slip between them.
+      fd = fs.openSync(file, 'r');
+      if (Date.now() - fs.fstatSync(fd).mtimeMs > MAX_AGE_MS) return null;
+      const raw = fs.readFileSync(fd);
       // A short header line holds the content type, then the image bytes.
       const nl = raw.indexOf(10);
       if (nl < 1 || nl > 100) return null;
       return { type: raw.subarray(0, nl).toString('utf8'), body: raw.subarray(nl + 1) };
     } catch {
       return null;
+    } finally {
+      if (fd !== null) fs.closeSync(fd);
     }
   }
 
