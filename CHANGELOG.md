@@ -4,9 +4,16 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-11-13
+
 ### Changed
+- **One collection across Plex, Jellyfin and BingeBandit.** Importing a collection now joins the one already linked to that server, or the one with the same name in the same library, instead of making a copy: Cinemask's name and titles stay, the server's titles are added, and it starts syncing there. Existing copies are merged when Cinemask starts, after each import and before the nightly sync, keeping every server link. Servers that are switched off are skipped instead of logging an error every night.
+- **Faster Collections page.** The list loads its mosaic posters in one query, covers from Plex, Jellyfin, BingeBandit and Audiobookshelf are shrunk to grid size and cached on disk, and the list is reused for five minutes (live updates still refresh it when something changes).
 - **Faster Monitored, Calendar and Airing on big libraries.** The Monitored page works out missing episodes inside the database instead of loading every episode from every media server first, and only reads the columns its grid shows. The Calendar looks up the shows of the month in one go instead of one by one. On a test library of 3,300 monitored titles and 96,000 server episodes, Monitored went from about 300 ms to 60 ms, a busy calendar month from 550 ms to 190 ms and Airing from 85 ms to under 1 ms. New indexes back these lookups.
 - **Open tabs refetch less.** Background jobs that run every minute or few (download tracking, RSS, now playing, book queues, YouTube) only tell open tabs to refresh when they actually changed something, and a download that just moved along refreshes the download views instead of Monitored, Calendar and every title page. Tiles on the Monitored page skip layout while off screen, and posters on Requests, Issues, Calendar and other lists load as they scroll into view.
+
+### Fixed
+- **Collection covers stay up when a server is down.** Cached covers keep showing when Plex, Jellyfin or BingeBandit fails or is switched off, and a cover that won't load falls back to the poster mosaic.
 
 ## [0.35.3] - 2026-11-11
 
