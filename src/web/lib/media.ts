@@ -27,7 +27,11 @@ export const poster = (path: string | null | undefined, size: 'w185' | 'w342' | 
   if (!path) return null;
   if (path.startsWith('/')) return `https://image.tmdb.org/t/p/${size}${path}`;
   if (path.startsWith('https://')) return path;
-  if (/^(plex|jellyfin|bingebandit|local|abs):/.test(path)) return `/api/images?src=${encodeURIComponent(path)}`;
+  if (/^(plex|jellyfin|bingebandit|local|abs):/.test(path)) {
+    // The server shrinks and caches these, so a grid doesn't pull full-size covers off the media server.
+    const w = size === 'w185' ? 185 : size === 'w342' ? 342 : size === 'w500' ? 500 : null;
+    return `/api/images?src=${encodeURIComponent(path)}${w ? `&w=${w}` : ''}`;
+  }
   return null;
 };
 

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import sharp from 'sharp';
 import path from 'node:path';
 import { parseVideoUrl, sweepTrailers } from '../src/server/trailers/service.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +9,7 @@ import { Client, createUser, makeApp, setupOwner } from './helpers.js';
 import { fakeFetch, JELLYFIN, PLEX, plexRoutes, tmdbRoutes } from './fakes.js';
 
 const TMDB = 'https://api.themoviedb.org/3';
+const BIG_PNG = await sharp({ create: { width: 600, height: 900, channels: 3, background: '#335' } }).png().toBuffer();
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4ba0000000049454e44ae426082', 'hex');
 
 describe('parsers', () => {
@@ -37,6 +39,7 @@ describe('discovery, lists, collections, posters and trailers', () => {
   let discoverUrl: URL | null;
   const plexWrites: string[] = [];
   let plexCollections: { ratingKey: string; title: string; thumb?: string }[] = [];
+  let thumbFetches = 0;
 
   beforeEach(async () => {
     t = await makeApp();
@@ -81,7 +84,7 @@ describe('discovery, lists, collections, posters and trailers', () => {
         return new Response('');
       },
       [`${PLEX}/library/metadata/900/thumb/1`]: (_u: URL, init?: RequestInit) =>
-        new Response(PNG, { headers: { 'content-type': 'image/png', 'x-token-seen': String((init?.headers as Record<string, string>)['X-Plex-Token']) } }),
+        ++thumbFetches && new Response(new Uint8Array(BIG_PNG), { headers: { 'content-type': 'image/png', 'x-token-seen': String((init?.headers as Record<string, string>)['X-Plex-Token']) } }),
       [`${PLEX}/library/sections/1/all`]: (url: URL, init?: RequestInit) => {
         if (init?.method === 'PUT' && url.searchParams.has('label.locked')) {
           const add = url.searchParams.get('label[0].tag.tag');
@@ -258,8 +261,29 @@ describe('discovery, lists, collections, posters and trailers', () => {
     expect(img.statusCode).toBe(200);
     expect(img.headers['content-type']).toBe('image/png');
     expect(img.headers['x-token-seen']).toBeUndefined();
+    // Thumbnails are shrunk to WebP and cached on disk: the second ask doesn't reach Plex.
+    const before = thumbFetches;
+    for (let i = 0; i < 2; i++) {
+      const thumb = await kid.req('GET', `/api/images?src=${encodeURIComponent(list[0].poster)}&w=342`);
+      expect(thumb.statusCode).toBe(200);
+      expect(thumb.headers['content-type']).toBe('image/webp');
+    }
+    expect(thumbFetches).toBe(before + 1);
+    expect((await kid.req('GET', `/api/images?src=${encodeURIComponent(list[0].poster)}&w=999`)).statusCode).toBe(400);
     expect((await kid.req('GET', `/api/images?src=${encodeURIComponent('plex:/:/prefs')}`)).statusCode).toBe(400);
     expect((await kid.req('GET', `/api/images?src=${encodeURIComponent('local:../../app.db')}`)).statusCode).toBe(400);
+  });
+
+  it('lists collections with counts and a four-poster mosaic only for those without a cover', async () => {
+    const bare = (await owner.req('POST', '/api/collections', { name: 'Zz Bare' })).json();
+    const covered = (await owner.req('POST', '/api/collections', { name: 'Zz Covered' })).json();
+    const db = t.app.ctx.dbHandle.sqlite;
+    const add = db.prepare(`INSERT INTO collection_items (collection_id, kind, tmdb_id, title, poster_path, position) VALUES (?, 'movie', ?, 'T', ?, ?)`);
+    for (const id of [bare.id, covered.id]) for (let n = 1; n <= 6; n++) add.run(id, 7000 + n, `/p${n}.jpg`, 6 - n);
+    db.prepare(`UPDATE collections SET poster = '/cover.jpg' WHERE id = ?`).run(covered.id);
+    const list = (await kid.req('GET', '/api/collections')).json() as { id: number; itemCount: number; previewPosters: unknown[] }[];
+    expect(list.find((c) => c.id === bare.id)).toMatchObject({ itemCount: 6, previewPosters: ['/p6.jpg', '/p5.jpg', '/p4.jpg', '/p3.jpg'] });
+    expect(list.find((c) => c.id === covered.id)).toMatchObject({ itemCount: 6, previewPosters: [] });
   });
 
   it('changes a poster from TMDB or an upload, and refuses non-images and private URLs', async () => {

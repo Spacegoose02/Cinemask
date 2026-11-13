@@ -47,6 +47,42 @@ export function itemsOf(ctx: AppContext, id: number): ListItem[] {
     .all();
 }
 
+/**
+ * Every collection with its title count and, for those without a cover, the first four posters for
+ * the mosaic. Two queries in all, however many collections there are: loading each collection's
+ * items to take four posters made the Collections page slow on big libraries.
+ */
+export function collectionSummaries(ctx: AppContext) {
+  const counts = new Map(
+    ctx.db
+      .select({ id: collectionItems.collectionId, n: sql<number>`count(*)` })
+      .from(collectionItems)
+      .groupBy(collectionItems.collectionId)
+      .all()
+      .map((r) => [r.id, r.n]),
+  );
+  const previews = new Map<number, (string | null)[]>();
+  const rows = ctx.db.all<{ id: number; posterPath: string | null }>(sql`
+    select collection_id as id, poster_path as posterPath from (
+      select ci.collection_id, ci.position, coalesce(ci.poster_path, m.poster_path) as poster_path,
+             row_number() over (partition by ci.collection_id order by ci.position) as rn
+      from ${collectionItems} ci
+      join ${collections} c on c.id = ci.collection_id and c.poster is null
+      left join ${media} m on m.kind = ci.kind and m.tmdb_id = ci.tmdb_id
+    ) where rn <= 4 order by collection_id, position`);
+  for (const r of rows) {
+    const list = previews.get(r.id) ?? [];
+    list.push(r.posterPath);
+    previews.set(r.id, list);
+  }
+  return ctx.db
+    .select()
+    .from(collections)
+    .orderBy(asc(collections.name))
+    .all()
+    .map((c) => ({ ...c, itemCount: counts.get(c.id) ?? 0, previewPosters: previews.get(c.id) ?? [] }));
+}
+
 export function setItems(ctx: AppContext, id: number, items: ListItem[]) {
   ctx.db.transaction((tx) => {
     tx.delete(collectionItems).where(eq(collectionItems.collectionId, id)).run();
