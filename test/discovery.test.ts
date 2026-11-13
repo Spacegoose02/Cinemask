@@ -270,11 +270,20 @@ describe('discovery, lists, collections, posters and trailers', () => {
     }
     expect(thumbFetches).toBe(before + 1);
     expect((await kid.req('GET', `/api/images?src=${encodeURIComponent(list[0].poster)}&w=999`)).statusCode).toBe(400);
+    // Once Plex is gone, the last copy keeps the cover showing.
+    await owner.req('PUT', '/api/settings/plex', { enabled: false });
+    const cacheDir = path.join(t.dir, 'cache', 'images');
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    for (const f of fs.readdirSync(cacheDir, { recursive: true, withFileTypes: true })) if (f.isFile()) fs.utimesSync(path.join(f.parentPath, f.name), old, old);
+    const kept = await kid.req('GET', `/api/images?src=${encodeURIComponent(list[0].poster)}&w=342`);
+    expect(kept.statusCode).toBe(200);
+    expect(kept.headers['content-type']).toBe('image/webp');
+    await owner.req('PUT', '/api/settings/plex', { enabled: true });
     expect((await kid.req('GET', `/api/images?src=${encodeURIComponent('plex:/:/prefs')}`)).statusCode).toBe(400);
     expect((await kid.req('GET', `/api/images?src=${encodeURIComponent('local:../../app.db')}`)).statusCode).toBe(400);
   });
 
-  it('lists collections with counts and a four-poster mosaic only for those without a cover', async () => {
+  it('lists collections with counts and a four-poster mosaic to fall back on', async () => {
     const bare = (await owner.req('POST', '/api/collections', { name: 'Zz Bare' })).json();
     const covered = (await owner.req('POST', '/api/collections', { name: 'Zz Covered' })).json();
     const db = t.app.ctx.dbHandle.sqlite;
@@ -283,7 +292,7 @@ describe('discovery, lists, collections, posters and trailers', () => {
     db.prepare(`UPDATE collections SET poster = '/cover.jpg' WHERE id = ?`).run(covered.id);
     const list = (await kid.req('GET', '/api/collections')).json() as { id: number; itemCount: number; previewPosters: unknown[] }[];
     expect(list.find((c) => c.id === bare.id)).toMatchObject({ itemCount: 6, previewPosters: ['/p6.jpg', '/p5.jpg', '/p4.jpg', '/p3.jpg'] });
-    expect(list.find((c) => c.id === covered.id)).toMatchObject({ itemCount: 6, previewPosters: [] });
+    expect(list.find((c) => c.id === covered.id)).toMatchObject({ itemCount: 6, previewPosters: ['/p6.jpg', '/p5.jpg', '/p4.jpg', '/p3.jpg'] });
   });
 
   it('changes a poster from TMDB or an upload, and refuses non-images and private URLs', async () => {

@@ -48,8 +48,8 @@ export function itemsOf(ctx: AppContext, id: number): ListItem[] {
 }
 
 /**
- * Every collection with its title count and, for those without a cover, the first four posters for
- * the mosaic. Two queries in all, however many collections there are: loading each collection's
+ * Every collection with its title count and its first four posters, for the mosaic shown when it has
+ * no cover or its cover can't be loaded (say, from a media server that's been switched off). Two queries in all, however many collections there are: loading each collection's
  * items to take four posters made the Collections page slow on big libraries.
  */
 export function collectionSummaries(ctx: AppContext) {
@@ -67,7 +67,6 @@ export function collectionSummaries(ctx: AppContext) {
       select ci.collection_id, ci.position, coalesce(ci.poster_path, m.poster_path) as poster_path,
              row_number() over (partition by ci.collection_id order by ci.position) as rn
       from ${collectionItems} ci
-      join ${collections} c on c.id = ci.collection_id and c.poster is null
       left join ${media} m on m.kind = ci.kind and m.tmdb_id = ci.tmdb_id
     ) where rn <= 4 order by collection_id, position`);
   for (const r of rows) {

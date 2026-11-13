@@ -35,8 +35,10 @@ const OFFSCREEN_SKIP = { contentVisibility: 'auto', containIntrinsicSize: 'auto 
 type Msg = { kind: 'error' | 'success'; text: string } | null;
 
 function Cover({ c }: { c: Collection }) {
-  const main = poster(c.poster);
-  if (main) return <img src={main} alt="" className="aspect-[2/3] w-full rounded-md border border-border object-cover" loading="lazy" decoding="async" />;
+  // A cover that won't load (its media server is gone, say) falls back to the mosaic.
+  const [broken, setBroken] = useState(false);
+  const main = broken ? null : poster(c.poster);
+  if (main) return <img src={main} alt="" className="aspect-[2/3] w-full rounded-md border border-border object-cover" loading="lazy" decoding="async" onError={() => setBroken(true)} />;
   // No cover yet: a 2x2 mosaic of the first posters.
   const tiles = (c.previewPosters ?? []).map((p) => poster(p, 'w185')).filter(Boolean);
   if (!tiles.length) return <div className="flex aspect-[2/3] w-full items-center justify-center rounded-md border border-border bg-surface-2 p-2 text-center text-sm text-muted">{c.name}</div>;

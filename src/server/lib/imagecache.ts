@@ -12,7 +12,10 @@ export interface CachedImage {
   body: Buffer;
 }
 
-/** How long a copy stays fresh. Server covers change rarely, and a changed Plex cover gets a new path anyway. */
+/**
+ * How long a copy stays fresh. Server covers change rarely, and a changed Plex cover gets a new path anyway.
+ * An older copy is still served when its server fails or is switched off, so covers outlive Plex and Jellyfin.
+ */
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** The cache trims itself back under this many bytes when it grows past it. */
 const MAX_BYTES = 500 * 1024 * 1024;
@@ -32,12 +35,19 @@ export class ImageCache {
   async get(src: string, w: ThumbWidth | null, fetchImage: () => Promise<CachedImage | null>): Promise<CachedImage | null> {
     const key = createHash('sha256').update(`${src}\n${w ?? 'full'}`).digest('hex');
     const hit = this.read(key);
-    if (hit) return hit;
+    if (hit?.fresh) return hit.img;
     let pending = this.inflight.get(key);
     if (!pending) {
       pending = (async () => {
-        const img = await fetchImage();
-        if (!img || !img.type.startsWith('image/')) return img;
+        let img: CachedImage | null;
+        try {
+          img = await fetchImage();
+        } catch (err) {
+          if (hit) return this.keep(key, hit.img);
+          throw err;
+        }
+        // Gone from its server (or the server is off): the last copy we had beats a blank cover.
+        if (!img || !img.type.startsWith('image/')) return hit ? this.keep(key, hit.img) : img;
         const out = w ? await shrink(img, w) : img;
         this.write(key, out);
         return out;
@@ -51,18 +61,29 @@ export class ImageCache {
     return path.join(this.dir, key.slice(0, 2), key);
   }
 
-  private read(key: string): CachedImage | null {
+  /** Serves a stale copy and marks it fresh, so a dead server isn't asked again on every view. */
+  private keep(key: string, img: CachedImage): CachedImage {
+    try {
+      const now = new Date();
+      fs.utimesSync(this.file(key), now, now);
+    } catch {
+      // Only costs a retry next time.
+    }
+    return img;
+  }
+
+  private read(key: string): { img: CachedImage; fresh: boolean } | null {
     const file = this.file(key);
     let fd: number | null = null;
     try {
       // One open file for both the age check and the read, so a concurrent rewrite can't slip between them.
       fd = fs.openSync(file, 'r');
-      if (Date.now() - fs.fstatSync(fd).mtimeMs > MAX_AGE_MS) return null;
+      const fresh = Date.now() - fs.fstatSync(fd).mtimeMs <= MAX_AGE_MS;
       const raw = fs.readFileSync(fd);
       // A short header line holds the content type, then the image bytes.
       const nl = raw.indexOf(10);
       if (nl < 1 || nl > 100) return null;
-      return { type: raw.subarray(0, nl).toString('utf8'), body: raw.subarray(nl + 1) };
+      return { img: { type: raw.subarray(0, nl).toString('utf8'), body: raw.subarray(nl + 1) }, fresh };
     } catch {
       return null;
     } finally {
@@ -83,7 +104,10 @@ export class ImageCache {
     }
   }
 
-  /** Drops stale entries, then the oldest ones until the cache fits its budget. */
+  /**
+   * Drops the least recently refreshed entries until the cache fits its budget. Age alone never
+   * evicts: an old copy may be the only one left of a cover from a server that's been switched off.
+   */
   prune() {
     const entries: { file: string; mtime: number; size: number }[] = [];
     try {
@@ -102,7 +126,7 @@ export class ImageCache {
     let total = 0;
     for (const e of entries) {
       total += e.size;
-      if (Date.now() - e.mtime > MAX_AGE_MS || total > MAX_BYTES) fs.rmSync(e.file, { force: true });
+      if (total > MAX_BYTES) fs.rmSync(e.file, { force: true });
     }
   }
 }
