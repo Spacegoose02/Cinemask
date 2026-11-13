@@ -29,18 +29,23 @@ interface Collection {
   items?: (MediaCardData & { tmdbId: number })[];
 }
 
+/** Cards scrolled out of view skip layout and paint, so hundreds of collections scroll smoothly. */
+const OFFSCREEN_SKIP = { contentVisibility: 'auto', containIntrinsicSize: 'auto 300px' } as const;
+
 type Msg = { kind: 'error' | 'success'; text: string } | null;
 
 function Cover({ c }: { c: Collection }) {
-  const main = poster(c.poster);
-  if (main) return <img src={main} alt="" className="aspect-[2/3] w-full rounded-md border border-border object-cover" loading="lazy" />;
+  // A cover that won't load (its media server is gone, say) falls back to the mosaic.
+  const [broken, setBroken] = useState(false);
+  const main = broken ? null : poster(c.poster);
+  if (main) return <img src={main} alt="" className="aspect-[2/3] w-full rounded-md border border-border object-cover" loading="lazy" decoding="async" onError={() => setBroken(true)} />;
   // No cover yet: a 2x2 mosaic of the first posters.
   const tiles = (c.previewPosters ?? []).map((p) => poster(p, 'w185')).filter(Boolean);
   if (!tiles.length) return <div className="flex aspect-[2/3] w-full items-center justify-center rounded-md border border-border bg-surface-2 p-2 text-center text-sm text-muted">{c.name}</div>;
   return (
     <div className="grid aspect-[2/3] w-full grid-cols-2 overflow-hidden rounded-md border border-border bg-surface-2">
       {tiles.slice(0, 4).map((src, i) => (
-        <img key={i} src={src!} alt="" className="h-full w-full object-cover" loading="lazy" />
+        <img key={i} src={src!} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
       ))}
     </div>
   );
@@ -145,7 +150,8 @@ export function CollectionsPage() {
   const { me } = useAuth();
   const qc = useQueryClient();
   const isManager = hasRole(me, 'manager');
-  const cols = useQuery({ queryKey: ['collections'], queryFn: () => api<Collection[]>('/api/collections') });
+  // Live updates refetch this when a collection changes, so coming back to the page reuses what's loaded.
+  const cols = useQuery({ queryKey: ['collections'], queryFn: () => api<Collection[]>('/api/collections'), staleTime: 5 * 60 * 1000 });
   const [creating, setCreating] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
   const [params] = useSearchParams();
@@ -174,8 +180,9 @@ export function CollectionsPage() {
   const unsorted = (cols.data ?? []).some((c) => c.source === 'plex' && !c.library);
   const importFrom = async (server: 'plex' | 'jellyfin' | 'bingebandit') => {
     try {
-      const r = await api<{ imported: number; updated: number }>('/api/collections/import', { body: { server } });
-      setMsg({ kind: 'success', text: `Imported ${r.imported} and updated ${r.updated} collections from ${serverName(server)}.` });
+      const r = await api<{ imported: number; updated: number; merged: number }>('/api/collections/import', { body: { server } });
+      const merged = r.merged ? ` Merged ${r.merged} duplicate${r.merged === 1 ? '' : 's'}.` : '';
+      setMsg({ kind: 'success', text: `Added ${r.imported} new and matched ${r.updated} existing collections from ${serverName(server)}.${merged}` });
       await qc.invalidateQueries({ queryKey: ['collections'] });
     } catch (e) {
       setMsg({ kind: 'error', text: (e as Error).message });
@@ -220,7 +227,7 @@ export function CollectionsPage() {
       {cols.data && !cols.data.length && <div className="card text-sm text-muted">No collections yet.</div>}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
         {shown.map((c) => (
-          <Link key={c.id} to={`/collections/${c.id}`} className="group">
+          <Link key={c.id} to={`/collections/${c.id}`} className="group" style={OFFSCREEN_SKIP}>
             <Cover c={c} />
             <div className="mt-1.5 truncate text-sm group-hover:text-accent">{c.name}</div>
             <div className="text-xs text-muted">

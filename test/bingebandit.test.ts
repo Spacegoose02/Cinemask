@@ -50,13 +50,13 @@ describe('BingeBandit collections', () => {
       { 5: [100], 6: [100] },
     );
     await sync(bb.routes);
-    expect((await owner.req('POST', '/api/collections/import', { server: 'bingebandit' })).json()).toEqual({ imported: 2, updated: 0 });
+    expect((await owner.req('POST', '/api/collections/import', { server: 'bingebandit' })).json()).toEqual({ imported: 2, updated: 0, merged: 0 });
     const cols = (await owner.req('GET', '/api/collections')).json() as { name: string; source: string; poster: string; library: string; syncBingebandit: boolean; description: string | null }[];
     const bears = cols.find((c) => c.name === 'Bears')!;
     expect(bears).toMatchObject({ source: 'bingebandit', poster: 'bingebandit:/api/images/tmdb/bears.jpg', library: 'Movies', syncBingebandit: true, description: 'Ursine films' });
     expect(cols.find((c) => c.name === 'Kids picks')).toMatchObject({ syncBingebandit: false });
     // Importing again updates instead of copying.
-    expect((await owner.req('POST', '/api/collections/import', { server: 'bingebandit' })).json()).toEqual({ imported: 0, updated: 2 });
+    expect((await owner.req('POST', '/api/collections/import', { server: 'bingebandit' })).json()).toEqual({ imported: 0, updated: 2, merged: 0 });
 
     // The cover shows through the image proxy, and only image paths of that shape are fetched.
     const img = await owner.req('GET', `/api/images?src=${encodeURIComponent('bingebandit:/api/images/tmdb/bears.jpg')}`);
@@ -65,6 +65,53 @@ describe('BingeBandit collections', () => {
     for (const src of ['bingebandit:/api/images/tmdb/../admin/users', 'bingebandit:/api/admin/users']) {
       expect((await owner.req('GET', `/api/images?src=${encodeURIComponent(src)}`)).statusCode).toBe(400);
     }
+  });
+
+  it('joins an import to the collection of the same name instead of copying it', async () => {
+    const bb = bingeBanditCollections([{ id: 5, libraryId: 1, name: 'Bears', overview: 'Ursine films', mode: '', poster: '/api/images/tmdb/bears.jpg' }], { 5: [100] });
+    await sync(bb.routes);
+    const mine = (await owner.req('POST', '/api/collections', { name: 'bears!', items: [{ kind: 'movie', tmdbId: 555 }] })).json();
+    expect((await owner.req('POST', '/api/collections/import', { server: 'bingebandit' })).json()).toEqual({ imported: 0, updated: 1, merged: 0 });
+    const cols = (await owner.req('GET', '/api/collections')).json() as { id: number; name: string }[];
+    expect(cols.map((c) => c.name)).toEqual(['bears!']);
+    const one = (await owner.req('GET', `/api/collections/${mine.id}`)).json();
+    // Cinemask's name and titles stay, BingeBandit's titles and cover join, and it now syncs there.
+    expect(one).toMatchObject({ source: 'manual', syncBingebandit: true, bingebanditIds: '[5]', library: 'Movies', description: 'Ursine films', poster: 'bingebandit:/api/images/tmdb/bears.jpg' });
+    expect(one.items.map((i: { tmdbId: number }) => i.tmdbId)).toEqual([555, 116149]);
+  });
+
+  it('merges copies of one collection from every server into one that keeps all the links', async () => {
+    const db = t.app.ctx.dbHandle.sqlite;
+    const add = db.prepare(`INSERT INTO collections (name, source, source_id, poster, library, sync_plex, sync_jellyfin, sync_bingebandit, plex_key, jellyfin_id, bingebandit_ids, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`);
+    const item = db.prepare(`INSERT INTO collection_items (collection_id, kind, tmdb_id, title, position) VALUES (?, 'movie', ?, 'T', ?)`);
+    const plex = Number(add.run('Alien Collection', 'plex', '900', 'plex:/library/metadata/900/thumb/1', 'Movies', 1, 0, 0, '900', null, null).lastInsertRowid);
+    const jf = Number(add.run('Alien collection', 'jellyfin', 'abc', 'jellyfin:/Items/abc/Images/Primary', null, 0, 1, 0, null, 'abc', null).lastInsertRowid);
+    const bbCol = Number(add.run('Alien Collection', 'bingebandit', '8', 'bingebandit:/api/images/tmdb/alien.jpg', 'Movies', 0, 0, 1, null, null, '[8]').lastInsertRowid);
+    const kids = Number(add.run('Alien Collection', 'plex', '901', null, 'Kids Movies', 1, 0, 0, '901', null, null).lastInsertRowid);
+    item.run(plex, 1, 0);
+    item.run(plex, 2, 1);
+    item.run(jf, 2, 0);
+    item.run(jf, 3, 1);
+    item.run(bbCol, 4, 0);
+    const { mergeDuplicateCollections } = await import('../src/server/collections/service.js');
+    expect(mergeDuplicateCollections(t.app.ctx)).toBe(2);
+    const cols = (await owner.req('GET', '/api/collections')).json() as { id: number; library: string }[];
+    // Kids Movies keeps its own; everything else became the BingeBandit one, linked to all three servers.
+    expect(cols.map((c) => c.id).sort()).toEqual([bbCol, kids].sort());
+    const one = (await owner.req('GET', `/api/collections/${bbCol}`)).json();
+    expect(one).toMatchObject({ plexKey: '900', jellyfinId: 'abc', bingebanditIds: '[8]', syncPlex: true, syncJellyfin: true, syncBingebandit: true, library: 'Movies' });
+    expect(one.items.map((i: { tmdbId: number }) => i.tmdbId).sort()).toEqual([1, 2, 3, 4]);
+    expect(mergeDuplicateCollections(t.app.ctx)).toBe(0);
+  });
+
+  it('skips servers that are switched off when pushing, without recording an error', async () => {
+    const bb = bingeBanditCollections();
+    await sync(bb.routes);
+    const col = (await owner.req('POST', '/api/collections', { name: 'Bears', syncPlex: true, syncJellyfin: true, syncBingebandit: true, items: [{ kind: 'movie', tmdbId: 116149 }] })).json();
+    const pushed = (await owner.req('POST', `/api/collections/${col.id}/push`, {})).json();
+    expect(pushed.bingebandit).toMatchObject({ added: 1 });
+    expect(pushed.plex).toBeUndefined();
+    expect((await owner.req('GET', `/api/collections/${col.id}`)).json().lastError).toBeNull();
   });
 
   it('pushes a collection with its cover, then renames it and takes titles out', async () => {

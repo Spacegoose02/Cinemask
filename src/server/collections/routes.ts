@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,7 +14,8 @@ import { forViewer } from '../kids/ratings.js';
 import { parse } from '../lib/validate.js';
 import { withAvailability } from '../lists/routes.js';
 import { postersDir } from '../posters/service.js';
-import { bingeBanditClient, clearPlexLabel, downloadMissing, importServerCollections, itemsOf, libraryLabels, jellyfinClient, plexClient, pushCollection, refreshCollectionItems, serverLibraries, setItems } from './service.js';
+import { ImageCache, THUMB_WIDTHS } from '../lib/imagecache.js';
+import { bingeBanditClient, clearPlexLabel, collectionSummaries, downloadMissing, importServerCollections, itemsOf, libraryLabels, jellyfinClient, plexClient, pushCollection, refreshCollectionItems, serverLibraries, setItems } from './service.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const itemRef = z.object({ kind: z.enum(MEDIA_KINDS), tmdbId: z.coerce.number().int().positive() });
@@ -52,27 +53,14 @@ export async function collectionRoutes(app: FastifyInstance) {
   // Plex collections imported before libraries were recorded get theirs from one quiet re-import.
   let sorting = false;
   const sortUnsorted = () => {
-    if (sorting || !ctx.db.select({ id: collections.id }).from(collections).where(and(eq(collections.source, 'plex'), isNull(collections.library))).get()) return;
+    if (sorting || !plexClient(ctx) || !ctx.db.select({ id: collections.id }).from(collections).where(and(eq(collections.source, 'plex'), isNull(collections.library))).get()) return;
     sorting = true;
     void importServerCollections(ctx, 'plex', null).catch((err) => app.log.warn({ err }, 'Sorting Plex collections into libraries failed'));
   };
 
   app.get('/api/collections', { config: { access: 'user' } }, async () => {
     sortUnsorted();
-    const counts = new Map(
-      ctx.db
-        .select({ id: collectionItems.collectionId, n: sql<number>`count(*)` })
-        .from(collectionItems)
-        .groupBy(collectionItems.collectionId)
-        .all()
-        .map((r) => [r.id, r.n]),
-    );
-    return ctx.db
-      .select()
-      .from(collections)
-      .orderBy(asc(collections.name))
-      .all()
-      .map((c) => ({ ...c, itemCount: counts.get(c.id) ?? 0, previewPosters: itemsOf(ctx, c.id).slice(0, 4).map((i) => i.posterPath) }));
+    return collectionSummaries(ctx);
   });
 
   app.get('/api/library/labels', { config: { access: 'manager' } }, async () => ({ labels: libraryLabels(ctx) }));
@@ -284,23 +272,27 @@ export async function collectionRoutes(app: FastifyInstance) {
    * Images that live on Plex/Jellyfin/BingeBandit (collection covers) or were uploaded here. The browser
    * never gets a server token; only image paths of the expected shape are proxied.
    */
+  const images = new ImageCache(path.join(ctx.config.configDir, 'cache', 'images'));
   app.get('/api/images', { config: { access: 'user' } }, async (req, reply) => {
-    const { src } = parse(z.object({ src: z.string().max(500) }), req.query);
-    let img: { type: string; body: Buffer } | null = null;
+    const { src, w } = parse(z.object({ src: z.string().max(500), w: z.coerce.number().pipe(z.union(THUMB_WIDTHS.map((n) => z.literal(n)))).optional() }), req.query);
+    let fetchImage: () => Promise<{ type: string; body: Buffer } | null>;
+    if (/^plex:\/library\/(metadata|collections)\/\d+\/(thumb|composite|art)(\/\d+)?$/.test(src)) fetchImage = async () => (await plexClient(ctx)?.image(src.slice(5))) ?? null;
+    else if (/^jellyfin:\/Items\/[0-9a-f-]{32,36}\/Images\/Primary$/i.test(src)) fetchImage = async () => (await jellyfinClient(ctx)?.image(src.slice(9))) ?? null;
+    else if (/^bingebandit:\/api\/images\/(tmdb|local|poster)\/(?!.*\.\.)[\w.-]{1,200}$/.test(src)) fetchImage = async () => (await bingeBanditClient(ctx)?.image(src.slice(12))) ?? null;
+    else if (/^abs:\/api\/items\/[\w-]{1,64}\/cover$/.test(src)) fetchImage = async () => (await absClient(ctx)?.image(src.slice(4))) ?? null;
+    else if (/^local:[\w.-]+\.(jpg|png|webp)$/.test(src)) {
+      const file = path.join(postersDir(ctx), path.basename(src.slice(6)));
+      fetchImage = async () => (fs.existsSync(file) ? { type: `image/${path.extname(file).slice(1).replace('jpg', 'jpeg')}`, body: fs.readFileSync(file) } : null);
+    } else throw badRequest('Unsupported image');
+    let img: { type: string; body: Buffer } | null;
     try {
-      if (/^plex:\/library\/(metadata|collections)\/\d+\/(thumb|composite|art)(\/\d+)?$/.test(src)) img = (await plexClient(ctx)?.image(src.slice(5))) ?? null;
-      else if (/^jellyfin:\/Items\/[0-9a-f-]{32,36}\/Images\/Primary$/i.test(src)) img = (await jellyfinClient(ctx)?.image(src.slice(9))) ?? null;
-      else if (/^bingebandit:\/api\/images\/(tmdb|local|poster)\/(?!.*\.\.)[\w.-]{1,200}$/.test(src)) img = (await bingeBanditClient(ctx)?.image(src.slice(12))) ?? null;
-      else if (/^abs:\/api\/items\/[\w-]{1,64}\/cover$/.test(src)) img = (await absClient(ctx)?.image(src.slice(4))) ?? null;
-      else if (/^local:[\w.-]+\.(jpg|png|webp)$/.test(src)) {
-        const file = path.join(postersDir(ctx), path.basename(src.slice(6)));
-        if (fs.existsSync(file)) img = { type: `image/${path.extname(file).slice(1).replace('jpg', 'jpeg')}`, body: fs.readFileSync(file) };
-      } else throw badRequest('Unsupported image');
+      // Uploaded posters are already on disk, so only their thumbnails are worth caching.
+      img = src.startsWith('local:') && !w ? await fetchImage() : await images.get(src, w ?? null, fetchImage);
     } catch (err) {
       if (err instanceof HttpError) throw err;
       throw failure(err);
     }
     if (!img || !img.type.startsWith('image/')) throw notFound('Image not found');
-    return reply.header('content-type', img.type).header('cache-control', 'private, max-age=86400').header('x-content-type-options', 'nosniff').send(img.body);
+    return reply.header('content-type', img.type).header('cache-control', 'private, max-age=604800').header('x-content-type-options', 'nosniff').send(img.body);
   });
 }
