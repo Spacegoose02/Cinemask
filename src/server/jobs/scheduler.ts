@@ -25,7 +25,7 @@ import { purgeHttpCache } from '../integrations/tmdb.js';
 import { sweepTrailers } from '../trailers/service.js';
 import { checkDueChannels, downloadWanted, requeueInterrupted } from '../youtube/service.js';
 import type { LibrarySync } from '../library/service.js';
-import { JOB_TOPICS } from '../live/bus.js';
+import { JOB_TOPICS, PROGRESS_EVENT, QUIET_JOBS, type LiveEvent } from '../live/bus.js';
 import { applyOverlays } from '../posters/overlays.js';
 
 /** Background jobs. Kept in-process: a household install doesn't need a separate worker. */
@@ -113,14 +113,24 @@ export class Scheduler {
     this.rescheduleDownloading();
   }
 
+  /** Rows written on the app's database connection so far (SQLite's total_changes()). */
+  private dbChanges(): number {
+    return (this.app.ctx.dbHandle.sqlite.prepare('SELECT total_changes() AS n').get() as { n: number }).n;
+  }
+
   /** Runs a job unless the previous run of the same job is still going. */
   private once(name: string, fn: () => Promise<unknown>) {
     return async () => {
       if (this.busy.has(name)) return;
       this.busy.add(name);
       try {
-        await fn();
-        const live = JOB_TOPICS[name];
+        const before = this.dbChanges();
+        const result = await fn();
+        let live: LiveEvent | undefined = JOB_TOPICS[name];
+        // A quiet job that wrote nothing has nothing to announce.
+        if (QUIET_JOBS.has(name) && this.dbChanges() === before) live = undefined;
+        // The tracker says false when downloads only moved along, with nothing finished, failed or imported.
+        if (live && name === 'track' && result === false) live = PROGRESS_EVENT;
         if (live) this.app.ctx.live.publish(live);
       } catch (err) {
         this.app.log.error({ err }, `Job ${name} failed`);

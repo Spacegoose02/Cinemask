@@ -42,13 +42,16 @@ function Progress({ r }: { r: OverviewRow }) {
   );
 }
 
+/** Tiles scrolled out of view skip layout and paint, so a few thousand titles scroll smoothly. */
+const OFFSCREEN_SKIP = { contentVisibility: 'auto', containIntrinsicSize: 'auto 340px' } as const;
+
 function PosterTile({ r, onToggle, onSearch }: { r: OverviewRow; onToggle: () => void; onSearch: () => void }) {
   const src = poster(r.posterPath, 'w342');
   return (
-    <div className="group min-w-0">
+    <div className="group min-w-0" style={OFFSCREEN_SKIP}>
       <Link to={`/${r.kind === 'movie' ? 'movie' : 'tv'}/${r.tmdbId}`} className="block">
         <div className={`relative aspect-[2/3] overflow-hidden rounded-md border border-border bg-surface-2 ${r.monitored ? '' : 'opacity-60'}`}>
-          {src ? <img src={src} alt={r.title} loading="lazy" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center p-2 text-center text-xs text-muted">{r.title}</div>}
+          {src ? <img src={src} alt={r.title} loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center p-2 text-center text-xs text-muted">{r.title}</div>}
         </div>
       </Link>
       <Progress r={r} />

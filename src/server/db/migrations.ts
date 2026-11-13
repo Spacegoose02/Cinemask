@@ -1021,6 +1021,17 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       DROP TABLE list_items_keep;
     `,
   },
+  {
+    id: 37,
+    name: 'performance indexes',
+    // Episode lookups by season and number (Monitored, Calendar), the calendar's date range, and a title's downloads.
+    sql: `
+      DROP INDEX IF EXISTS library_episodes_item_idx;
+      CREATE INDEX library_episodes_item_idx ON library_episodes(library_item_id, season, episode);
+      CREATE INDEX monitored_episodes_air_idx ON monitored_episodes(air_date);
+      CREATE INDEX downloads_monitored_idx ON downloads(monitored_id);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

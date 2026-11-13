@@ -143,7 +143,7 @@ function Details({ e, onClose }: { e: Entry; onClose: () => void }) {
   return (
     <Modal title={e.title} onClose={onClose}>
       <div className="flex gap-4">
-        {img && <img src={img} alt="" className="w-24 shrink-0 self-start rounded border border-border" />}
+        {img && <img src={img} alt="" loading="lazy" decoding="async" className="w-24 shrink-0 self-start rounded border border-border" />}
         <div className="min-w-0 space-y-2 text-sm">
           <div className="text-muted">
             {new Date(`${e.date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}

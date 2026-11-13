@@ -221,18 +221,22 @@ export const libraryItems = sqliteTable(
   (t) => [uniqueIndex('library_server_key').on(t.server, t.externalKey), index('library_items_media_idx').on(t.mediaId)],
 );
 
-export const libraryEpisodes = sqliteTable('library_episodes', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  libraryItemId: integer('library_item_id')
-    .notNull()
-    .references(() => libraryItems.id, { onDelete: 'cascade' }),
-  season: integer('season').notNull(),
-  episode: integer('episode').notNull(),
-  title: text('title'),
-  resolution: text('resolution'),
-  viewCount: integer('view_count'),
-  lastViewedAt: integer('last_viewed_at'),
-});
+export const libraryEpisodes = sqliteTable(
+  'library_episodes',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    libraryItemId: integer('library_item_id')
+      .notNull()
+      .references(() => libraryItems.id, { onDelete: 'cascade' }),
+    season: integer('season').notNull(),
+    episode: integer('episode').notNull(),
+    title: text('title'),
+    resolution: text('resolution'),
+    viewCount: integer('view_count'),
+    lastViewedAt: integer('last_viewed_at'),
+  },
+  (t) => [index('library_episodes_item_idx').on(t.libraryItemId, t.season, t.episode)],
+);
 
 /** A title fixed by hand to the right TMDB entry. Library sync applies it every time. */
 export const matchOverrides = sqliteTable(
@@ -358,7 +362,7 @@ export const monitoredEpisodes = sqliteTable(
     /** Position counting every regular episode from the first (anime numbering). */
     absoluteNumber: integer('absolute_number'),
   },
-  (t) => [uniqueIndex('monitored_episode_key').on(t.monitoredId, t.season, t.episode)],
+  (t) => [uniqueIndex('monitored_episode_key').on(t.monitoredId, t.season, t.episode), index('monitored_episodes_air_idx').on(t.airDate)],
 );
 
 export const REQUEST_STATUSES = ['pending', 'approved', 'declined', 'available'] as const;
@@ -481,7 +485,7 @@ export const downloads = sqliteTable(
     /** When the progress last moved, for spotting stalled downloads. */
     progressAt: integer('progress_at'),
   },
-  (t) => [index('downloads_status_idx').on(t.status)],
+  (t) => [index('downloads_status_idx').on(t.status), index('downloads_monitored_idx').on(t.monitoredId)],
 );
 
 export const blocklist = sqliteTable('blocklist', {

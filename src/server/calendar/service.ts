@@ -1,10 +1,10 @@
-import { and, eq, gte, lte, or } from 'drizzle-orm';
+import { and, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { media, monitored, monitoredEpisodes } from '../db/schema.js';
 import { refreshEpisodes } from '../arr/monitor.js';
 import { scanFolder } from '../files/service.js';
 import { refreshMetadata } from '../library/service.js';
-import { episodesOnServer } from '../library/service.js';
+import { episodesOnServerFor } from '../library/service.js';
 
 export type ReleaseType = 'cinema' | 'digital' | 'physical';
 
@@ -43,7 +43,6 @@ export interface CalendarEntry {
 /** Movies and episodes of monitored titles released between start and end (inclusive, YYYY-MM-DD). */
 export function calendar(ctx: AppContext, start: string, end: string): CalendarEntry[] {
   const entries: CalendarEntry[] = [];
-  const metaFor = (kind: 'movie' | 'show', tmdbId: number) => ctx.db.select().from(media).where(and(eq(media.kind, kind), eq(media.tmdbId, tmdbId))).get();
 
   const movies = ctx.db
     .select({ m: monitored, meta: media })
@@ -79,13 +78,25 @@ export function calendar(ctx: AppContext, start: string, end: string): CalendarE
   // Last known episode of each season, and the show's last season, for finales TMDB hasn't flagged.
   const lastEp = new Map<string, number>();
   const lastSeason = new Map<number, number>();
-  for (const id of new Set(eps.map(({ m }) => m.id))) {
-    for (const r of ctx.db.select({ season: monitoredEpisodes.season, episode: monitoredEpisodes.episode }).from(monitoredEpisodes).where(eq(monitoredEpisodes.monitoredId, id)).all()) {
-      lastEp.set(`${id}:${r.season}`, Math.max(lastEp.get(`${id}:${r.season}`) ?? 0, r.episode));
-      lastSeason.set(id, Math.max(lastSeason.get(id) ?? 0, r.season));
+  const showIds = [...new Set(eps.map(({ m }) => m.id))];
+  const showTmdbIds = [...new Set(eps.map(({ m }) => m.tmdbId))];
+  for (let i = 0; i < showIds.length; i += 500) {
+    const rows = ctx.db
+      .select({ id: monitoredEpisodes.monitoredId, season: monitoredEpisodes.season, last: sql<number>`max(${monitoredEpisodes.episode})` })
+      .from(monitoredEpisodes)
+      .where(inArray(monitoredEpisodes.monitoredId, showIds.slice(i, i + 500)))
+      .groupBy(monitoredEpisodes.monitoredId, monitoredEpisodes.season)
+      .all();
+    for (const r of rows) {
+      lastEp.set(`${r.id}:${r.season}`, r.last);
+      lastSeason.set(r.id, Math.max(lastSeason.get(r.id) ?? 0, r.season));
     }
   }
-  const ended = (tmdbId: number) => /ended|canceled|cancelled/i.test(metaFor('show', tmdbId)?.tmdbStatus ?? '');
+  const showMeta = new Map<number, typeof media.$inferSelect>();
+  for (let i = 0; i < showTmdbIds.length; i += 500) {
+    for (const row of ctx.db.select().from(media).where(and(eq(media.kind, 'show'), inArray(media.tmdbId, showTmdbIds.slice(i, i + 500)))).all()) showMeta.set(row.tmdbId, row);
+  }
+  const ended = (tmdbId: number) => /ended|canceled|cancelled/i.test(showMeta.get(tmdbId)?.tmdbStatus ?? '');
   const markerFor = (m: typeof monitored.$inferSelect, e: typeof monitoredEpisodes.$inferSelect): EpisodeMarker | null => {
     if (e.episode === 1) return e.season === 1 ? 'series_premiere' : 'season_premiere';
     const isLast = lastEp.get(`${m.id}:${e.season}`) === e.episode;
@@ -96,14 +107,13 @@ export function calendar(ctx: AppContext, start: string, end: string): CalendarE
     return lastSeasonOfShow && ended(m.tmdbId) && isLast ? 'series_finale' : 'season_finale';
   };
   const grouped = new Map<string, CalendarEntry>();
-  const onServer = new Map<number, ReturnType<typeof episodesOnServer>>();
+  const onServer = episodesOnServerFor(ctx, showTmdbIds);
   for (const { e, m } of eps) {
     const key = `${e.airDate}:${m.id}`;
-    if (!onServer.has(m.tmdbId)) onServer.set(m.tmdbId, episodesOnServer(ctx, m.tmdbId));
-    const hasFile = Boolean(e.filePath) || onServer.get(m.tmdbId)!.has(`${e.season}:${e.episode}`);
+    const hasFile = Boolean(e.filePath) || Boolean(onServer.get(m.tmdbId)?.has(`${e.season}:${e.episode}`));
     let entry = grouped.get(key);
     if (!entry) {
-      const meta = metaFor('show', m.tmdbId);
+      const meta = showMeta.get(m.tmdbId);
       entry = { date: e.airDate!, monitoredId: m.id, kind: 'show', tmdbId: m.tmdbId, title: m.title, year: m.year, posterPath: meta?.posterPath ?? null, overview: meta?.overview ?? null, trailerKey: meta?.trailerKey ?? null, monitored: m.monitored && e.monitored, hasFile: true, episodes: [] };
       grouped.set(key, entry);
     }

@@ -161,25 +161,40 @@ export function availabilityFor(ctx: AppContext, kind: MediaKind, items: { tmdbI
   return out;
 }
 
+export type ServerEpisode = { resolution: string | null; servers: ServerType[]; viewCount: number | null; lastViewedAt: number | null };
+
 /** Episodes on any server for a show, keyed "season:episode". */
-export function episodesOnServer(ctx: AppContext, tmdbId: number): Map<string, { resolution: string | null; servers: ServerType[]; viewCount: number | null; lastViewedAt: number | null }> {
-  const items = ctx.db.select().from(libraryItems).where(and(eq(libraryItems.kind, 'show'), eq(libraryItems.tmdbId, tmdbId))).all();
-  const map = new Map<string, { resolution: string | null; servers: ServerType[]; viewCount: number | null; lastViewedAt: number | null }>();
-  for (const item of items) {
-    const eps = ctx.db.select().from(libraryEpisodes).where(eq(libraryEpisodes.libraryItemId, item.id)).all();
-    for (const e of eps) {
+export function episodesOnServer(ctx: AppContext, tmdbId: number): Map<string, ServerEpisode> {
+  return episodesOnServerFor(ctx, [tmdbId]).get(tmdbId) ?? new Map();
+}
+
+/** Like episodesOnServer, for many shows in one pass (the calendar asks for hundreds at a time). */
+export function episodesOnServerFor(ctx: AppContext, tmdbIds: number[]): Map<number, Map<string, ServerEpisode>> {
+  const out = new Map<number, Map<string, ServerEpisode>>();
+  const ids = [...new Set(tmdbIds)];
+  // Kept well under SQLite's limit on bound parameters.
+  for (let i = 0; i < ids.length; i += 500) {
+    const rows = ctx.db
+      .select({ tmdbId: libraryItems.tmdbId, server: libraryItems.server, season: libraryEpisodes.season, episode: libraryEpisodes.episode, resolution: libraryEpisodes.resolution, viewCount: libraryEpisodes.viewCount, lastViewedAt: libraryEpisodes.lastViewedAt })
+      .from(libraryEpisodes)
+      .innerJoin(libraryItems, eq(libraryItems.id, libraryEpisodes.libraryItemId))
+      .where(and(eq(libraryItems.kind, 'show'), inArray(libraryItems.tmdbId, ids.slice(i, i + 500))))
+      .all();
+    for (const e of rows) {
+      let map = out.get(e.tmdbId!);
+      if (!map) out.set(e.tmdbId!, (map = new Map()));
       const k = `${e.season}:${e.episode}`;
       const prev = map.get(k);
       map.set(k, {
         resolution: bestResolution([prev?.resolution ?? null, e.resolution]),
-        servers: [...new Set([...(prev?.servers ?? []), item.server])],
+        servers: prev ? (prev.servers.includes(e.server) ? prev.servers : [...prev.servers, e.server]) : [e.server],
         // Watched on either server counts; plays are added up across them.
         viewCount: e.viewCount === null && !prev ? null : (prev?.viewCount ?? 0) + (e.viewCount ?? 0),
         lastViewedAt: Math.max(prev?.lastViewedAt ?? 0, e.lastViewedAt ?? 0) || null,
       });
     }
   }
-  return map;
+  return out;
 }
 
 /**

@@ -52,11 +52,21 @@ export async function refreshMediaServers(ctx: AppContext) {
   }
 }
 
-/** Polls download clients, updates progress, imports finished downloads and retries failed ones. */
-export async function trackDownloads(ctx: AppContext): Promise<void> {
+/**
+ * Polls download clients, updates progress, imports finished downloads and retries failed ones. Says whether
+ * any download changed status (finished, failed, imported, removed), as opposed to only making progress.
+ */
+export async function trackDownloads(ctx: AppContext): Promise<boolean> {
   const active = ctx.db.select().from(downloads).where(and(inArray(downloads.status, [...ACTIVE]), isNotNull(downloads.clientId))).all();
   for (const id of liveStats.keys()) if (!active.some((d) => d.id === id)) liveStats.delete(id);
-  if (!active.length) return;
+  if (!active.length) return false;
+  const statusBefore = new Map(active.map((d) => [d.id, d.status]));
+  await pollClients(ctx, active);
+  const after = ctx.db.select({ id: downloads.id, status: downloads.status }).from(downloads).where(inArray(downloads.id, [...statusBefore.keys()])).all();
+  return after.length !== statusBefore.size || after.some((d) => statusBefore.get(d.id) !== d.status);
+}
+
+async function pollClients(ctx: AppContext, active: (typeof downloads.$inferSelect)[]): Promise<void> {
   const clientIds = [...new Set(active.map((d) => d.clientId!))];
   let imported = false;
   for (const cid of clientIds) {

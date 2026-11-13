@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Changed
+- **Faster Monitored, Calendar and Airing on big libraries.** The Monitored page works out missing episodes inside the database instead of loading every episode from every media server first, and only reads the columns its grid shows. The Calendar looks up the shows of the month in one go instead of one by one. On a test library of 3,300 monitored titles and 96,000 server episodes, Monitored went from about 300 ms to 60 ms, a busy calendar month from 550 ms to 190 ms and Airing from 85 ms to under 1 ms. New indexes back these lookups.
+- **Open tabs refetch less.** Background jobs that run every minute or few (download tracking, RSS, now playing, book queues, YouTube) only tell open tabs to refresh when they actually changed something, and a download that just moved along refreshes the download views instead of Monitored, Calendar and every title page. Tiles on the Monitored page skip layout while off screen, and posters on Requests, Issues, Calendar and other lists load as they scroll into view.
+
 ## [0.35.3] - 2026-11-11
 
 ### Changed
