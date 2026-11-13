@@ -180,8 +180,9 @@ export function CollectionsPage() {
   const unsorted = (cols.data ?? []).some((c) => c.source === 'plex' && !c.library);
   const importFrom = async (server: 'plex' | 'jellyfin' | 'bingebandit') => {
     try {
-      const r = await api<{ imported: number; updated: number }>('/api/collections/import', { body: { server } });
-      setMsg({ kind: 'success', text: `Imported ${r.imported} and updated ${r.updated} collections from ${serverName(server)}.` });
+      const r = await api<{ imported: number; updated: number; merged: number }>('/api/collections/import', { body: { server } });
+      const merged = r.merged ? ` Merged ${r.merged} duplicate${r.merged === 1 ? '' : 's'}.` : '';
+      setMsg({ kind: 'success', text: `Added ${r.imported} new and matched ${r.updated} existing collections from ${serverName(server)}.${merged}` });
       await qc.invalidateQueries({ queryKey: ['collections'] });
     } catch (e) {
       setMsg({ kind: 'error', text: (e as Error).message });

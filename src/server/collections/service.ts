@@ -149,7 +149,8 @@ export async function pushCollection(ctx: AppContext, id: number): Promise<{ ple
   if (col.syncPlex) {
     try {
       const plex = plexClient(ctx);
-      if (!plex) throw new Error('Plex is not connected');
+      // A server that's switched off is skipped, not an error every night.
+      if (!plex) throw SKIP;
       // Until a library sync records which library each item is in, a library's collection can't be matched up.
       if (col.library && !plexLibraries(ctx).length) throw new Error('Waiting for the next library sync to learn which Plex library each title is in');
       const wanted = serverKeys(ctx, 'plex', items, col.library);
@@ -179,14 +180,14 @@ export async function pushCollection(ctx: AppContext, id: number): Promise<{ ple
       }
       result.plex = r;
     } catch (err) {
-      errors.push(`Plex: ${(err as Error).message}`);
+      if (err !== SKIP) errors.push(`Plex: ${(err as Error).message}`);
     }
   }
 
   if (col.syncJellyfin) {
     try {
       const jf = jellyfinClient(ctx);
-      if (!jf) throw new Error('Jellyfin is not connected');
+      if (!jf) throw SKIP;
       const wanted = [...serverKeys(ctx, 'jellyfin', items).keys()];
       const r: PushResult = { added: 0, removed: 0, notOnServer: items.length - wanted.length };
       let jfId = col.jellyfinId;
@@ -210,17 +211,17 @@ export async function pushCollection(ctx: AppContext, id: number): Promise<{ ple
       ctx.db.update(collections).set({ jellyfinId: jfId }).where(eq(collections.id, id)).run();
       result.jellyfin = r;
     } catch (err) {
-      errors.push(`Jellyfin: ${(err as Error).message}`);
+      if (err !== SKIP) errors.push(`Jellyfin: ${(err as Error).message}`);
     }
   }
 
   if (col.syncBingebandit) {
     try {
       const bb = bingeBanditClient(ctx);
-      if (!bb) throw new Error('BingeBandit is not connected');
+      if (!bb) throw SKIP;
       result.bingebandit = await pushToBingeBandit(ctx, bb, col, items, poster);
     } catch (err) {
-      errors.push(`BingeBandit: ${(err as Error).message}`);
+      if (err !== SKIP) errors.push(`BingeBandit: ${(err as Error).message}`);
     }
   }
 
@@ -228,6 +229,8 @@ export async function pushCollection(ctx: AppContext, id: number): Promise<{ ple
   if (errors.length && !result.plex && !result.jellyfin && !result.bingebandit) throw new Error(errors.join('; '));
   return result;
 }
+
+const SKIP = new Error('server switched off');
 
 const bbIds = (col: CollectionRow): number[] => (col.bingebanditIds ? (JSON.parse(col.bingebanditIds) as number[]) : []);
 
@@ -320,7 +323,7 @@ export function libraryLabels(ctx: AppContext): string[] {
 }
 
 /** Copies the collections that already exist on Plex, Jellyfin or BingeBandit into the app (matching items by TMDB id). */
-export async function importServerCollections(ctx: AppContext, server: 'plex' | 'jellyfin' | 'bingebandit', userId: number | null): Promise<{ imported: number; updated: number }> {
+export async function importServerCollections(ctx: AppContext, server: 'plex' | 'jellyfin' | 'bingebandit', userId: number | null): Promise<{ imported: number; updated: number; merged: number }> {
   const byKey = (key: string) => ctx.db.select().from(libraryItems).where(and(eq(libraryItems.server, server), eq(libraryItems.externalKey, key))).get();
   const toItems = (keys: string[]) =>
     keys
@@ -330,20 +333,38 @@ export async function importServerCollections(ctx: AppContext, server: 'plex' | 
   let imported = 0;
   let updated = 0;
   const upsert = (sourceId: string, name: string, description: string | null, poster: string | null, items: ListItem[], library: string | null = null, sync = true) => {
-    const existing = ctx.db.select().from(collections).where(and(eq(collections.source, server), eq(collections.sourceId, sourceId))).get();
-    const values = {
-      name,
-      description,
-      poster,
-      library,
-      ...(server === 'plex' ? { plexKey: sourceId, syncPlex: true } : server === 'jellyfin' ? { jellyfinId: sourceId, syncJellyfin: true } : { bingebanditIds: JSON.stringify([Number(sourceId)]), syncBingebandit: sync }),
-    };
-    const id = existing
-      ? ctx.db.update(collections).set(values).where(eq(collections.id, existing.id)).returning().get().id
-      : ctx.db.insert(collections).values({ ...values, source: server, sourceId, createdBy: userId, createdAt: Date.now() }).returning().get().id;
-    if (existing) updated++;
-    else imported++;
-    setItems(ctx, id, items);
+    // The same collection on every server is one collection here: found by its link to this server, else by name.
+    const existing = linkedTo(ctx, server, sourceId) ?? sameNamed(ctx, name, library);
+    const link = server === 'plex' ? { plexKey: sourceId, syncPlex: true } : server === 'jellyfin' ? { jellyfinId: sourceId, syncJellyfin: true } : null;
+    if (!existing) {
+      const row = ctx.db
+        .insert(collections)
+        .values({ name, description, poster, library, ...(link ?? { bingebanditIds: JSON.stringify([Number(sourceId)]), syncBingebandit: sync }), source: server, sourceId, createdBy: userId, createdAt: Date.now() })
+        .returning()
+        .get();
+      setItems(ctx, row.id, items);
+      imported++;
+      return;
+    }
+    updated++;
+    const ids = bbIds(existing);
+    // A BingeBandit collection that picks its own titles (rules or a list) only ever follows BingeBandit.
+    const followsServer = server === 'bingebandit' && !sync && existing.source === 'bingebandit' && !existing.plexKey && !existing.jellyfinId;
+    ctx.db
+      .update(collections)
+      .set({
+        ...(link ?? { bingebanditIds: JSON.stringify([...new Set([...ids, Number(sourceId)])]), syncBingebandit: existing.syncBingebandit || sync }),
+        description: existing.description ?? description,
+        library: existing.library ?? library,
+        // A newer cover from the server the current one came from, or a working one for a cover that's gone.
+        poster: poster && (existing.poster?.startsWith(`${server}:`) || coverGone(ctx, existing.poster)) ? poster : existing.poster,
+        ...(followsServer ? { name, description } : {}),
+      })
+      .where(eq(collections.id, existing.id))
+      .run();
+    // Cinemask decides what's in a collection: the server's titles join it, nothing is taken out.
+    if (followsServer) setItems(ctx, existing.id, items);
+    else if (!follows(existing)) setItems(ctx, existing.id, union(itemsOf(ctx, existing.id), items));
   };
   if (server === 'plex') {
     const plex = plexClient(ctx);
@@ -365,7 +386,9 @@ export async function importServerCollections(ctx: AppContext, server: 'plex' | 
     if (!jf) throw new Error('Jellyfin is not connected');
     for (const b of await jf.boxSets()) upsert(b.Id, b.Name, b.Overview ?? null, `jellyfin:/Items/${b.Id}/Images/Primary`, toItems(await jf.collectionItems(b.Id)));
   }
-  return { imported, updated };
+  // Copies made before imports merged (or two of one server's) fold together too.
+  const merged = mergeDuplicateCollections(ctx);
+  return { imported, updated, merged };
 }
 
 /** Rebuilds the items of collections that follow a TMDB collection, one of the app's lists, or a server label. */
@@ -397,6 +420,7 @@ export async function refreshCollectionItems(ctx: AppContext, id: number): Promi
 
 /** Keeps followed collections current and pushes ones that sync to a server. Run daily. */
 export async function syncCollections(ctx: AppContext): Promise<void> {
+  mergeDuplicateCollections(ctx);
   for (const c of ctx.db.select().from(collections).all()) {
     try {
       if (c.source === 'tmdb' || c.source === 'list' || c.fromLabel) await refreshCollectionItems(ctx, c.id);
@@ -423,4 +447,115 @@ export async function downloadMissing(ctx: AppContext, id: number, userId: numbe
     }
   }
   return added;
+}
+
+/** Names that differ only in case, spacing or punctuation are the same collection. */
+export const nameKey = (name: string) =>
+  name
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+
+/** Collections in different libraries ("Movies", "Kids Movies") stay apart; one tied to no library joins either. */
+const librariesMatch = (a: string | null, b: string | null) => !a || !b || a === b;
+
+/** Collections that follow a TMDB collection, a list or a label get their titles from there, never from a merge. */
+const follows = (c: CollectionRow) => c.source === 'tmdb' || c.source === 'list' || Boolean(c.fromLabel);
+
+function linkedTo(ctx: AppContext, server: 'plex' | 'jellyfin' | 'bingebandit', sourceId: string): CollectionRow | undefined {
+  const all = ctx.db.select().from(collections).all();
+  if (server === 'plex') return all.find((c) => c.plexKey === sourceId) ?? all.find((c) => c.source === 'plex' && c.sourceId === sourceId);
+  if (server === 'jellyfin') return all.find((c) => c.jellyfinId === sourceId) ?? all.find((c) => c.source === 'jellyfin' && c.sourceId === sourceId);
+  return all.find((c) => bbIds(c).includes(Number(sourceId))) ?? all.find((c) => c.source === 'bingebandit' && c.sourceId === sourceId);
+}
+
+function sameNamed(ctx: AppContext, name: string, library: string | null): CollectionRow | undefined {
+  const key = nameKey(name);
+  const matches = ctx.db
+    .select()
+    .from(collections)
+    .orderBy(asc(collections.id))
+    .all()
+    .filter((c) => nameKey(c.name) === key && librariesMatch(c.library, library));
+  return matches.find((c) => c.library === library) ?? matches[0];
+}
+
+/** A cover from a server that's switched off can't be shown much longer, so a working one replaces it. */
+function coverGone(ctx: AppContext, poster: string | null): boolean {
+  if (!poster) return true;
+  if (poster.startsWith('plex:')) return !plexClient(ctx);
+  if (poster.startsWith('jellyfin:')) return !jellyfinClient(ctx);
+  if (poster.startsWith('bingebandit:')) return !bingeBanditClient(ctx);
+  return false;
+}
+
+/** The first list's titles in their order, then the second's that weren't there. */
+function union(first: ListItem[], second: ListItem[]): ListItem[] {
+  const seen = new Set(first.map((i) => `${i.kind}:${i.tmdbId}`));
+  return [...first, ...second.filter((i) => !seen.has(`${i.kind}:${i.tmdbId}`))];
+}
+
+/** Which copy survives a merge: one following a source, then one made here, then BingeBandit's, Plex's, Jellyfin's. */
+const KEEP_ORDER: Record<string, number> = { tmdb: 0, list: 0, manual: 1, bingebandit: 2, plex: 3, jellyfin: 4 };
+const keepRank = (c: CollectionRow) => (c.fromLabel ? 0 : (KEEP_ORDER[c.source] ?? 5));
+
+/**
+ * Folds copies of the same collection (imported from Plex, Jellyfin and BingeBandit, or made here)
+ * into one that keeps every server link, so each collection exists once and syncs to every server.
+ * Returns how many copies were folded in.
+ */
+export function mergeDuplicateCollections(ctx: AppContext): number {
+  const groups = new Map<string, CollectionRow[]>();
+  for (const c of ctx.db.select().from(collections).all()) {
+    const key = nameKey(c.name);
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  let merged = 0;
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    // Ones tied to a library claim the keepers first, so a copy tied to none joins one of them.
+    group.sort((a, b) => Number(!a.library) - Number(!b.library) || keepRank(a) - keepRank(b) || a.id - b.id);
+    const keepers: CollectionRow[] = [];
+    for (const c of group) {
+      const into = keepers.find((k) => librariesMatch(k.library, c.library) && !(follows(k) && follows(c)));
+      if (!into) {
+        keepers.push(c);
+        continue;
+      }
+      // The better-ranked copy keeps its row (and its source); the other's links and titles move onto it.
+      const [keep, drop] = keepRank(c) < keepRank(into) ? [c, into] : [into, c];
+      keepers[keepers.indexOf(into)] = foldInto(ctx, keep, drop);
+      merged++;
+    }
+  }
+  return merged;
+}
+
+function foldInto(ctx: AppContext, keep: CollectionRow, drop: CollectionRow): CollectionRow {
+  const items = follows(keep) ? itemsOf(ctx, keep.id) : union(itemsOf(ctx, keep.id), itemsOf(ctx, drop.id));
+  const row = ctx.db.transaction((tx) => {
+    tx.delete(collections).where(eq(collections.id, drop.id)).run();
+    return tx
+      .update(collections)
+      .set({
+        plexKey: keep.plexKey ?? drop.plexKey,
+        jellyfinId: keep.jellyfinId ?? drop.jellyfinId,
+        bingebanditIds: bbIds(keep).length || bbIds(drop).length ? JSON.stringify([...new Set([...bbIds(keep), ...bbIds(drop)])]) : null,
+        syncPlex: keep.syncPlex || drop.syncPlex,
+        syncJellyfin: keep.syncJellyfin || drop.syncJellyfin,
+        syncBingebandit: keep.syncBingebandit || drop.syncBingebandit,
+        library: keep.library ?? drop.library,
+        description: keep.description ?? drop.description,
+        poster: coverGone(ctx, keep.poster) && drop.poster && !coverGone(ctx, drop.poster) ? drop.poster : (keep.poster ?? drop.poster),
+        plexLabel: keep.plexLabel ?? drop.plexLabel,
+        fromLabel: keep.fromLabel ?? drop.fromLabel,
+        lastError: null,
+      })
+      .where(eq(collections.id, keep.id))
+      .returning()
+      .get();
+  });
+  setItems(ctx, keep.id, items);
+  return row;
 }

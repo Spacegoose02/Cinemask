@@ -53,7 +53,7 @@ export async function collectionRoutes(app: FastifyInstance) {
   // Plex collections imported before libraries were recorded get theirs from one quiet re-import.
   let sorting = false;
   const sortUnsorted = () => {
-    if (sorting || !ctx.db.select({ id: collections.id }).from(collections).where(and(eq(collections.source, 'plex'), isNull(collections.library))).get()) return;
+    if (sorting || !plexClient(ctx) || !ctx.db.select({ id: collections.id }).from(collections).where(and(eq(collections.source, 'plex'), isNull(collections.library))).get()) return;
     sorting = true;
     void importServerCollections(ctx, 'plex', null).catch((err) => app.log.warn({ err }, 'Sorting Plex collections into libraries failed'));
   };

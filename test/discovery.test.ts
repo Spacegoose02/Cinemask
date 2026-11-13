@@ -251,7 +251,7 @@ describe('discovery, lists, collections, posters and trailers', () => {
 
   it('imports Plex collections and proxies their covers without exposing the token', async () => {
     plexCollections = [{ ratingKey: '900', title: 'Bear Films', thumb: '/library/metadata/900/thumb/1' }];
-    expect((await owner.req('POST', '/api/collections/import', { server: 'plex' })).json()).toEqual({ imported: 1, updated: 0 });
+    expect((await owner.req('POST', '/api/collections/import', { server: 'plex' })).json()).toEqual({ imported: 1, updated: 0, merged: 0 });
     const list = (await kid.req('GET', '/api/collections')).json();
     expect(list[0]).toMatchObject({ name: 'Bear Films', poster: 'plex:/library/metadata/900/thumb/1', itemCount: 1, library: 'Movies' });
     // Items copied from Plex show the title's TMDB poster.

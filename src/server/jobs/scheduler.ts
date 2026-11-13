@@ -19,7 +19,7 @@ import { scanWatchFolder } from '../arr/watch.js';
 import { refreshMonitored } from '../calendar/service.js';
 import { remindMovieNights } from '../fun/nights.js';
 import { pollReadMeABook, pollShelfmark, syncAudiobookshelf } from '../books/service.js';
-import { syncCollections } from '../collections/service.js';
+import { mergeDuplicateCollections, syncCollections } from '../collections/service.js';
 import { syncDueLists } from '../lists/service.js';
 import { purgeHttpCache } from '../integrations/tmdb.js';
 import { sweepTrailers } from '../trailers/service.js';
@@ -44,6 +44,13 @@ export class Scheduler {
   ) {}
 
   start(): void {
+    // Copies of one collection imported from several servers become one, without waiting for the nightly run.
+    try {
+      const merged = mergeDuplicateCollections(this.app.ctx);
+      if (merged) this.app.log.info({ merged }, 'Merged duplicate collections');
+    } catch (err) {
+      this.app.log.warn({ err }, 'Merging duplicate collections failed');
+    }
     this.housekeeping = cron.schedule('17 * * * *', () => {
       purgeExpiredSessions(this.app.ctx.db);
       this.app.ctx.db.delete(authStates).where(lt(authStates.expiresAt, Date.now())).run();
