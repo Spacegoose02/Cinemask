@@ -3,6 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { insideRoot } from '../src/server/files/service.js';
 import { ensureMedia } from '../src/server/library/service.js';
+import { libraryEpisodes, libraryItems } from '../src/server/db/schema.js';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
 import { fakeFetch, tmdbRoutes } from './fakes.js';
 
@@ -183,6 +184,22 @@ describe('file management, calendar and health', () => {
     // The digital release came after the cinema one, so it isn't the premiere.
     expect(movie).toEqual([expect.objectContaining({ monitoredId: paddington.id, title: 'Paddington', releaseType: 'digital', date: '2015-04-28', hasFile: false, premiere: false })]);
     expect((await kid.req('GET', '/api/calendar?start=2018-01-01&end=2018-12-31')).statusCode).toBe(400);
+  });
+
+  it('calendar counts a movie or episode on Plex/Jellyfin as there, even with no file in Cinemask', async () => {
+    await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false });
+    await owner.req('POST', '/api/monitored', { kind: 'show', tmdbId: 82728, search: false });
+    const cal = (start: string, end: string) => kid.req('GET', `/api/calendar?start=${start}&end=${end}`).then((r) => r.json());
+    expect((await cal('2015-04-01', '2015-04-30'))[0].hasFile).toBe(false);
+    expect((await cal('2018-09-01', '2018-10-31'))[0].hasFile).toBe(false);
+    // In another library on the server (a Christmas one, say), not in Cinemask's movies folder.
+    t.app.ctx.db.insert(libraryItems).values({ server: 'plex', externalKey: 'xmas-1', kind: 'movie', tmdbId: 116149, title: 'Paddington', resolution: '720p' }).run();
+    expect(await cal('2015-04-01', '2015-04-30')).toEqual([expect.objectContaining({ title: 'Paddington', hasFile: true })]);
+    const show = t.app.ctx.db.insert(libraryItems).values({ server: 'jellyfin', externalKey: 'bluey', kind: 'show', tmdbId: 82728, title: 'Bluey' }).returning().get();
+    t.app.ctx.db.insert(libraryEpisodes).values({ libraryItemId: show.id, season: 1, episode: 1 }).run();
+    const [day] = await cal('2018-09-01', '2018-10-31');
+    expect(day.episodes.map((e: { hasFile: boolean }) => e.hasFile)).toEqual([true, false, false]);
+    expect(day.hasFile).toBe(false);
   });
 
   it('lists what is monitored and what is missing', async () => {

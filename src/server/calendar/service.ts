@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
-import { media, monitored, monitoredEpisodes } from '../db/schema.js';
+import { libraryItems, media, monitored, monitoredEpisodes } from '../db/schema.js';
 import { refreshEpisodes } from '../arr/monitor.js';
 import { scanFolder } from '../files/service.js';
 import { refreshMetadata } from '../library/service.js';
@@ -55,6 +55,13 @@ export function calendar(ctx: AppContext, start: string, end: string): CalendarE
       ),
     )
     .all();
+  // A movie counts as there when Cinemask has its file or Plex/Jellyfin lists it (any library, such as a
+  // separate Christmas one), the same as the detail page's "On server" and the Monitored grid.
+  const moviesOnServer = new Set<number>();
+  const movieIds = [...new Set(movies.map(({ m }) => m.tmdbId))];
+  for (let i = 0; i < movieIds.length; i += 500) {
+    for (const r of ctx.db.selectDistinct({ tmdbId: libraryItems.tmdbId }).from(libraryItems).where(and(eq(libraryItems.kind, 'movie'), inArray(libraryItems.tmdbId, movieIds.slice(i, i + 500)))).all()) moviesOnServer.add(r.tmdbId!);
+  }
   for (const { m, meta } of movies) {
     const dates: [ReleaseType, string | null][] = [
       ['cinema', meta.releaseDate],
@@ -64,7 +71,7 @@ export function calendar(ctx: AppContext, start: string, end: string): CalendarE
     const first = dates.map(([, d]) => d).filter((d): d is string => Boolean(d)).sort()[0];
     for (const [releaseType, date] of dates) {
       if (!date || date < start || date > end) continue;
-      entries.push({ date, monitoredId: m.id, kind: 'movie', tmdbId: m.tmdbId, title: m.title, year: m.year, posterPath: meta.posterPath, overview: meta.overview, trailerKey: meta.trailerKey, monitored: m.monitored, releaseType, premiere: date === first, hasFile: Boolean(m.filePath) });
+      entries.push({ date, monitoredId: m.id, kind: 'movie', tmdbId: m.tmdbId, title: m.title, year: m.year, posterPath: meta.posterPath, overview: meta.overview, trailerKey: meta.trailerKey, monitored: m.monitored, releaseType, premiere: date === first, hasFile: Boolean(m.filePath) || moviesOnServer.has(m.tmdbId) });
     }
   }
 

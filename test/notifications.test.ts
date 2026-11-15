@@ -179,8 +179,14 @@ describe('weekly email', () => {
     sent.length = 0;
     expect(await weeklyDigest(t.app.ctx, new Date(now))).toBe(0);
 
-    // Preview on demand
-    expect((await sib.req('POST', '/api/notifications/digest/preview', {})).json()).toMatchObject({ ok: true });
+    // Preview on demand, on that same Sunday: the preview reads the clock, and on the real date
+    // Paddington stopped being new a week after the fixed date above.
+    vi.useFakeTimers({ toFake: ['Date'], now });
+    try {
+      expect((await sib.req('POST', '/api/notifications/digest/preview', {})).json()).toMatchObject({ ok: true });
+    } finally {
+      vi.useRealTimers();
+    }
     expect(sent.at(-1)!.html).toContain('<h2');
   });
 });
