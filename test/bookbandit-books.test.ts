@@ -167,6 +167,10 @@ describe('BookBandit', () => {
     refuseNext = true;
     expect(await syncBookBandit(t.app.ctx)).toEqual({ books: 1 });
     expect(logins).toHaveLength(2);
+    // A new password in Settings means a new session, not the one made with the old password.
+    await owner.req('PUT', '/api/settings/bookbandit', { password: 'wrong' });
+    await expect(syncBookBandit(t.app.ctx)).rejects.toThrow('rejected');
+    expect(logins).toHaveLength(3);
   });
 
   it('a failed sync leaves the mirror as it was', async () => {

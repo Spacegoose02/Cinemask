@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { connectError, IntegrationError } from './http.js';
 
@@ -27,10 +26,10 @@ const BbLogin = z.object({ token: z.string().startsWith('bbs_').max(4000), expir
 /**
  * Session tokens by address and account. BookBandit has no API keys: Cinemask signs in like an app does
  * (password sign-in, which hands back a 30-day bearer token), keeps the token in memory only, and signs
- * in again when it expires or is refused. The key includes a hash of the password, so changing it in
- * Settings starts a new session instead of reusing one made with the old password.
+ * in again when it expires or is refused. A session remembers the password it was made with (it's in
+ * memory as a setting anyway), so changing it in Settings starts a new session instead of reusing the old one.
  */
-const sessions = new Map<string, { token: string; expiresAt: number; role: string }>();
+const sessions = new Map<string, { token: string; expiresAt: number; role: string; password: string }>();
 
 /** BookBandit (github.com/Spacegoose02/bookbandit): the family's ebook library and reader. */
 export class BookBanditClient {
@@ -45,7 +44,7 @@ export class BookBanditClient {
   }
 
   private get key() {
-    return `${this.base}|${this.username.toLowerCase()}|${createHash('sha256').update(this.password).digest('hex')}`;
+    return `${this.base}|${this.username.toLowerCase()}`;
   }
 
   private async call(path: string, init: RequestInit = {}, timeoutMs = 30_000): Promise<Response> {
@@ -59,7 +58,7 @@ export class BookBanditClient {
   private async login(): Promise<{ token: string; role: string }> {
     const cached = sessions.get(this.key);
     // A day's margin so a token never runs out mid-sync.
-    if (cached && cached.expiresAt - Date.now() > 24 * 3600_000) return cached;
+    if (cached && cached.password === this.password && cached.expiresAt - Date.now() > 24 * 3600_000) return cached;
     if (!this.username || !this.password) throw new IntegrationError('BookBandit', 'enter the username and password Cinemask should sign in with');
     const res = await this.call('/api/auth/login', {
       method: 'POST',
@@ -71,7 +70,7 @@ export class BookBanditClient {
     if (!res.ok) throw new IntegrationError('BookBandit', `sign-in failed with HTTP ${res.status}`, res.status);
     const parsed = BbLogin.safeParse(await res.json().catch(() => null));
     if (!parsed.success) throw new IntegrationError('BookBandit', "sign-in didn't return a session (is that address really BookBandit?)");
-    const s = { token: parsed.data.token, expiresAt: parsed.data.expiresAt, role: parsed.data.user.role };
+    const s = { token: parsed.data.token, expiresAt: parsed.data.expiresAt, role: parsed.data.user.role, password: this.password };
     sessions.set(this.key, s);
     return s;
   }
