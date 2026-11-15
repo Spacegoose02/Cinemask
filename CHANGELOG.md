@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.36.1] - 2026-11-15
+
+### Fixed
+- **Calendar showed movies as missing when Plex or Jellyfin had them.** The calendar only looked at Cinemask's own movie file, so a movie the media server lists (in a separate Christmas library, say) showed as missing while its page said On server. It now checks the synced library, as the Monitored page does.
+
 ## [0.36.0] - 2026-11-13
 
 ### Changed
