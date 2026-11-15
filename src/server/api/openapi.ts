@@ -18,6 +18,7 @@ const SUMMARIES: Record<string, string> = {
   'POST /api/books': 'Request a book. Body: {"workKey":"/works/OL…W","format":"audiobook"|"ebook"}.',
   'GET /api/books/search': 'Search Open Library. Query: q.',
   'GET /api/books/library': 'What is in Audiobookshelf. Query: type=book|podcast.',
+  'GET /api/books/bookbandit': 'Ebooks in BookBandit, with links to open them there.',
   'GET /api/podcasts/top': 'Top podcasts from Apple\'s charts.',
   'GET /api/collections': 'Collections.',
   'GET /api/lists': 'Lists.',

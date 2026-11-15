@@ -15,13 +15,14 @@ export function BookSettings() {
   const abs = useSettingsSection('audiobookshelf');
   const sm = useSettingsSection('shelfmark');
   const rmab = useSettingsSection('readmeabook');
+  const bb = useSettingsSection('bookbandit');
   const libs = useQuery({
     queryKey: ['abs-libraries', abs.values?.url],
     queryFn: () => api<AbsLibrary[]>('/api/audiobookshelf/libraries'),
     enabled: Boolean(abs.values?.enabled && abs.values?.url && abs.secretsSet['apiKey']),
     retry: false,
   });
-  if (abs.loading || sm.loading || rmab.loading) return null;
+  if (abs.loading || sm.loading || rmab.loading || bb.loading) return null;
   const pick = (type: AbsLibrary['mediaType'], key: 'audiobookLibraryId' | 'podcastLibraryId', label: string) => (
     <Field label={label}>
       {libs.data ? (
@@ -61,6 +62,31 @@ export function BookSettings() {
           <TestButton service="audiobookshelf" beforeTest={abs.save} />
         </div>
         <SaveBar onSave={abs.save} saving={abs.saving} message={abs.message} />
+      </section>
+      <section className="card space-y-4">
+        <h2 className="font-semibold">BookBandit</h2>
+        <p className="text-sm text-muted">
+          Your ebook library. Shows what's in BookBandit on the Ebooks tab, says so when someone searches for a book you already have, marks ebook requests ready when they turn up there, and asks it to scan
+          after Cinemask imports an ebook. BookBandit has no API keys, so Cinemask signs in with a BookBandit account. Make a grown-up account just for Cinemask; an admin one can ask for scans.
+        </p>
+        <Toggle label="Use BookBandit" checked={bb.values.enabled} onChange={(v) => bb.set('enabled', v)} />
+        <Field label="Address" hint="Where the Cinemask container reaches it.">
+          <input className="input" value={bb.values.url} onChange={(e) => bb.set('url', e.target.value)} placeholder="http://bookbandit:8080" />
+        </Field>
+        <Field label="Address in the browser" hint="Optional. Used for the Open in BookBandit links, if people reach it at a different address.">
+          <input className="input" value={bb.values.publicUrl} onChange={(e) => bb.set('publicUrl', e.target.value)} placeholder="https://books.example.com" />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Username">
+            <input className="input" value={bb.values.username} onChange={(e) => bb.set('username', e.target.value)} autoComplete="off" />
+          </Field>
+          <Field label="Password">
+            <SecretInput isSet={bb.secretsSet['password']!} value={bb.secrets['password']} onChange={(v) => bb.setSecret('password', v)} />
+          </Field>
+        </div>
+        <p className="text-xs text-muted">Downloaded ebooks go to the books folder set in Media management, so point that at a folder inside BookBandit's /books. New books wait in BookBandit's inbox for an admin to rate them before kids can see them.</p>
+        <TestButton service="bookbandit" beforeTest={bb.save} />
+        <SaveBar onSave={bb.save} saving={bb.saving} message={bb.message} />
       </section>
       <section className="card space-y-4">
         <h2 className="font-semibold">Shelfmark</h2>

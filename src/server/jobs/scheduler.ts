@@ -18,7 +18,7 @@ import { cleanUpSeeding, trackDownloads } from '../arr/tracker.js';
 import { scanWatchFolder } from '../arr/watch.js';
 import { refreshMonitored } from '../calendar/service.js';
 import { remindMovieNights } from '../fun/nights.js';
-import { pollReadMeABook, pollShelfmark, syncAudiobookshelf } from '../books/service.js';
+import { pollReadMeABook, pollShelfmark, syncAudiobookshelf, syncBookBandit } from '../books/service.js';
 import { mergeDuplicateCollections, syncCollections } from '../collections/service.js';
 import { syncDueLists } from '../lists/service.js';
 import { purgeHttpCache } from '../integrations/tmdb.js';
@@ -75,8 +75,9 @@ export class Scheduler {
         }),
       ),
       cron.schedule('40 4 * * *', this.once('collections', () => syncCollections(this.app.ctx))),
-      // Audiobookshelf's library every few hours; Shelfmark's queue every couple of minutes while books download.
+      // Audiobookshelf's library every few hours, BookBandit's hourly; Shelfmark's queue every couple of minutes while books download.
       cron.schedule('25 */4 * * *', this.once('audiobookshelf', async () => (this.app.ctx.settings.get('audiobookshelf').enabled ? syncAudiobookshelf(this.app.ctx) : null))),
+      cron.schedule('55 * * * *', this.once('bookbandit', async () => (this.app.ctx.settings.get('bookbandit').enabled ? syncBookBandit(this.app.ctx) : null))),
       cron.schedule('*/2 * * * *', this.once('shelfmark', () => pollShelfmark(this.app.ctx))),
       cron.schedule('*/2 * * * *', this.once('readmeabook', () => pollReadMeABook(this.app.ctx))),
       // YouTube channels are checked on their own interval (looked at hourly); the queue drains every few minutes.

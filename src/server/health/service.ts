@@ -2,7 +2,7 @@ import { and, desc, eq, gte } from 'drizzle-orm';
 import fs from 'node:fs';
 import type { AppContext } from '../context.js';
 import { books, downloadClients, downloads, indexers, type DownloadClientType } from '../db/schema.js';
-import { absClient, readMeABookClient, shelfmarkClient } from '../books/service.js';
+import { absClient, bookBanditClient, readMeABookClient, shelfmarkClient } from '../books/service.js';
 import type { BackupService } from '../backup/service.js';
 import { createClient } from '../arr/clients.js';
 import { testIndexer } from '../arr/indexers.js';
@@ -114,6 +114,16 @@ export async function runHealthChecks(ctx: AppContext, deps: { backups: BackupSe
   }
   const abs = absClient(ctx);
   if (abs) pending.push(connection('audiobookshelf', 'Audiobookshelf', 'books', () => abs.test()));
+  const bbk = bookBanditClient(ctx);
+  if (bbk) {
+    let admin = true;
+    const check = connection('bookbandit', 'BookBandit', 'books', async () => {
+      const i = await bbk.test();
+      admin = i.admin;
+      return admin ? 'Signed in as an admin' : "Signed in, but not as an admin, so scans after imports won't work";
+    });
+    pending.push(check.then((c) => (c.level === 'ok' && !admin ? { ...c, level: 'warning' } : c)));
+  }
   const sm = shelfmarkClient(ctx);
   if (sm) pending.push(connection('shelfmark', 'Shelfmark', 'books', () => sm.test()));
   const rmab = readMeABookClient(ctx);

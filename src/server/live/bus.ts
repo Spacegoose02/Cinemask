@@ -44,6 +44,7 @@ export const JOB_TOPICS: Record<string, LiveEvent> = {
   lists: { topic: 'lists', access: 'user' },
   collections: { topic: 'collections', access: 'user' },
   audiobookshelf: { topic: 'books', access: 'user' },
+  bookbandit: { topic: 'books', access: 'user' },
   shelfmark: { topic: 'books', access: 'user' },
   readmeabook: { topic: 'books', access: 'user' },
   'youtube-check': { topic: 'youtube', access: 'manager' },

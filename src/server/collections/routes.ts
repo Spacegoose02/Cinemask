@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { absClient } from '../books/service.js';
+import { absClient, bookBanditClient } from '../books/service.js';
 import { audit } from '../audit/log.js';
 import { assertSafeUrl } from '../arr/direct.js';
 import { collectionItems, collections, lists, MEDIA_KINDS } from '../db/schema.js';
@@ -280,6 +280,7 @@ export async function collectionRoutes(app: FastifyInstance) {
     else if (/^jellyfin:\/Items\/[0-9a-f-]{32,36}\/Images\/Primary$/i.test(src)) fetchImage = async () => (await jellyfinClient(ctx)?.image(src.slice(9))) ?? null;
     else if (/^bingebandit:\/api\/images\/(tmdb|local|poster)\/(?!.*\.\.)[\w.-]{1,200}$/.test(src)) fetchImage = async () => (await bingeBanditClient(ctx)?.image(src.slice(12))) ?? null;
     else if (/^abs:\/api\/items\/[\w-]{1,64}\/cover$/.test(src)) fetchImage = async () => (await absClient(ctx)?.image(src.slice(4))) ?? null;
+    else if (/^bookbandit:\/api\/books\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/cover$/.test(src)) fetchImage = async () => (await bookBanditClient(ctx)?.cover(src.slice(22, 58))) ?? null;
     else if (/^local:[\w.-]+\.(jpg|png|webp)$/.test(src)) {
       const file = path.join(postersDir(ctx), path.basename(src.slice(6)));
       fetchImage = async () => (fs.existsSync(file) ? { type: `image/${path.extname(file).slice(1).replace('jpg', 'jpeg')}`, body: fs.readFileSync(file) } : null);

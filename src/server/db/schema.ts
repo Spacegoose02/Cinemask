@@ -618,6 +618,18 @@ export const absItems = sqliteTable('abs_items', {
   addedAt: integer('added_at'),
 });
 
+/** What's in BookBandit (the ebook library), mirrored so search can say "in BookBandit" without asking it. */
+export const bookbanditItems = sqliteTable('bookbandit_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  bbId: text('bb_id').notNull().unique(),
+  title: text('title').notNull(),
+  author: text('author'),
+  year: integer('year'),
+  hasCover: integer('has_cover', { mode: 'boolean' }).notNull().default(false),
+  /** Order BookBandit listed it in (newest first), so the grid shows recent additions first. */
+  position: integer('position').notNull().default(0),
+});
+
 export const API_KEY_ACCESS = ['read', 'full'] as const;
 
 export const apiKeys = sqliteTable(

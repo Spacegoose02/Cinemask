@@ -3,11 +3,12 @@ import { notify } from '../notify/service.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext } from '../context.js';
-import { absItems, books, downloads, type BookFormat } from '../db/schema.js';
+import { absItems, bookbanditItems, books, downloads, type BookFormat } from '../db/schema.js';
 import { placeFile } from '../arr/importer.js';
 import { CATEGORIES, type Release } from '../arr/indexers.js';
 import { grab, searchAll } from '../arr/search.js';
 import { AudiobookshelfClient } from '../integrations/audiobookshelf.js';
+import { BookBanditClient } from '../integrations/bookbandit.js';
 import { OpenLibraryClient, type BookCard } from '../integrations/openlibrary.js';
 import { ReadMeABookClient } from '../integrations/readmeabook.js';
 import { ShelfmarkClient } from '../integrations/shelfmark.js';
@@ -30,6 +31,11 @@ export function absClient(ctx: AppContext): AudiobookshelfClient | null {
 export function shelfmarkClient(ctx: AppContext): ShelfmarkClient | null {
   const s = ctx.settings.get('shelfmark');
   return s.enabled && s.url ? new ShelfmarkClient(s.url, s.username, s.password) : null;
+}
+
+export function bookBanditClient(ctx: AppContext): BookBanditClient | null {
+  const s = ctx.settings.get('bookbandit');
+  return s.enabled && s.url && s.username && s.password ? new BookBanditClient(s.url, s.username, s.password) : null;
 }
 
 export function readMeABookClient(ctx: AppContext): ReadMeABookClient | null {
@@ -218,6 +224,9 @@ export function importBook(ctx: AppContext, id: number, sourcePath: string): str
   const abs = absClient(ctx);
   const libId = ctx.settings.get('audiobookshelf').audiobookLibraryId;
   if (abs && libId && book.format === 'audiobook') void abs.scan(libId).catch(() => undefined);
+  // BookBandit watches the books folder too; an admin account can ask it to look now rather than at its next scan.
+  const bb = bookBanditClient(ctx);
+  if (bb && book.format === 'ebook') void bb.scan().catch(() => undefined);
   return placed;
 }
 
@@ -305,6 +314,33 @@ export async function syncAudiobookshelf(ctx: AppContext): Promise<{ books: numb
   return counts;
 }
 
+/** Mirrors BookBandit's catalog, then marks requested ebooks that showed up there as available. */
+export async function syncBookBandit(ctx: AppContext): Promise<{ books: number }> {
+  const bb = bookBanditClient(ctx);
+  if (!bb) throw new Error('BookBandit is not connected');
+  const list = await bb.books();
+  ctx.db.transaction((tx) => {
+    tx.delete(bookbanditItems).run();
+    list.forEach((b, position) => {
+      tx.insert(bookbanditItems).values({ bbId: b.id, title: b.title, author: b.author, year: b.year, hasCover: b.hasCover, position }).onConflictDoNothing().run();
+    });
+  });
+  const waiting = ctx.db.select().from(books).where(and(eq(books.format, 'ebook'), inArray(books.status, ['approved', 'downloading', 'failed']))).all();
+  for (const b of waiting) if (bookBanditMatch(ctx, b)) setBook(ctx, b.id, { status: 'available', error: null });
+  return { books: list.length };
+}
+
+/** The BookBandit book for a request, matched by title and author surname (BookBandit's list has no ISBNs). */
+export function bookBanditMatch(ctx: AppContext, b: Pick<BookRow, 'title' | 'author'>) {
+  const t = normTitle(b.title);
+  const surname = b.author ? normTitle(b.author).split(' ').pop() : null;
+  return ctx.db
+    .select()
+    .from(bookbanditItems)
+    .all()
+    .find((i) => normTitle(i.title) === t && (!surname || !i.author || normTitle(i.author).includes(surname)));
+}
+
 /** The Audiobookshelf item for a book, matched by ISBN or by title and author. */
 export function absMatch(ctx: AppContext, b: Pick<BookRow, 'title' | 'author' | 'isbn'>) {
   const items = ctx.db.select().from(absItems).where(eq(absItems.mediaType, 'book')).all();
@@ -320,6 +356,7 @@ export function annotate(ctx: AppContext, cards: BookCard[]) {
   return cards.map((c) => ({
     ...c,
     inAudiobookshelf: Boolean(absMatch(ctx, c)),
+    inBookBandit: Boolean(bookBanditMatch(ctx, c)),
     requests: Object.fromEntries(rows.filter((r) => r.workKey === c.workKey).map((r) => [r.format, { id: r.id, status: r.status }])) as Partial<Record<BookFormat, { id: number; status: string }>>,
   }));
 }
