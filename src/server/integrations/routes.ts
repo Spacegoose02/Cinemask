@@ -10,6 +10,7 @@ import { HttpError } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { mdblistClient, tmdbClient } from '../library/service.js';
 import { BingeBanditClient } from './bingebandit.js';
+import { BookBanditClient } from './bookbandit.js';
 import { JellyfinClient } from './jellyfin.js';
 import { EmbyClient } from './emby.js';
 import { PlexClient } from './plex.js';
@@ -27,7 +28,7 @@ export async function integrationRoutes(app: FastifyInstance) {
   };
 
   app.post('/api/integrations/:service/test', { config: { access: 'admin' } }, async (req) => {
-    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'emby', 'bingebandit', 'tmdb', 'mdblist', 'audiobookshelf', 'shelfmark', 'readmeabook', 'watchmask']) }), req.params);
+    const { service } = parse(z.object({ service: z.enum(['plex', 'jellyfin', 'emby', 'bingebandit', 'tmdb', 'mdblist', 'audiobookshelf', 'bookbandit', 'shelfmark', 'readmeabook', 'watchmask']) }), req.params);
     const result = await run(async () => {
       switch (service) {
         case 'plex': {
@@ -72,6 +73,13 @@ export async function integrationRoutes(app: FastifyInstance) {
           const s = ctx.settings.get('audiobookshelf');
           if (!s.url || !s.apiKey) throw new Error('Enter the Audiobookshelf URL and API token first');
           return new AudiobookshelfClient(s.url, s.apiKey).test();
+        }
+        case 'bookbandit': {
+          const s = ctx.settings.get('bookbandit');
+          if (!s.url || !s.username || !s.password) throw new Error('Enter the BookBandit address, username and password first');
+          const info = await new BookBanditClient(s.url, s.username, s.password).test();
+          // Reading the library works with any grown-up account; scans after imports need an admin.
+          return info.admin ? `Connected as ${s.username} (admin)` : `Connected as ${s.username}, but that account isn't an admin, so Cinemask can't ask for a scan after an import, and only sees books approved for it.`;
         }
         case 'shelfmark': {
           const s = ctx.settings.get('shelfmark');

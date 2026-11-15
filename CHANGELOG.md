@@ -4,6 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- **BookBandit as the ebook library.** Settings → Books has a BookBandit card: its address, an optional address for browser links, and a BookBandit account for Cinemask to sign in with (BookBandit has no API keys; the password is encrypted and never sent back to the browser, and the session token is kept in memory only). Books gets an **Ebooks** tab showing what's in BookBandit with covers and an Open in BookBandit link, synced hourly or with Sync with BookBandit. Search says "Ebook in BookBandit" and refuses a duplicate ebook request, a waiting ebook request is marked ready when the book turns up there, and an admin account lets Cinemask ask BookBandit to scan right after it imports an ebook. Settings → Health checks the connection.
+
 ## [0.36.1] - 2026-11-15
 
 ### Fixed

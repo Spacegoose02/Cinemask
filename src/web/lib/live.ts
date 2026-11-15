@@ -15,7 +15,7 @@ const TOPIC_QUERIES: Record<string, string[]> = {
   'manual-import': ['manual-import', 'downloads', 'download-count', 'files'],
   import: ['import', 'files', 'monitored-overview'],
   library: ['library', 'library-sections', 'library-labels', 'home-row', 'media', 'airing', 'calendar', 'duplicates', 'sync-status', 'lookup'],
-  books: ['book-requests', 'abs-library', 'books-search'],
+  books: ['book-requests', 'abs-library', 'bookbandit-library', 'books-search'],
   podcasts: ['podcasts-top', 'podcasts-search', 'abs-library'],
   health: ['health', 'health-summary'],
   system: ['health', 'health-summary'],

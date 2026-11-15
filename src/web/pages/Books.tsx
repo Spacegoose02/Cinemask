@@ -19,6 +19,7 @@ interface BookResult {
   year: number | null;
   coverId: number | null;
   inAudiobookshelf: boolean;
+  inBookBandit?: boolean;
   requests: Partial<Record<Format, { id: number; status: BookStatus }>>;
 }
 
@@ -44,6 +45,15 @@ interface AbsItem {
   title: string;
   author: string | null;
   cover: string;
+}
+
+interface BookBanditBook {
+  id: string;
+  title: string;
+  author: string | null;
+  year: number | null;
+  cover: string | null;
+  link: string | null;
 }
 
 interface Podcast {
@@ -77,6 +87,7 @@ const STATUS_STYLE: Record<BookStatus, string> = {
 
 const TABS = [
   { id: 'library', label: 'Audiobooks' },
+  { id: 'ebooks', label: 'Ebooks' },
   { id: 'find', label: 'Find books' },
   { id: 'requests', label: 'Requests' },
   { id: 'podcasts', label: 'Podcasts' },
@@ -116,6 +127,7 @@ export function BooksPage() {
         ))}
       </div>
       {tab === 'library' && <AbsLibrary type="book" />}
+      {tab === 'ebooks' && <BookBanditLibrary />}
       {tab === 'find' && <FindBooks />}
       {tab === 'requests' && <BookRequests />}
       {tab === 'podcasts' && <Podcasts />}
@@ -183,6 +195,77 @@ function AbsLibrary({ type }: { type: 'book' | 'podcast' }) {
   );
 }
 
+function BookBanditLibrary() {
+  const { me } = useAuth();
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState('');
+  const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const q = useQuery({ queryKey: ['bookbandit-library'], queryFn: () => api<{ connected: boolean; items: BookBanditBook[] }>('/api/books/bookbandit') });
+  const sync = async () => {
+    setMsg(null);
+    try {
+      const r = await api<{ books: number }>('/api/books/bookbandit/sync', { method: 'POST' });
+      setMsg({ kind: 'success', text: `Synced ${r.books} ebooks` });
+      await qc.invalidateQueries({ queryKey: ['bookbandit-library'] });
+    } catch (e) {
+      setMsg({ kind: 'error', text: (e as Error).message });
+    }
+  };
+  if (!q.data) return null;
+  if (!q.data.connected && !q.data.items.length) {
+    return (
+      <div className="card text-sm text-muted">
+        BookBandit isn't connected yet.{' '}
+        {hasRole(me, 'admin') ? (
+          <Link to="/settings/books" className="text-accent">
+            {t('Connect it in Settings → Books.')}
+          </Link>
+        ) : (
+          'Ask an admin to connect it.'
+        )}
+      </div>
+    );
+  }
+  const f = filter.trim().toLowerCase();
+  const items = q.data.items.filter((i) => !f || i.title.toLowerCase().includes(f) || i.author?.toLowerCase().includes(f));
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <input className="input max-w-xs" placeholder={`Filter ${q.data.items.length} ebooks`} value={filter} onChange={(e) => setFilter(e.target.value)} />
+        {hasRole(me, 'manager') && (
+          <button className="btn-secondary" onClick={sync}>
+            {t('Sync with BookBandit')}
+          </button>
+        )}
+      </div>
+      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      {!items.length && <div className="card text-sm text-muted">{t('Nothing here yet.')}</div>}
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-7">
+        {items.map((i) => {
+          const body = (
+            <>
+              <Cover src={poster(i.cover)} alt={i.title} />
+              <div className="truncate text-sm font-medium" title={i.title}>
+                {i.title}
+              </div>
+              {i.author && <div className="truncate text-xs text-muted">{i.author}</div>}
+            </>
+          );
+          return i.link ? (
+            <a key={i.id} href={i.link} target="_blank" rel="noopener noreferrer" className="block space-y-1" title={t('Open in BookBandit')}>
+              {body}
+            </a>
+          ) : (
+            <div key={i.id} className="space-y-1">
+              {body}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function FindBooks() {
   const qc = useQueryClient();
   const [input, setInput] = useState('');
@@ -210,6 +293,7 @@ function FindBooks() {
     const r = b.requests[format];
     const label = format === 'audiobook' ? 'Audiobook' : 'Ebook';
     if (format === 'audiobook' && b.inAudiobookshelf) return <span className="text-xs text-success">{t('Audiobook in library')}</span>;
+    if (format === 'ebook' && b.inBookBandit) return <span className="text-xs text-success">{t('Ebook in BookBandit')}</span>;
     if (r && r.status !== 'declined' && r.status !== 'failed') return <span className={`text-xs ${STATUS_STYLE[r.status]}`}>{`${label}: ${t(STATUS_LABEL[r.status]).toLowerCase()}`}</span>;
     return (
       <button className="btn-secondary px-2 py-1 text-xs" onClick={() => request(b, format)}>

@@ -1032,6 +1032,21 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       CREATE INDEX downloads_monitored_idx ON downloads(monitored_id);
     `,
   },
+  {
+    id: 38,
+    name: 'bookbandit items',
+    sql: `
+      CREATE TABLE bookbandit_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bb_id TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        author TEXT,
+        year INTEGER,
+        has_cover INTEGER NOT NULL DEFAULT 0,
+        position INTEGER NOT NULL DEFAULT 0
+      );
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

@@ -4,11 +4,11 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
 import { hasRole } from '../auth/guard.js';
-import { absItems, BOOK_FORMATS, BOOK_STATUSES, books } from '../db/schema.js';
+import { absItems, BOOK_FORMATS, BOOK_STATUSES, bookbanditItems, books } from '../db/schema.js';
 import { lookupPodcast, searchPodcasts, topPodcasts } from '../integrations/itunes.js';
 import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
-import { absClient, absMatch, annotate, getBook, openLibrary, startBookDownload, syncAudiobookshelf } from './service.js';
+import { absClient, absMatch, annotate, bookBanditClient, bookBanditMatch, getBook, openLibrary, startBookDownload, syncAudiobookshelf, syncBookBandit } from './service.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const workKey = z.string().regex(/^\/works\/OL\d+W$/, 'Not an Open Library work');
@@ -68,6 +68,7 @@ export async function bookRoutes(app: FastifyInstance) {
     }
     if (!work) throw badRequest('Could not find that book on Open Library');
     if (body.format === 'audiobook' && absMatch(ctx, work)) throw conflict('This audiobook is already in Audiobookshelf');
+    if (body.format === 'ebook' && bookBanditMatch(ctx, work)) throw conflict('This ebook is already in BookBandit');
     const values = {
       title: work.title.slice(0, 500),
       author: work.author?.slice(0, 300) ?? null,
@@ -182,6 +183,35 @@ export async function bookRoutes(app: FastifyInstance) {
     if (!abs) throw badRequest('Save the Audiobookshelf address and API token first');
     try {
       return (await abs.libraries()).map((l) => ({ id: l.id, name: l.name, mediaType: l.mediaType }));
+    } catch (err) {
+      throw upstream(err);
+    }
+  });
+
+  // ---------------- BookBandit library (ebooks) ----------------
+  app.get('/api/books/bookbandit', { config: { access: 'user' } }, async () => {
+    const s = ctx.settings.get('bookbandit');
+    const items = ctx.db.select().from(bookbanditItems).orderBy(asc(bookbanditItems.position)).all();
+    const web = (s.publicUrl || s.url).replace(/\/+$/, '');
+    return {
+      connected: Boolean(bookBanditClient(ctx)),
+      items: items.map((i) => ({
+        id: i.bbId,
+        title: i.title,
+        author: i.author,
+        year: i.year,
+        cover: i.hasCover ? `bookbandit:/api/books/${i.bbId}/cover` : null,
+        // BookBandit's own page for the book; its sign-in and content lock decide who can open it.
+        link: web ? `${web}/book/${i.bbId}` : null,
+      })),
+    };
+  });
+
+  app.post('/api/books/bookbandit/sync', { config: { access: 'manager' } }, async (req) => {
+    try {
+      const r = await syncBookBandit(ctx);
+      audit(ctx.db, req, 'bookbandit.synced', { details: r });
+      return r;
     } catch (err) {
       throw upstream(err);
     }

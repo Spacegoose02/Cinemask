@@ -12,7 +12,7 @@ A self-hosted media manager for families running Plex, Jellyfin or Emby. It does
 - Search, browse and **request** movies and shows, see what's already on Plex or Jellyfin, and follow your requests.
 - **Discover** by genre, network, streaming service, year, rating and language, with trending and popular rows.
 - A personal **home page** with rows you choose, a **calendar** of upcoming releases, **collections** and **lists**.
-- **Books**: request audiobooks and ebooks, browse your Audiobookshelf library, and find podcasts.
+- **Books**: request audiobooks and ebooks, browse your Audiobookshelf and BookBandit libraries, and find podcasts.
 - **Music**: find artists and albums on MusicBrainz and request them; follow an artist to get their new albums.
 - A **weekly email** of what arrived and what's coming, **Trakt** watchlist sync, and the everyday screens in Spanish, French, German and Dutch.
 - **Family ratings and reviews**, a "Family favorites" row and "Because you liked…" picks.

@@ -358,6 +358,20 @@ export const SETTINGS = {
     }),
     secrets: ['password'],
   },
+  /** BookBandit (github.com/Spacegoose02/bookbandit), the family's ebook library and reader. */
+  bookbandit: {
+    schema: z.object({
+      enabled: z.boolean().default(false),
+      /** Where Cinemask reaches it, e.g. http://bookbandit:8080 */
+      url: httpUrl.default(''),
+      /** The address people open in their browser, for "Open in BookBandit" links. Empty uses the address above. */
+      publicUrl: httpUrl.default(''),
+      /** A BookBandit grown-up account Cinemask signs in as. An admin's lets it ask for a library scan after imports. */
+      username: z.string().trim().max(40).regex(/^[\w.-]*$/, 'Letters, numbers, dots, dashes or underscores, as in BookBandit').default(''),
+      password: z.string().max(200).default(''),
+    }),
+    secrets: ['password'],
+  },
   readmeabook: {
     schema: z.object({
       enabled: z.boolean().default(false),
