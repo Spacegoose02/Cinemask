@@ -13,6 +13,7 @@ const SUMMARIES: Record<string, string> = {
   'POST /api/requests/{id}/decline': 'Decline a request (manager). Body: {"reason"?}.',
   'GET /api/downloads': 'Active downloads, or history with ?history=true (manager).',
   'GET /api/calendar': 'Upcoming releases for monitored titles. Query: start, end (YYYY-MM-DD, at most 100 days).',
+  'GET /api/storage/disks': 'Size and free space of each media folder\'s disk (manager). Cheap enough to poll.',
   'GET /api/monitored': 'Monitored movies and shows (manager).',
   'GET /api/books': 'Book and audiobook requests. Query: status.',
   'POST /api/books': 'Request a book. Body: {"workKey":"/works/OL…W","format":"audiobook"|"ebook"}.',
