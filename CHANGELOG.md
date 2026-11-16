@@ -4,6 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- **`GET /api/storage/disks` for dashboards.** Returns only each media folder's disk size and free space. `/api/storage` works out the size of every movie and episode file, which on a big library holds the whole server up for several seconds; a dashboard polling it made other requests (the health badge, movie night) time out.
+
 ## [0.37.0] - 2026-11-15
 
 ### Added

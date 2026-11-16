@@ -28,6 +28,13 @@ export async function storageRoutes(app: FastifyInstance) {
     };
   });
 
+  /**
+   * Just how full each media folder's disk is. Cheap (one statfs per folder), unlike /api/storage,
+   * which stats every movie and episode file and can hold the server up for seconds on a big library.
+   * For dashboards that only want the disk bars.
+   */
+  app.get('/api/storage/disks', { config: { access: 'manager' } }, async () => ({ disks: diskUse(ctx) }));
+
   /** Removes titles' files (into the recycle bin) and stops monitoring them. */
   app.post('/api/storage/free-up', { config: { access: 'manager' } }, async (req) => {
     const { ids } = parse(z.object({ ids: z.array(z.number().int().positive()).min(1).max(200) }), req.body);

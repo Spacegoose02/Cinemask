@@ -137,6 +137,8 @@ describe('storage manager', () => {
     const s = (await owner.req('GET', '/api/storage')).json() as { suggestions: { id: number; why: string }[]; largest: { title: string }[]; used: number };
     expect(s.largest.map((x) => x.title)).toEqual(['Kept One', 'Old Watched', 'Never Watched']);
     expect(s.used).toBe(9000);
+    const d = (await owner.req('GET', '/api/storage/disks')).json() as { disks: { path: string; total: number | null }[] };
+    expect(d.disks.find((x) => x.path === movies)?.total).toBeGreaterThan(0);
     expect(s.suggestions.map((x) => x.id)).toEqual([old.id, old.id + 1]);
     expect(s.suggestions[0]!.why).toMatch(/Last watched 300 days ago/);
 
@@ -189,6 +191,7 @@ describe('storage manager', () => {
     const c = new Client(t.app);
     await c.login('viewer', u.password);
     expect((await c.req('GET', '/api/storage')).statusCode).toBe(403);
+    expect((await c.req('GET', '/api/storage/disks')).statusCode).toBe(403);
     expect((await c.req('POST', '/api/storage/free-up', { ids: [1] })).statusCode).toBe(403);
     expect((await c.req('POST', '/api/storage/recycle/1/restore', {})).statusCode).toBe(403);
     expect((await c.req('PATCH', '/api/monitored/1', { keep: true })).statusCode).toBe(403);
