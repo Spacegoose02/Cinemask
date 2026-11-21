@@ -1047,6 +1047,11 @@ export const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    id: 39,
+    name: 'invite bingebandit accounts',
+    sql: `ALTER TABLE invites ADD COLUMN bingebandit_account INTEGER NOT NULL DEFAULT 0;`,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.id;

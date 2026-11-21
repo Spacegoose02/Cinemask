@@ -14,6 +14,7 @@ interface Invite {
   expiresAt: number | null;
   plexShare: boolean;
   jellyfinAccount: boolean;
+  bingebanditAccount: boolean;
   path: string;
   url: string | null;
   active: boolean;
@@ -24,8 +25,8 @@ interface Invite {
 export function Invites() {
   const qc = useQueryClient();
   const { me } = useAuth();
-  const q = useQuery({ queryKey: ['invites'], queryFn: () => api<{ invites: Invite[]; plex: boolean; jellyfin: boolean }>('/api/invites') });
-  const [form, setForm] = useState({ label: '', role: 'user', maxAge: 0, uses: 1, expiresInDays: 7, plexShare: false, plexSections: [] as string[], jellyfinAccount: false });
+  const q = useQuery({ queryKey: ['invites'], queryFn: () => api<{ invites: Invite[]; plex: boolean; jellyfin: boolean; bingebandit: boolean }>('/api/invites') });
+  const [form, setForm] = useState({ label: '', role: 'user', maxAge: 0, uses: 1, expiresInDays: 7, plexShare: false, plexSections: [] as string[], jellyfinAccount: false, bingebanditAccount: false });
   const libs = useQuery({ queryKey: ['invites', 'plex-libraries'], queryFn: () => api<{ libraries: { key: string; title: string }[] }>('/api/invites/plex-libraries'), enabled: form.plexShare });
   const [error, setError] = useState('');
   const [copied, setCopied] = useState<number | null>(null);
@@ -35,7 +36,7 @@ export function Invites() {
     setError('');
     try {
       const inv = await api<Invite>('/api/invites', {
-        body: { label: form.label || undefined, role: form.role, maxAge: form.role === 'user' && form.maxAge ? form.maxAge : null, uses: form.uses || null, expiresInDays: form.expiresInDays || null, plexShare: form.plexShare, plexSections: form.plexShare && form.plexSections.length ? form.plexSections : null, jellyfinAccount: form.jellyfinAccount },
+        body: { label: form.label || undefined, role: form.role, maxAge: form.role === 'user' && form.maxAge ? form.maxAge : null, uses: form.uses || null, expiresInDays: form.expiresInDays || null, plexShare: form.plexShare, plexSections: form.plexShare && form.plexSections.length ? form.plexSections : null, jellyfinAccount: form.jellyfinAccount, bingebanditAccount: form.bingebanditAccount },
       });
       await navigator.clipboard?.writeText(link(inv)).then(() => setCopied(inv.id)).catch(() => undefined);
       await qc.invalidateQueries({ queryKey: ['invites'] });
@@ -53,7 +54,7 @@ export function Invites() {
     <section className="card space-y-4">
       <div>
         <h2 className="font-semibold">Invite links</h2>
-        <p className="text-sm text-muted">Send someone a link and they make their own account, with a password or with Plex. You choose their role and age limit, and whether they also get the Plex server shared or a Jellyfin account.</p>
+        <p className="text-sm text-muted">Send someone a link and they make their own account, with a password or with Plex. You choose their role and age limit, and whether they also get the Plex server shared or a Jellyfin or BingeBandit account.</p>
       </div>
       {error && <Alert>{error}</Alert>}
       <div className="grid gap-3 sm:grid-cols-3">
@@ -108,6 +109,7 @@ export function Invites() {
         </div>
       )}
       {q.data?.jellyfin && <Toggle label="Also make a Jellyfin account with the same username and password" checked={form.jellyfinAccount} onChange={(v) => setForm({ ...form, jellyfinAccount: v })} />}
+      {q.data?.bingebandit && <Toggle label="Also make a BingeBandit account with the same username and password" checked={form.bingebanditAccount} onChange={(v) => setForm({ ...form, bingebanditAccount: v })} />}
       <button className="btn-primary" onClick={create}>
         Make an invite link
       </button>

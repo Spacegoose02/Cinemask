@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
 import { inviteUses, invites, users, type Role } from '../db/schema.js';
+import { BingeBanditClient } from '../integrations/bingebandit.js';
 import { JellyfinClient } from '../integrations/jellyfin.js';
 import { PlexClient } from '../integrations/plex.js';
 import * as plextv from '../integrations/plextv.js';
@@ -21,7 +22,7 @@ import { createSession } from './sessions.js';
  * Invite links, in the spirit of Wizarr: an admin makes a link, and whoever opens it makes their
  * own account, either with a username and password or by signing in with Plex. The invite can set
  * their role and kids age limit, share the Plex server with their Plex account, and make them a
- * Jellyfin account with the same name and password. A link can be single-use or shared, and expire.
+ * Jellyfin and/or BingeBandit account with the same name and password. A link can be single-use or shared, and expire.
  */
 type InviteRow = typeof invites.$inferSelect;
 
@@ -53,6 +54,11 @@ const jellyfinReady = (app: FastifyInstance) => {
   return Boolean(j.enabled && j.url && j.apiKey);
 };
 
+const bingebanditReady = (app: FastifyInstance) => {
+  const b = app.ctx.settings.get('bingebandit');
+  return Boolean(b.enabled && b.url && b.apiKey);
+};
+
 function uniqueUsername(app: FastifyInstance, wanted: string): string {
   const base = wanted.replace(/[^a-zA-Z0-9._@-]/g, '').slice(0, 56) || 'user';
   let name = base.length >= 2 ? base : `${base}user`;
@@ -80,6 +86,7 @@ export async function inviteRoutes(app: FastifyInstance) {
       plexShare: r.plexShare,
       plexSections: r.plexSections ? (JSON.parse(r.plexSections) as string[]) : null,
       jellyfinAccount: r.jellyfinAccount,
+      bingebanditAccount: r.bingebanditAccount,
       createdAt: r.createdAt,
       path: `/invite/${code}`,
       url: base ? `${base}/invite/${code}` : null,
@@ -93,6 +100,7 @@ export async function inviteRoutes(app: FastifyInstance) {
     invites: ctx.db.select().from(invites).orderBy(desc(invites.createdAt)).all().map(view),
     plex: plexReady(app),
     jellyfin: jellyfinReady(app),
+    bingebandit: bingebanditReady(app),
   }));
 
   /** The Plex libraries an invite can share. */
@@ -115,6 +123,7 @@ export async function inviteRoutes(app: FastifyInstance) {
         plexShare: z.boolean().default(false),
         plexSections: z.array(z.string().regex(/^\d{1,10}$/)).max(50).nullable().default(null),
         jellyfinAccount: z.boolean().default(false),
+        bingebanditAccount: z.boolean().default(false),
       }),
       req.body,
     );
@@ -122,6 +131,7 @@ export async function inviteRoutes(app: FastifyInstance) {
     if (b.role === 'admin' && !req.user!.isOwner) throw forbidden('Only the owner can invite admins');
     if (b.plexShare && !plexReady(app)) throw badRequest('Connect Plex in Settings → Media servers first');
     if (b.jellyfinAccount && !jellyfinReady(app)) throw badRequest('Connect Jellyfin in Settings → Media servers first');
+    if (b.bingebanditAccount && !bingebanditReady(app)) throw badRequest('Connect BingeBandit in Settings → Media servers first');
     const code = randomToken(16);
     const row = ctx.db
       .insert(invites)
@@ -137,12 +147,13 @@ export async function inviteRoutes(app: FastifyInstance) {
         plexShare: b.plexShare,
         plexSections: b.plexShare && b.plexSections ? JSON.stringify(b.plexSections) : null,
         jellyfinAccount: b.jellyfinAccount,
+        bingebanditAccount: b.bingebanditAccount,
         createdBy: req.user!.id,
         createdAt: Date.now(),
       })
       .returning()
       .get();
-    audit(ctx.db, req, 'invite.created', { target: b.label ?? `#${row.id}`, details: { role: b.role, uses: b.uses, plex: b.plexShare, jellyfin: b.jellyfinAccount } });
+    audit(ctx.db, req, 'invite.created', { target: b.label ?? `#${row.id}`, details: { role: b.role, uses: b.uses, plex: b.plexShare, jellyfin: b.jellyfinAccount, bingebandit: b.bingebanditAccount } });
     return view(row);
   });
 
@@ -170,6 +181,7 @@ export async function inviteRoutes(app: FastifyInstance) {
       plex: plexReady(app),
       plexShare: row.plexShare,
       jellyfin: row.jellyfinAccount,
+      bingebandit: row.bingebanditAccount,
     };
   });
 
@@ -189,6 +201,15 @@ export async function inviteRoutes(app: FastifyInstance) {
         ctx.db.update(users).set({ jellyfinUserId: id }).where(eq(users.id, user.id)).run();
       } catch (err) {
         notes.push(`Jellyfin account: ${(err as Error).message}`);
+      }
+    }
+    // Always a regular account there, whatever role the invite gives here.
+    if (row.bingebanditAccount && extras.password && bingebanditReady(app)) {
+      const b = ctx.settings.get('bingebandit');
+      try {
+        await new BingeBanditClient(b.url, b.apiKey).createUser(user.username, extras.password);
+      } catch (err) {
+        notes.push(`BingeBandit account: ${(err as Error).message}`);
       }
     }
     if (row.plexShare && extras.plexInvitee && plexReady(app)) {

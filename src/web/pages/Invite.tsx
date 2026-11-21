@@ -13,6 +13,7 @@ interface InviteInfo {
   plex?: boolean;
   plexShare?: boolean;
   jellyfin?: boolean;
+  bingebandit?: boolean;
 }
 
 /** /invite/:code — someone with an invite link makes their own account. */
@@ -109,6 +110,7 @@ export function InvitePage() {
                   Make my account
                 </button>
                 {d.jellyfin && <p className="hint">You'll get a Jellyfin account with the same username and password.</p>}
+                {d.bingebandit && <p className="hint">You'll get a BingeBandit account with the same username and password.</p>}
               </form>
             )}
           </>
