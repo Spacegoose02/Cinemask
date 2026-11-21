@@ -112,6 +112,21 @@ export class BingeBanditClient implements MediaServerClient {
     return { name: health.name || 'BingeBandit', version: health.version ?? '', user: me.username, admin: me.isAdmin };
   }
 
+  /**
+   * Makes a regular (never admin) BingeBandit account and returns its id. Needs an admin's key.
+   * BingeBandit answers 409 when the username is taken.
+   */
+  async createUser(username: string, password: string): Promise<number> {
+    let res: Response;
+    try {
+      res = await this.send('POST', '/api/admin/users', JSON.stringify({ username, password, isAdmin: false }), 'application/json');
+    } catch (err) {
+      if (err instanceof IntegrationError && err.status === 409) throw new IntegrationError('BingeBandit', 'that username is already taken there', 409);
+      throw err;
+    }
+    return ((await res.json()) as { id: number }).id;
+  }
+
   /** Scans every library for new files. Needs an admin's key. */
   async refresh() {
     await this.send('POST', '/api/admin/scan');

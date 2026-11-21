@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
-import { fakeFetch, JELLYFIN, PLEX } from './fakes.js';
+import { BINGEBANDIT, fakeFetch, JELLYFIN, PLEX } from './fakes.js';
 import { users } from '../src/server/db/schema.js';
 import { eq } from 'drizzle-orm';
 
@@ -9,14 +9,22 @@ describe('invite links', () => {
   let owner: Client;
   let shared: { url: string; body: string }[] = [];
   let jfCreated: string[] = [];
+  let bbCreated: { body: string; auth: string }[] = [];
   beforeEach(async () => {
     t = await makeApp();
     owner = await setupOwner(t.app);
     shared = [];
     jfCreated = [];
+    bbCreated = [];
     fakeFetch({
       [`${PLEX}/library/sections`]: () => ({ MediaContainer: { Directory: [{ key: '1', type: 'movie', title: 'Movies' }, { key: '2', type: 'show', title: 'TV' }, { key: '3', type: 'artist', title: 'Music' }] } }),
       [`${JELLYFIN}/Users/New`]: (_u: URL, init?: RequestInit) => (jfCreated.push(String(init?.body)), { Id: 'jf-new' }),
+      [`${BINGEBANDIT}/api/admin/users`]: (_u: URL, init?: RequestInit) => {
+        const body = String(init?.body);
+        bbCreated.push({ body, auth: String(new Headers(init?.headers).get('authorization')) });
+        if (JSON.parse(body).username === 'taken') return new Response('{"error":"that username is taken"}', { status: 409 });
+        return new Response(JSON.stringify({ id: 9, username: JSON.parse(body).username, isAdmin: false }), { status: 201 });
+      },
       'https://plex.tv/api/v2/pins': (u: URL) => (u.pathname.endsWith('/pins') ? { id: 77, code: 'pin-code' } : { authToken: 'friend-token' }),
       'https://plex.tv/api/v2/user': () => ({ id: 4242, uuid: 'u', username: 'grandma', title: 'Grandma', email: 'grandma@example.com' }),
       'https://plex.tv/api/servers/srv-1': () => new Response('<MediaContainer><Server machineIdentifier="srv-1"><Section id="901" key="1" title="Movies"/><Section id="902" key="2" title="TV"/></Server></MediaContainer>'),
@@ -24,6 +32,7 @@ describe('invite links', () => {
     });
     await owner.req('PUT', '/api/settings/plex', { enabled: true, url: PLEX, token: 'owner-token', machineId: 'srv-1' });
     await owner.req('PUT', '/api/settings/jellyfin', { enabled: true, url: JELLYFIN, apiKey: 'jf-key' });
+    await owner.req('PUT', '/api/settings/bingebandit', { enabled: true, url: BINGEBANDIT, apiKey: 'bb-key' });
   });
   afterEach(async () => {
     vi.unstubAllGlobals();
@@ -52,6 +61,46 @@ describe('invite links', () => {
     expect((await new Client(t.app).req('GET', `/api/invites/open/${code}`)).json().valid).toBe(false);
     expect((await new Client(t.app).req('POST', `/api/invites/open/${code}`, { username: 'other', password: 'a-long-enough-password' })).statusCode).toBe(410);
     expect((await owner.req('GET', '/api/invites')).json().invites[0]).toMatchObject({ used: 1, usesLeft: 0, active: false, joined: [expect.objectContaining({ username: 'kiddo' })] });
+  });
+
+  it('makes a regular BingeBandit account with the same name and password, even for an admin invite', async () => {
+    expect((await owner.req('GET', '/api/invites')).json().bingebandit).toBe(true);
+    const inv = (await owner.req('POST', '/api/invites', { role: 'admin', uses: 1, bingebanditAccount: true })).json();
+    expect(inv.bingebanditAccount).toBe(true);
+    const code = inv.path.split('/').pop();
+    const guest = new Client(t.app);
+    expect((await guest.req('GET', `/api/invites/open/${code}`)).json()).toMatchObject({ valid: true, bingebandit: true, jellyfin: false });
+    expect((await guest.req('POST', `/api/invites/open/${code}`, { username: 'cousin', password: 'a-long-enough-password' })).json()).toEqual({ ok: true, notes: [] });
+    expect(bbCreated).toHaveLength(1);
+    expect(JSON.parse(bbCreated[0]!.body)).toEqual({ username: 'cousin', password: 'a-long-enough-password', isAdmin: false });
+    expect(bbCreated[0]!.auth).toBe('Bearer bb-key');
+    // Nothing but the invite was asked for: no Jellyfin account.
+    expect(jfCreated).toHaveLength(0);
+  });
+
+  it('still makes the Cinemask account when BingeBandit refuses, and tells the admin without leaking the password', async () => {
+    const inv = (await owner.req('POST', '/api/invites', { uses: 1, bingebanditAccount: true })).json();
+    const code = inv.path.split('/').pop();
+    const res = (await new Client(t.app).req('POST', `/api/invites/open/${code}`, { username: 'taken', password: 'a-long-enough-password' })).json();
+    expect(res).toMatchObject({ ok: true, notes: [expect.stringMatching(/BingeBandit account: .*already taken/)] });
+    const listed = JSON.stringify((await owner.req('GET', '/api/invites')).json());
+    expect(listed).toContain('already taken');
+    expect(listed).not.toContain('a-long-enough-password');
+    expect(listed).not.toContain('bb-key');
+  });
+
+  it('refuses a BingeBandit invite until BingeBandit is connected, and only makes one for password sign-ups', async () => {
+    await owner.req('PUT', '/api/settings/bingebandit', { enabled: false, url: BINGEBANDIT, apiKey: 'bb-key' });
+    expect((await owner.req('POST', '/api/invites', { bingebanditAccount: true })).statusCode).toBe(400);
+    expect((await owner.req('GET', '/api/invites')).json().bingebandit).toBe(false);
+    await owner.req('PUT', '/api/settings/bingebandit', { enabled: true, url: BINGEBANDIT, apiKey: 'bb-key' });
+    const inv = (await owner.req('POST', '/api/invites', { uses: null, bingebanditAccount: true })).json();
+    const code = inv.path.split('/').pop();
+    // Joining with Plex gives no password to copy, so no BingeBandit account is made.
+    const guest = new Client(t.app);
+    const start = (await guest.req('POST', `/api/invites/open/${code}/plex`, {})).json();
+    expect((await guest.req('POST', '/api/invites/plex/poll', { state: start.state })).json()).toMatchObject({ done: true, ok: true });
+    expect(bbCreated).toHaveLength(0);
   });
 
   it('joins with Plex and shares the chosen Plex libraries', async () => {

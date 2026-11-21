@@ -73,6 +73,8 @@ export const invites = sqliteTable('invites', {
   plexSections: text('plex_sections'),
   /** Also make a Jellyfin account with the same name and password. */
   jellyfinAccount: integer('jellyfin_account', { mode: 'boolean' }).notNull().default(false),
+  /** Also make a BingeBandit account (never an admin) with the same name and password. */
+  bingebanditAccount: integer('bingebandit_account', { mode: 'boolean' }).notNull().default(false),
   createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: integer('created_at').notNull(),
 });
