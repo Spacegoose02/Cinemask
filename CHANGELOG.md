@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-11-21
+
+### Added
+- **Invite links can also make a BingeBandit account.** Like the Jellyfin option, an invite can now create a BingeBandit account with the same username and password, using the admin API key from Settings. It is always a regular account, never an admin, and only for password sign-ups. If BingeBandit refuses, the Cinemask account is still made and the reason is noted on the invite.
+
 ## [0.38.0] - 2026-11-16
 
 ### Added
