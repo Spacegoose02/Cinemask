@@ -112,6 +112,11 @@ export function Layout({ children }: { children: ReactNode }) {
         </NavLink>
       )}
       {isManager && (
+        <NavLink to="/missing" className={linkClass}>
+          {t('Missing')}
+        </NavLink>
+      )}
+      {isManager && (
         <NavLink to="/downloads" className={(p) => `${linkClass(p)} flex items-center`}>
           {t('Downloads')} {badge(dlCount.data?.active)}
         </NavLink>

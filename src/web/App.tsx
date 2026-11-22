@@ -26,6 +26,7 @@ import { HomePage } from './pages/Home';
 import { LibraryPage } from './pages/Library';
 import { LoginPage } from './pages/Login';
 import { MediaDetailPage, type MediaDetail } from './pages/MediaDetail';
+import { MissingPage } from './pages/Missing';
 import { MonitoredPage } from './pages/Monitored';
 import { SearchPage } from './pages/Search';
 import { IssuesPage } from './pages/Issues';
@@ -109,6 +110,14 @@ export function App() {
           element={
             <RequireRole role="manager">
               <MonitoredPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/missing"
+          element={
+            <RequireRole role="manager">
+              <MissingPage />
             </RequireRole>
           }
         />

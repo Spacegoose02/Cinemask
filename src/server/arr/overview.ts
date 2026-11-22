@@ -177,3 +177,95 @@ export function airing(ctx: AppContext, days: number): { next: AiringEpisode[]; 
   for (const r of rows.filter((r) => r.airDate! < day).sort((a, b) => order(b, a))) if (!recent.has(r.tmdbId)) recent.set(r.tmdbId, toEpisode(r));
   return { next: [...next.values()], recent: [...recent.values()] };
 }
+
+export interface MissingEpisode {
+  season: number;
+  episode: number;
+  title: string | null;
+  airDate: string;
+}
+
+export interface MissingShow {
+  id: number;
+  tmdbId: number;
+  title: string;
+  year: number | null;
+  posterPath: string | null;
+  profile: string | null;
+  /** Monitored episodes that have aired, and the ones of them with no file, newest first. */
+  aired: number;
+  episodes: MissingEpisode[];
+}
+
+export interface MissingMovie {
+  id: number;
+  tmdbId: number;
+  title: string;
+  year: number | null;
+  posterPath: string | null;
+  profile: string | null;
+  /** The earliest release date that has passed (cinema, digital or disc). */
+  released: string | null;
+}
+
+/**
+ * Wanted → Missing, as Sonarr and Radarr have it: every monitored episode that has aired and has no
+ * file (here or on Plex/Jellyfin), grouped by show, and every monitored movie that is out with no
+ * file. Unmonitored titles and episodes are left out. Specials only count when they're monitored,
+ * which the season choice never does on its own. Shows with the most missing come first.
+ */
+export function missingOverview(ctx: AppContext): { shows: MissingShow[]; movies: MissingMovie[] } {
+  const day = today();
+  const profiles = new Map(listProfiles(ctx).map((p) => [p.id, p.name]));
+  const rows = ctx.db
+    .select({
+      id: monitored.id,
+      tmdbId: monitored.tmdbId,
+      title: monitored.title,
+      year: monitored.year,
+      profileId: monitored.profileId,
+      posterPath: media.posterPath,
+      season: monitoredEpisodes.season,
+      episode: monitoredEpisodes.episode,
+      episodeTitle: monitoredEpisodes.title,
+      airDate: monitoredEpisodes.airDate,
+      filePath: monitoredEpisodes.filePath,
+    })
+    .from(monitoredEpisodes)
+    .innerJoin(monitored, eq(monitored.id, monitoredEpisodes.monitoredId))
+    .leftJoin(media, and(eq(media.kind, 'show'), eq(media.tmdbId, monitored.tmdbId)))
+    .where(and(eq(monitored.kind, 'show'), eq(monitored.monitored, true), eq(monitoredEpisodes.monitored, true), lte(monitoredEpisodes.airDate, day)))
+    .all();
+  const onServer = episodesOnServerFor(ctx, rows.map((r) => r.tmdbId));
+  const shows = new Map<number, MissingShow>();
+  for (const r of rows) {
+    let show = shows.get(r.id);
+    if (!show) {
+      show = { id: r.id, tmdbId: r.tmdbId, title: r.title, year: r.year, posterPath: r.posterPath ?? null, profile: profiles.get(r.profileId) ?? null, aired: 0, episodes: [] };
+      shows.set(r.id, show);
+    }
+    show.aired++;
+    if (r.filePath || onServer.get(r.tmdbId)?.has(`${r.season}:${r.episode}`)) continue;
+    show.episodes.push({ season: r.season, episode: r.episode, title: r.episodeTitle, airDate: r.airDate! });
+  }
+  const missingShows = [...shows.values()]
+    .filter((s) => s.episodes.length)
+    .map((s) => ({ ...s, episodes: s.episodes.sort((a, b) => b.airDate.localeCompare(a.airDate) || b.season - a.season || b.episode - a.episode) }))
+    .sort((a, b) => b.episodes.length - a.episodes.length || a.title.localeCompare(b.title));
+
+  const released = new Map(
+    ctx.db
+      .select({ id: monitored.id, releaseDate: media.releaseDate, digitalRelease: media.digitalRelease, physicalRelease: media.physicalRelease })
+      .from(monitored)
+      .leftJoin(media, and(eq(media.kind, monitored.kind), eq(media.tmdbId, monitored.tmdbId)))
+      .where(eq(monitored.kind, 'movie'))
+      .all()
+      .map((r) => [r.id, [r.releaseDate, r.digitalRelease, r.physicalRelease].filter((d): d is string => Boolean(d) && d! <= day).sort()[0] ?? null]),
+  );
+  // Same rule as the Monitored page, so the two always agree on which movies are missing.
+  const movies = monitoredOverview(ctx)
+    .filter((r) => r.kind === 'movie' && r.monitored && r.status === 'missing')
+    .map((r) => ({ id: r.id, tmdbId: r.tmdbId, title: r.title, year: r.year, posterPath: r.posterPath, profile: r.profile, released: released.get(r.id) ?? null }))
+    .sort((a, b) => (b.released ?? '').localeCompare(a.released ?? '') || a.title.localeCompare(b.title));
+  return { shows: missingShows, movies };
+}

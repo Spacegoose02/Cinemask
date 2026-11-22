@@ -7,14 +7,14 @@ import { useEffect, useState } from 'react';
  */
 const TOPIC_QUERIES: Record<string, string[]> = {
   requests: ['requests', 'request-count', 'request-quota', 'watchlist-me', 'home-row', 'media', 'lookup', 'activity', 'search', 'discover'],
-  downloads: ['downloads', 'download-count', 'music-requests', 'files', 'file-details', 'issues', 'issue-count', 'monitored-overview', 'activity', 'manual-import', 'media', 'calendar', 'import'],
+  downloads: ['downloads', 'download-count', 'music-requests', 'files', 'file-details', 'issues', 'issue-count', 'monitored-overview', 'monitored-missing', 'activity', 'manual-import', 'media', 'calendar', 'import'],
   // The tracker moved progress bars along and nothing finished: only what shows progress.
   'download-progress': ['downloads', 'download-count', 'requests'],
-  monitored: ['storage', 'monitored-overview', 'files', 'media', 'calendar', 'airing', 'downloads', 'download-count', 'lookup'],
-  files: ['storage', 'files', 'file-details', 'media', 'duplicates', 'rename', 'monitored-overview'],
+  monitored: ['storage', 'monitored-overview', 'monitored-missing', 'files', 'media', 'calendar', 'airing', 'downloads', 'download-count', 'lookup'],
+  files: ['storage', 'files', 'file-details', 'media', 'duplicates', 'rename', 'monitored-overview', 'monitored-missing'],
   'manual-import': ['manual-import', 'downloads', 'download-count', 'files'],
-  import: ['import', 'files', 'monitored-overview'],
-  library: ['library', 'library-sections', 'library-labels', 'home-row', 'media', 'airing', 'calendar', 'duplicates', 'sync-status', 'lookup'],
+  import: ['import', 'files', 'monitored-overview', 'monitored-missing'],
+  library: ['library', 'monitored-missing', 'library-sections', 'library-labels', 'home-row', 'media', 'airing', 'calendar', 'duplicates', 'sync-status', 'lookup'],
   books: ['book-requests', 'abs-library', 'bookbandit-library', 'books-search'],
   podcasts: ['podcasts-top', 'podcasts-search', 'abs-library'],
   health: ['health', 'health-summary'],
@@ -43,7 +43,7 @@ const TOPIC_QUERIES: Record<string, string[]> = {
   games: ['leaderboard', 'badges'],
   issues: ['issues', 'issue-count', 'title-issues'],
   watchlist: ['watchlist-me'],
-  storage: ['storage', 'files', 'monitored-overview'],
+  storage: ['storage', 'files', 'monitored-overview', 'monitored-missing'],
   watchmask: ['watchmask-lists', 'watchmask-member'],
   // Saving the Watchmask address or token changes which lists exist.
   settings: ['watchmask-lists', 'watchmask-member'],

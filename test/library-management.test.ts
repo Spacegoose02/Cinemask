@@ -231,6 +231,42 @@ describe('file management, calendar and health', () => {
     expect(o.Paddington).toMatchObject({ profile: expect.any(String), ended: false, nextAir: null });
   });
 
+  it('lists missing episodes by show and missing movies, like Wanted → Missing', async () => {
+    const show = await addShowWithFiles();
+    await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false });
+    await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 555, search: false });
+    expect((await kid.req('GET', '/api/monitored/missing')).statusCode).toBe(403);
+    const missing = () => owner.req('GET', '/api/monitored/missing').then((r) => r.json());
+    // Everything of Bluey is on disk; Paddington is out with no file; Future Film isn't out yet.
+    let m = await missing();
+    expect(m.shows).toEqual([]);
+    expect(m.movies).toEqual([expect.objectContaining({ title: 'Paddington', released: '2014-11-28' })]);
+
+    const sqlite = t.app.ctx.dbHandle.sqlite;
+    sqlite.prepare('UPDATE monitored_episodes SET file_path = NULL WHERE monitored_id = ? AND episode IN (1, 2)').run(show);
+    m = await missing();
+    expect(m.shows).toEqual([expect.objectContaining({ id: show, title: 'Bluey', aired: 3 })]);
+    expect(m.shows[0].episodes.map((e: { season: number; episode: number }) => `${e.season}x${e.episode}`).sort()).toEqual(['1x1', '1x2']);
+
+    // An unmonitored episode, one on a media server, and one that hasn't aired don't count.
+    sqlite.prepare('UPDATE monitored_episodes SET monitored = 0 WHERE monitored_id = ? AND episode = 2').run(show);
+    const tmdbId = (sqlite.prepare('SELECT tmdb_id FROM monitored WHERE id = ?').get(show) as { tmdb_id: number }).tmdb_id;
+    const item = sqlite.prepare("INSERT INTO library_items (server, external_key, kind, title, tmdb_id) VALUES ('bingebandit', 'bb-1', 'show', 'Bluey', ?)").run(tmdbId).lastInsertRowid;
+    sqlite.prepare('INSERT INTO library_episodes (library_item_id, season, episode) VALUES (?, 1, 1)').run(item);
+    expect((await missing()).shows).toEqual([]);
+    sqlite.prepare('DELETE FROM library_items WHERE id = ?').run(item);
+    sqlite.prepare("UPDATE monitored_episodes SET air_date = '2999-01-01' WHERE monitored_id = ? AND episode = 1").run(show);
+    expect((await missing()).shows).toEqual([]);
+
+    // Unmonitored titles are left out altogether.
+    sqlite.prepare("UPDATE monitored_episodes SET air_date = '2018-10-01' WHERE monitored_id = ? AND episode = 1").run(show);
+    expect((await missing()).shows).toHaveLength(1);
+    await owner.req('PATCH', `/api/monitored/${show}`, { monitored: false });
+    const paddington = (sqlite.prepare('SELECT id FROM monitored WHERE tmdb_id = 116149').get() as { id: number }).id;
+    await owner.req('PATCH', `/api/monitored/${paddington}`, { monitored: false });
+    expect(await missing()).toEqual({ shows: [], movies: [] });
+  });
+
   it('lists each followed show\'s next and latest episode for anyone', async () => {
     const show = await addShowWithFiles();
     const day = (offset: number) => new Date(Date.now() + offset * 864e5).toISOString().slice(0, 10);

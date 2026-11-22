@@ -13,6 +13,7 @@ const messages: Record<string, string> = {
   "Movie nights": "Filmavonden",
   "Games": "Spellen",
   "Wrapped": "Terugblik",
+  "Missing": "Ontbrekend",
   "Monitored": "Gevolgd",
   "Downloads": "Downloads",
   "Now playing": "Speelt nu",
