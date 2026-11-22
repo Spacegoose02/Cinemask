@@ -163,6 +163,9 @@ export function MonitoredPage() {
         <button className="btn-secondary" onClick={() => void run(() => searchMissing('movie'))}>
           Search all missing movies
         </button>
+        <Link className="btn-secondary" to="/missing">
+          See every missing episode and movie
+        </Link>
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm bg-success" /> Complete, still airing</span>

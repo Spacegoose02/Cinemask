@@ -49,6 +49,9 @@ describe('API keys', () => {
   });
 
   it('never reach account, key, settings or user management routes, on any route', async () => {
+    // Every route runs, and some look things up online (Open Library trending, Apple's top podcasts). A slow
+    // outside service made this time out on CI, so nothing leaves the machine.
+    fakeFetch({});
     for (const r of t.app.apiRoutes) {
       const res = await withKey(adminKey, r.method, fill(r.url), r.method === 'GET' ? undefined : {});
       if (!r.apiKey) expect(res.statusCode, `${r.method} ${r.url}`).toBe(403);

@@ -29,7 +29,7 @@ import { assertRoot, linkDestinations, listRoots } from './roots.js';
 import { bulkSearchRunning, missingTitles, searchAllMissing } from './rss.js';
 import { sanitizeSegment } from './naming.js';
 import { moveToRoot, scanFolder, titleOnDisk } from '../files/service.js';
-import { monitoredOverview } from './overview.js';
+import { missingOverview, monitoredOverview } from './overview.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const kind = z.enum(MEDIA_KINDS);
@@ -188,6 +188,9 @@ export async function arrRoutes(app: FastifyInstance) {
 
   /** Everything followed, with whether it is monitored and what's missing, for the Monitored page. */
   app.get('/api/monitored/overview', { config: { access: 'manager' } }, async () => monitoredOverview(ctx));
+
+  /** Wanted → Missing: aired monitored episodes and released monitored movies with no file anywhere. */
+  app.get('/api/monitored/missing', { config: { access: 'manager' } }, async () => missingOverview(ctx));
 
   app.get('/api/monitored/lookup/:kind/:tmdbId', { config: { access: 'user' } }, async (req) => {
     const p = parse(z.object({ kind, tmdbId: z.coerce.number().int().positive() }), req.params);

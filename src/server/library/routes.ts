@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, sql, type AnyColumn } f
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../audit/log.js';
-import { downloads, libraryItems, matchOverrides, media, MEDIA_KINDS, monitored, type MediaKind } from '../db/schema.js';
+import { downloads, libraryEpisodes, libraryItems, matchOverrides, media, MEDIA_KINDS, monitored, monitoredEpisodes, type MediaKind } from '../db/schema.js';
 import { rootOf } from '../arr/roots.js';
 import { bestResolution, IntegrationError } from '../integrations/http.js';
 import { HttpError } from '../lib/errors.js';
@@ -28,6 +28,41 @@ export async function upstream<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/** How far back "Aired in the last 60 days" looks. */
+export const RECENT_DAYS = 60;
+const daysAgo = (days: number) => localDay(Date.now() - days * 864e5);
+
+/**
+ * The Library's status filter. A show is missing episodes when a monitored episode of it has aired
+ * and has no file here or on any media server (the same rule as the Missing page); otherwise it is
+ * complete, and a movie on a server always is. Recent: a show with an episode out, or a movie
+ * released, in the last RECENT_DAYS days.
+ */
+function statusSql(status: 'complete' | 'missing' | 'recent') {
+  const day = localDay();
+  if (status === 'recent') {
+    const since = daysAgo(RECENT_DAYS);
+    const show = sql`${libraryItems.kind} = 'show' AND EXISTS (
+      SELECT 1 FROM ${monitored} JOIN ${monitoredEpisodes} ON ${monitoredEpisodes.monitoredId} = ${monitored.id}
+      WHERE ${monitored.kind} = 'show' AND ${monitored.tmdbId} = ${libraryItems.tmdbId}
+        AND ${monitoredEpisodes.airDate} BETWEEN ${since} AND ${day})`;
+    const movie = sql`${libraryItems.kind} = 'movie' AND EXISTS (
+      SELECT 1 FROM ${media} WHERE ${media.kind} = 'movie' AND ${media.tmdbId} = ${libraryItems.tmdbId}
+        AND (${media.releaseDate} BETWEEN ${since} AND ${day} OR ${media.digitalRelease} BETWEEN ${since} AND ${day} OR ${media.physicalRelease} BETWEEN ${since} AND ${day}))`;
+    return sql`((${show}) OR (${movie}))`;
+  }
+  const missing = sql`${libraryItems.kind} = 'show' AND EXISTS (
+    SELECT 1 FROM ${monitored} JOIN ${monitoredEpisodes} ON ${monitoredEpisodes.monitoredId} = ${monitored.id}
+    WHERE ${monitored.kind} = 'show' AND ${monitored.tmdbId} = ${libraryItems.tmdbId} AND ${monitored.monitored}
+      AND ${monitoredEpisodes.monitored} AND ${monitoredEpisodes.airDate} <= ${day} AND ${monitoredEpisodes.filePath} IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM ${libraryEpisodes}
+        WHERE ${libraryEpisodes.season} = ${monitoredEpisodes.season} AND ${libraryEpisodes.episode} = ${monitoredEpisodes.episode}
+          -- Any server's copy of the show counts; library_items here is the inner query's, not the outer row.
+          AND ${libraryEpisodes.libraryItemId} IN (SELECT ${libraryItems.id} FROM ${libraryItems} WHERE ${libraryItems.kind} = 'show' AND ${libraryItems.tmdbId} = ${monitored.tmdbId})))`;
+  return status === 'missing' ? sql`(${missing})` : sql`NOT (${missing})`;
+}
+
 export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibrarySync }) {
   const ctx = app.ctx;
 
@@ -40,6 +75,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
         watched: z.enum(['watched', 'unwatched']).optional(),
         library: z.string().trim().min(1).max(200).optional(),
         unmatched: z.enum(['true', '1']).optional(),
+        status: z.enum(['complete', 'missing', 'recent']).optional(),
         sort: z.enum(['title', 'year', 'added', 'release', 'rating']).default('added'),
         order: z.enum(['asc', 'desc']).optional(),
         page: z.coerce.number().int().min(1).default(1),
@@ -54,6 +90,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
       q.resolution ? eq(libraryItems.resolution, q.resolution) : undefined,
       q.library ? eq(libraryItems.library, q.library) : undefined,
       q.unmatched ? isNull(libraryItems.tmdbId) : undefined,
+      q.status ? statusSql(q.status) : undefined,
       // Kids profiles only see titles rated for their age.
       maxAge !== null ? inArray(libraryItems.mediaId, ctx.db.select({ id: media.id }).from(media).where(suitableSql(maxAge))) : undefined,
     );
