@@ -500,9 +500,12 @@ export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNo
                                 {e.filePath ? (
                                   <>
                                     {e.fileQuality} {f?.size != null && `· ${formatBytes(f.size)}`} {f?.exists === false && <span className="text-danger">· missing on disk</span>}
+                                    {e.airDate && ` · ${aired ? 'Aired' : 'Airs'} ${e.airDate}`}
                                   </>
                                 ) : aired ? (
-                                  <span className="text-danger">Missing</span>
+                                  <>
+                                    <span className="text-danger">Missing</span> · Aired {e.airDate}
+                                  </>
                                 ) : (
                                   `Airs ${e.airDate ?? 'TBA'}`
                                 )}
@@ -544,7 +547,7 @@ export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNo
                           <span className="min-w-0 pl-6">
                             <span className="text-muted">E{pad(x.episodeNumber)}</span> {x.name}
                             <span className="block text-xs text-muted">
-                              {x.airDate && x.airDate <= today() ? 'Aired' : `Airs ${x.airDate ?? 'TBA'}`} · new on TMDB, adding it…
+                              {x.airDate && x.airDate <= today() ? `Aired ${x.airDate}` : `Airs ${x.airDate ?? 'TBA'}`} · new on TMDB, adding it…
                             </span>
                           </span>
                         </li>
