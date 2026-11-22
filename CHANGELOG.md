@@ -4,6 +4,16 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-11-22
+
+### Added
+- **Missing page (Wanted → Missing).** Lists every monitored episode that has aired and every monitored movie that is out but has no file on disk and isn't on Plex or Jellyfin. Episodes are grouped by show, with counts. You can search one episode, a season, a whole show, or everything missing.
+- **Library completeness filters.** The Library can show only complete titles, titles with missing episodes, or titles that aired in the last 60 days. A show counts as complete when every monitored episode that has aired is on disk or on a media server, the same rule the Missing page uses. A movie on a media server always counts as complete.
+- **Age rating on title pages.** A badge next to the genre and runtime shows the certification, or "Not rated". When none is stored yet, it is worked out from TMDB.
+
+### Changed
+- **Dependency updates.** web-push moved to version 4 and @simplewebauthn/server to version 14, and 19 other packages got minor and patch updates. Passkey checks work as before.
+
 ## [0.39.0] - 2026-11-21
 
 ### Added
