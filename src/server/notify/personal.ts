@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import nodemailer, { type Transporter } from 'nodemailer';
-import webpush from 'web-push';
+import * as webpush from 'web-push';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { pushSubscriptions, users, type Role } from '../db/schema.js';

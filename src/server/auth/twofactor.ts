@@ -9,7 +9,7 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
   type AuthenticationResponseJSON,
-  type AuthenticatorTransportFuture,
+  type AuthenticatorTransport,
   type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import { audit } from '../audit/log.js';
@@ -230,7 +230,7 @@ async function verifyPasskey(ctx: AppContext, req: FastifyRequest, response: Aut
       expectedChallenge: challenge,
       expectedOrigin: origin,
       expectedRPID: rpID,
-      credential: { id: cred.id, publicKey: Buffer.from(cred.publicKey, 'base64url'), counter: cred.counter, transports: cred.transports ? (JSON.parse(cred.transports) as AuthenticatorTransportFuture[]) : undefined },
+      credential: { id: cred.id, publicKey: Buffer.from(cred.publicKey, 'base64url'), counter: cred.counter, transports: cred.transports ? (JSON.parse(cred.transports) as AuthenticatorTransport[]) : undefined },
       requireUserVerification: true,
     });
     if (!v.verified) return null;
@@ -331,7 +331,7 @@ export async function twoFactorRoutes(app: FastifyInstance) {
       userDisplayName: user.displayName ?? user.username,
       userID: new TextEncoder().encode(`cinemask-user-${user.id}`),
       attestationType: 'none',
-      excludeCredentials: existing.map((k) => ({ id: k.id, transports: k.transports ? (JSON.parse(k.transports) as AuthenticatorTransportFuture[]) : undefined })),
+      excludeCredentials: existing.map((k) => ({ id: k.id, transports: k.transports ? (JSON.parse(k.transports) as AuthenticatorTransport[]) : undefined })),
       authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
     });
     const token = putState(ctx, 'passkey-reg', { userId: user.id, challenge: options.challenge });
@@ -413,7 +413,7 @@ export async function twoFactorRoutes(app: FastifyInstance) {
     }
     const { rpID } = relyingParty(ctx, req);
     const allow = userId === null ? [] : ctx.db.select().from(passkeys).where(eq(passkeys.userId, userId)).all();
-    const options = await generateAuthenticationOptions({ rpID, userVerification: 'required', allowCredentials: allow.map((k) => ({ id: k.id, transports: k.transports ? (JSON.parse(k.transports) as AuthenticatorTransportFuture[]) : undefined })) });
+    const options = await generateAuthenticationOptions({ rpID, userVerification: 'required', allowCredentials: allow.map((k) => ({ id: k.id, transports: k.transports ? (JSON.parse(k.transports) as AuthenticatorTransport[]) : undefined })) });
     const state = putState(ctx, 'passkey-auth', { userId, challenge: options.challenge, pendingLogin: b.token ?? null });
     return { state, options };
   });
