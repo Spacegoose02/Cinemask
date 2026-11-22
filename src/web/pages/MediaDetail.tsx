@@ -22,6 +22,8 @@ export interface MediaDetail {
   tmdbStatus: string | null;
   runtime: number | null;
   genres: string[];
+  /** Age rating (PG-13, TV-MA, 12…) from TMDB, null when it has none. */
+  certification: string | null;
   network: string | null;
   rating: number | null;
   trailerKey: string | null;
@@ -156,7 +158,15 @@ export function MediaDetailPage({
               <h1 className="text-3xl font-bold">
                 {m.title} {m.year && <span className="font-normal text-muted">({m.year})</span>}
               </h1>
-              <div className="mt-1 text-sm text-muted">{[kind === 'movie' ? 'Movie' : 'Series', m.genres.join(', '), m.runtime ? `${m.runtime} min` : null, m.network].filter(Boolean).join(' · ')}</div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+                <span
+                  className={`rounded border px-1.5 py-px text-xs font-semibold ${m.certification ? 'border-current text-text' : 'border-border'}`}
+                  title={m.certification ? t('Age rating') : t('No age rating listed on TMDB')}
+                >
+                  {m.certification ?? t('Not rated')}
+                </span>
+                <span>{[kind === 'movie' ? 'Movie' : 'Series', m.genres.join(', '), m.runtime ? `${m.runtime} min` : null, m.network].filter(Boolean).join(' · ')}</span>
+              </div>
             </div>
             <StatusBadge status={m.availability.status} resolution={m.availability.resolution} />
             {m.overview && <p className="max-w-3xl text-sm leading-relaxed">{m.overview}</p>}
