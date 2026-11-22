@@ -267,6 +267,41 @@ describe('file management, calendar and health', () => {
     expect(await missing()).toEqual({ shows: [], movies: [] });
   });
 
+  it('filters the Library by complete, missing episodes and aired lately', async () => {
+    const show = await addShowWithFiles();
+    const sqlite = t.app.ctx.dbHandle.sqlite;
+    const tmdbId = (sqlite.prepare('SELECT tmdb_id FROM monitored WHERE id = ?').get(show) as { tmdb_id: number }).tmdb_id;
+    sqlite.prepare("INSERT INTO library_items (server, external_key, kind, title, tmdb_id) VALUES ('bingebandit', 'bb-1', 'show', 'Bluey', ?)").run(tmdbId);
+    await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 116149, search: false });
+    sqlite.prepare("INSERT INTO library_items (server, external_key, kind, title, tmdb_id) VALUES ('bingebandit', 'bb-2', 'movie', 'Paddington', 116149)").run();
+    const titles = (status: string) => kid.req('GET', `/api/library?status=${status}`).then((r) => r.json().items.map((i: { title: string }) => i.title).sort());
+    expect(await titles('complete')).toEqual(['Bluey', 'Paddington']);
+    expect(await titles('missing')).toEqual([]);
+    expect((await kid.req('GET', '/api/library?status=nope')).statusCode).toBe(400);
+
+    sqlite.prepare('UPDATE monitored_episodes SET file_path = NULL WHERE monitored_id = ? AND episode = 3').run(show);
+    expect(await titles('complete')).toEqual(['Paddington']);
+    expect(await titles('missing')).toEqual(['Bluey']);
+    // On a media server counts as there.
+    const item = (sqlite.prepare("SELECT id FROM library_items WHERE external_key = 'bb-1'").get() as { id: number }).id;
+    sqlite.prepare('INSERT INTO library_episodes (library_item_id, season, episode) VALUES (?, 1, 3)').run(item);
+    expect(await titles('missing')).toEqual([]);
+    sqlite.prepare('DELETE FROM library_episodes WHERE library_item_id = ?').run(item);
+    expect(await titles('missing')).toEqual(['Bluey']);
+    // An unmonitored episode doesn't count, the same as on the Missing page.
+    sqlite.prepare('UPDATE monitored_episodes SET monitored = 0 WHERE monitored_id = ? AND episode = 3').run(show);
+    expect(await titles('missing')).toEqual([]);
+
+    // Aired in the last 60 days: Bluey's episodes and Paddington are years old.
+    expect(await titles('recent')).toEqual([]);
+    const day = (offset: number) => new Date(Date.now() + offset * 864e5).toISOString().slice(0, 10);
+    sqlite.prepare('UPDATE monitored_episodes SET air_date = ? WHERE monitored_id = ? AND episode = 3').run(day(-50), show);
+    sqlite.prepare("UPDATE media SET digital_release = ? WHERE kind = 'movie' AND tmdb_id = 116149").run(day(-70));
+    expect(await titles('recent')).toEqual(['Bluey']);
+    sqlite.prepare("UPDATE media SET digital_release = ? WHERE kind = 'movie' AND tmdb_id = 116149").run(day(-10));
+    expect(await titles('recent')).toEqual(['Bluey', 'Paddington']);
+  });
+
   it('lists each followed show\'s next and latest episode for anyone', async () => {
     const show = await addShowWithFiles();
     const day = (offset: number) => new Date(Date.now() + offset * 864e5).toISOString().slice(0, 10);

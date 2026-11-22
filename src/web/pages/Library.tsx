@@ -1,7 +1,7 @@
 import { LoadError } from '../components/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AiringRow, useAiring } from '../components/Airing';
 import { DuplicatesDialog } from '../components/Duplicates';
 import { MatchPicker } from '../components/MatchPicker';
@@ -39,13 +39,14 @@ export function LibraryPage() {
   const q = params.get('q') ?? '';
   const watched = params.get('watched') ?? '';
   const library = params.get('library') ?? '';
+  const status = params.get('status') ?? '';
   const { me } = useAuth();
   const isManager = hasRole(me, 'manager');
   const qc = useQueryClient();
   const [fixing, setFixing] = useState<LibraryItem | null>(null);
   const [dupes, setDupes] = useState(false);
   const page = Number(params.get('page') ?? 1);
-  const qs = new URLSearchParams({ sort, page: String(page), pageSize: String(PAGE_SIZE), ...(kind && { kind }), ...(resolution && { resolution }), ...(library && { library }), ...(q && { q }), ...(watched === 'unmatched' ? { unmatched: 'true' } : watched && { watched }) });
+  const qs = new URLSearchParams({ sort, page: String(page), pageSize: String(PAGE_SIZE), ...(kind && { kind }), ...(resolution && { resolution }), ...(library && { library }), ...(status && { status }), ...(q && { q }), ...(watched === 'unmatched' ? { unmatched: 'true' } : watched && { watched }) });
   const lib = useQuery({ queryKey: ['library', qs.toString()], queryFn: () => api<LibraryResponse>(`/api/library?${qs}`) });
   const sections = useQuery({ queryKey: ['library-sections'], queryFn: () => api<{ libraries: { name: string; kind: MediaKind; count: number }[] }>('/api/library/sections') });
   // One entry per Plex library, narrowed to the chosen type.
@@ -60,7 +61,7 @@ export function LibraryPage() {
   };
   const pages = Math.max(1, Math.ceil((lib.data?.total ?? 0) / PAGE_SIZE));
   // Shows airing this week sit above the library, until it's filtered or paged.
-  const showAiring = page === 1 && kind !== 'movie' && !q && !resolution && !watched && !library;
+  const showAiring = page === 1 && kind !== 'movie' && !q && !resolution && !watched && !library && !status;
   const airing = useAiring();
 
   return (
@@ -92,6 +93,12 @@ export function LibraryPage() {
             <option value="720p">720p</option>
             <option value="SD">SD</option>
           </select>
+          <select className="input w-auto" value={status} onChange={(e) => set('status', e.target.value)} aria-label={t('Status')}>
+            <option value="">{t('Complete or not')}</option>
+            <option value="complete">{t('Complete')}</option>
+            <option value="missing">{t('Missing episodes')}</option>
+            <option value="recent">{t('Aired in the last 60 days')}</option>
+          </select>
           <select className="input w-auto" value={watched} onChange={(e) => set('watched', e.target.value)} aria-label={t('Watched')}>
             <option value="">{t('Watched or not')}</option>
             <option value="watched">{t('Watched')}</option>
@@ -117,6 +124,16 @@ export function LibraryPage() {
           <AiringRow title={t('Airing next')} items={airing.data?.next ?? []} more="/calendar" />
           <AiringRow title={t('Recently aired')} items={airing.data?.recent ?? []} more="/calendar" />
         </>
+      )}
+      {status === 'missing' && (
+        <p className="text-sm text-muted">
+          {t('Shows with monitored episodes that have aired but are on no server. Movies that are missing aren\'t on a server, so they aren\'t in the Library.')}{' '}
+          {isManager && (
+            <Link to="/missing" className="text-accent hover:underline">
+              {t('See every missing episode and movie')}
+            </Link>
+          )}
+        </p>
       )}
       <LoadError queries={[lib]} />
       {lib.data && lib.data.total === 0 && (
