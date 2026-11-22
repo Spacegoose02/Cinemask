@@ -166,6 +166,9 @@ export function MonitoredPage() {
         <Link className="btn-secondary" to="/missing">
           See every missing episode and movie
         </Link>
+        <Link className="btn-secondary" to="/library-import" title="Point titles at folders already in your media folders">
+          Library import
+        </Link>
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-sm bg-success" /> Complete, still airing</span>

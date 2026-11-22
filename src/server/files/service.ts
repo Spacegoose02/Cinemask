@@ -170,7 +170,7 @@ export function expectedFolder(ctx: AppContext, row: MonitoredRow): string {
     : path.join(root, renderName(naming.seriesFolder, { seriesTitle: row.title, year: row.year, tmdbId: row.tmdbId }));
 }
 
-const folderKey = (s: string) =>
+export const folderKey = (s: string) =>
   s
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -209,7 +209,9 @@ export function locateFolder(ctx: AppContext, row: MonitoredRow): { folder: stri
       if (!insideRoot(r.path, folder)) continue;
       if (idTag.test(e.name)) return { folder, rootId: r.id };
       const key = folderKey(e.name);
-      if (!byName && (key === title || key.startsWith(`${title} `)) && (!row.year || key.slice(title.length).split(' ').includes(String(row.year)) || key === title)) byName = { folder, rootId: r.id };
+      // TMDB's year and the folder's can be a year apart (a pilot aired the December before, say).
+      const years = row.year ? [row.year, row.year - 1, row.year + 1].map(String) : [];
+      if (!byName && (key === title || key.startsWith(`${title} `)) && (!row.year || key === title || key.slice(title.length).split(' ').some((w) => years.includes(w)))) byName = { folder, rootId: r.id };
     }
   }
   return byName;
@@ -237,7 +239,26 @@ export function titleOnDisk(ctx: AppContext, kind: MediaKind, tmdbId: number): M
  * so existing libraries can be managed without re-downloading. Tracked files that vanished
  * from disk are forgotten.
  */
-export function scanFolder(ctx: AppContext, row: MonitoredRow): { found: number; missing: number; folder: string } {
+/** The season a folder stands for: "Season 2", "S02", "Series 2" or "Specials" (0). */
+export function seasonOfFolder(name: string): number | null {
+  const m = /^(?:season|series|s)[\s._-]*(\d{1,3})\b/i.exec(name.trim()) ?? /\bseason[\s._-]*(\d{1,3})\b/i.exec(name);
+  if (m) return Number(m[1]);
+  return /^specials?$/i.test(name.trim()) ? 0 : null;
+}
+
+/**
+ * Episode numbers from a file name with no season in it: "E05", "Ep 5", "Episode 5", and, when
+ * allowBareNumber (the file sits in a season folder), "05 - Title".
+ */
+export function episodeOfFile(file: string, allowBareNumber = true): number[] {
+  const name = path.basename(file, path.extname(file));
+  const tagged = [...name.matchAll(/(?<![a-z])(?:e|ep|episode)[\s._-]*(\d{1,3})(?![0-9])/gi)].map((m) => Number(m[1]));
+  if (tagged.length) return [...new Set(tagged)];
+  const lead = allowBareNumber ? /^(\d{1,3})(?:[\s._]*-|[\s._]+|$)/.exec(name) : null;
+  return lead ? [Number(lead[1])] : [];
+}
+
+export function scanFolder(ctx: AppContext, row: MonitoredRow): { found: number; missing: number; folder: string; exists: boolean } {
   const located = row.path ? null : locateFolder(ctx, row);
   if (located && (located.rootId ?? 'default') !== (row.rootId ?? 'default')) {
     ctx.db.update(monitored).set({ rootId: located.rootId === 'default' ? null : located.rootId }).where(eq(monitored.id, row.id)).run();
@@ -270,11 +291,13 @@ export function scanFolder(ctx: AppContext, row: MonitoredRow): { found: number;
     }
     for (const file of videos) {
       const p = parseRelease(path.basename(file));
-      // Fall back to the season folder name ("Season 2") when the file name has no season.
-      const folderSeason = /season\s*(\d+)/i.exec(path.basename(path.dirname(file)))?.[1];
-      const season = p.season ?? (folderSeason ? Number(folderSeason) : null);
-      if (season === null || !p.episodes.length) continue;
-      for (const n of p.episodes) {
+      // Fall back to the season folder name ("Season 2", "Specials") when the file name has no
+      // season, and to "E05", "Episode 5" or (in a season folder) "05 - Title" for the episode.
+      const folderSeason = path.dirname(file) === folder ? null : seasonOfFolder(path.basename(path.dirname(file)));
+      const season = p.season ?? folderSeason;
+      const episodes = p.episodes.length ? p.episodes : season !== null ? episodeOfFile(file, folderSeason !== null) : [];
+      if (season === null || !episodes.length) continue;
+      for (const n of episodes) {
         const e = ctx.db.select().from(monitoredEpisodes).where(and(eq(monitoredEpisodes.monitoredId, row.id), eq(monitoredEpisodes.season, season), eq(monitoredEpisodes.episode, n))).get();
         if (!e || (e.filePath && fs.existsSync(e.filePath))) continue;
         ctx.db.update(monitoredEpisodes).set({ filePath: file, fileQuality: p.quality }).where(eq(monitoredEpisodes.id, e.id)).run();
@@ -283,7 +306,7 @@ export function scanFolder(ctx: AppContext, row: MonitoredRow): { found: number;
     }
     if (videos.length) ctx.db.update(monitored).set({ path: folder }).where(eq(monitored.id, row.id)).run();
   }
-  return { found, missing, folder };
+  return { found, missing, folder, exists: fs.existsSync(folder) };
 }
 
 export interface RenameItem {

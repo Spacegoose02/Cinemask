@@ -10,8 +10,8 @@ const TOPIC_QUERIES: Record<string, string[]> = {
   downloads: ['downloads', 'download-count', 'music-requests', 'files', 'file-details', 'issues', 'issue-count', 'monitored-overview', 'monitored-missing', 'activity', 'manual-import', 'media', 'calendar', 'import'],
   // The tracker moved progress bars along and nothing finished: only what shows progress.
   'download-progress': ['downloads', 'download-count', 'requests'],
-  monitored: ['storage', 'monitored-overview', 'monitored-missing', 'files', 'media', 'calendar', 'airing', 'downloads', 'download-count', 'lookup'],
-  files: ['storage', 'files', 'file-details', 'media', 'duplicates', 'rename', 'monitored-overview', 'monitored-missing'],
+  monitored: ['storage', 'library-import', 'monitored-overview', 'monitored-missing', 'files', 'media', 'calendar', 'airing', 'downloads', 'download-count', 'lookup'],
+  files: ['storage', 'files', 'file-details', 'media', 'duplicates', 'rename', 'monitored-overview', 'monitored-missing', 'library-import'],
   'manual-import': ['manual-import', 'downloads', 'download-count', 'files'],
   import: ['import', 'files', 'monitored-overview', 'monitored-missing'],
   library: ['library', 'monitored-missing', 'library-sections', 'library-labels', 'home-row', 'media', 'airing', 'calendar', 'duplicates', 'sync-status', 'lookup'],
