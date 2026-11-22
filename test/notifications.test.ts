@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import webpush from 'web-push';
+import * as webpush from 'web-push';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
 import { fakeFetch, tmdbRoutes } from './fakes.js';
 import { notify } from '../src/server/notify/service.js';
 import { allowedPushEndpoint } from '../src/server/notify/personal.js';
+
+// web-push is ESM-only from v4, so its exports can't be spied on; mock the module instead.
+vi.mock('web-push', async (load) => ({ ...(await load<typeof import('web-push')>()), sendNotification: vi.fn() }));
 
 let t: Awaited<ReturnType<typeof makeApp>>;
 let owner: Client;
@@ -32,7 +35,7 @@ beforeEach(async () => {
     set(c);
   }
   pushed = [];
-  vi.spyOn(webpush, 'sendNotification').mockImplementation(async (s, payload) => {
+  vi.mocked(webpush.sendNotification).mockImplementation(async (s, payload) => {
     pushed.push({ endpoint: s.endpoint, payload: JSON.parse(String(payload)) });
     return { statusCode: 201, body: '', headers: {} };
   });

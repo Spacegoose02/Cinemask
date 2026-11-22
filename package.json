@@ -26,7 +26,7 @@
     "@fastify/rate-limit": "^11.2.2",
     "@fastify/static": "^10.1.11",
     "@node-rs/argon2": "^2.2.2",
-    "@simplewebauthn/server": "^13.3.3",
+    "@simplewebauthn/server": "^14.1.0",
     "better-sqlite3": "^13.2.0",
     "drizzle-orm": "^0.45.4",
     "fast-xml-parser": "^5.12.1",
@@ -37,7 +37,7 @@
     "qrcode": "^1.5.4",
     "sharp": "^0.35.5",
     "tar": "^7.5.23",
-    "web-push": "^3.6.7",
+    "web-push": "^4.0.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
