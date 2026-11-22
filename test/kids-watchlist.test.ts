@@ -69,6 +69,13 @@ describe('kids profiles and watchlists', () => {
     await t.close();
   });
 
+  it('shows the age rating on a title page, and null when TMDB has none', async () => {
+    expect((await kid.req('GET', '/api/media/movie/116149')).json().certification).toBe('PG');
+    expect((await owner.req('GET', '/api/media/movie/777')).json().certification).toBe('R');
+    // Future Film has no rating on TMDB.
+    expect((await owner.req('GET', '/api/media/movie/555')).json().certification).toBeNull();
+  });
+
   it('hides and refuses titles above a kids profile’s age', async () => {
     expect((await owner.req('PATCH', `/api/users/${kidId}`, { maxAge: 9 })).statusCode).toBe(200);
     expect((await owner.req('GET', '/api/users')).json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: kidId, maxAge: 9 })]));

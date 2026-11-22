@@ -9,7 +9,7 @@ import { HttpError } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { availabilityFor, cards, episodesOnServer, isReleased, mdblistClient, refreshMetadata, tmdbClient, watchInfo, type LibrarySync } from './service.js';
 import { localDay } from '../lib/dates.js';
-import { assertSuitable, forViewer, maxAgeOf, suitableSql } from '../kids/ratings.js';
+import { assertSuitable, certificationOf, forViewer, maxAgeOf, suitableSql } from '../kids/ratings.js';
 
 const kindParam = z.enum(MEDIA_KINDS);
 
@@ -162,8 +162,12 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
     // The main cast, for the row of faces on the page.
     let cast: { id: number; name: string; character: string; profilePath: string | null; episodes?: number }[] = [];
     const tmdb = tmdbClient(ctx);
+    // The age rating stored with the title, or worked out from the TMDB answer below when it isn't stored yet.
+    let certification = row.certification || null;
+    const region = ctx.settings.get('metadata').region;
     if (kind === 'show' && tmdb.configured) {
       const show = await upstream(() => tmdb.show(tmdbId));
+      certification ||= certificationOf(kind, show, region) || null;
       const eps = episodesOnServer(ctx, tmdbId);
       seasons = show.seasons.map((s) => ({
         seasonNumber: s.season_number,
@@ -182,6 +186,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
     }
     if (kind === 'movie' && tmdb.configured) {
       const m = await upstream(() => tmdb.movie(tmdbId));
+      certification ||= certificationOf(kind, m, region) || null;
       collection = m.belongs_to_collection ? { id: m.belongs_to_collection.id, name: m.belongs_to_collection.name } : null;
       cast = (m.credits?.cast ?? [])
         .sort((a, b) => a.order - b.order)
@@ -201,6 +206,7 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
       ...row,
       posterPath: row.posterOverride ?? row.posterPath,
       genres: row.genres ? (JSON.parse(row.genres) as string[]) : [],
+      certification,
       released: isReleased(kind, row),
       availability,
       seasons,
