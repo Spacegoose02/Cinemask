@@ -26,10 +26,12 @@ export interface BrowseResult {
 
 const MAX_DIRS = 2000;
 
-/** The root folder of this kind that holds p (or is p), if any. */
-export function rootHolding(ctx: AppContext, kind: MediaKind, p: string): RootFolder | null {
-  const resolved = path.resolve(p);
-  return listRoots(ctx, kind).find((r) => r.path && (path.resolve(r.path) === resolved || insideRoot(r.path, resolved))) ?? null;
+/**
+ * The root folder of this kind that holds p (or is p), if any. Lexical only: callers check the
+ * resolved path with startsWith before touching the disk, then insideRoot for symlinks.
+ */
+function rootFor(ctx: AppContext, kind: MediaKind, resolved: string): RootFolder | null {
+  return listRoots(ctx, kind).find((r) => r.path && (resolved === path.resolve(r.path) || resolved.startsWith(path.resolve(r.path) + path.sep))) ?? null;
 }
 
 const subdirs = (dir: string) => {
@@ -57,9 +59,13 @@ export function browse(ctx: AppContext, kind: MediaKind, at?: string): BrowseRes
       rootId: null,
       dirs: rootList.map((r) => ({ name: r.name, path: r.path })),
     };
-  const root = rootHolding(ctx, kind, at);
-  if (!root) throw new Error('That folder is outside the media folders');
   const current = path.resolve(at);
+  const root = rootFor(ctx, kind, current);
+  const base = root ? path.resolve(root.path) : '';
+  // Checked here, next to the reads below: the resolved path must be the root or under it, and
+  // still be once symlinks are followed.
+  if (!root || !(current === base || current.startsWith(base + path.sep))) throw new Error('That folder is outside the media folders');
+  if (current !== base && !insideRoot(root.path, current)) throw new Error('That folder is outside the media folders');
   if (!fs.existsSync(current) || !fs.statSync(current).isDirectory()) throw new Error('That folder does not exist');
   const atRoot = current === path.resolve(root.path);
   const dirs = subdirs(current)
@@ -83,8 +89,10 @@ export function browse(ctx: AppContext, kind: MediaKind, at?: string): BrowseRes
  */
 export function setFolder(ctx: AppContext, row: MonitoredRow, folder: string): ReturnType<typeof scanFolder> {
   const target = path.resolve(folder);
-  const root = rootHolding(ctx, row.kind, target);
-  if (!root || !insideRoot(root.path, target)) throw new Error('Pick a folder inside one of the media folders, not the media folder itself');
+  const root = rootFor(ctx, row.kind, target);
+  const base = root ? path.resolve(root.path) : '';
+  // Strictly under the root, lexically and once symlinks are followed.
+  if (!root || !target.startsWith(base + path.sep) || !insideRoot(root.path, target)) throw new Error('Pick a folder inside one of the media folders, not the media folder itself');
   if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) throw new Error('That folder does not exist');
   const taken = ctx.db
     .select({ id: monitored.id, title: monitored.title })
