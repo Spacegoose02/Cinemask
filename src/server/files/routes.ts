@@ -12,9 +12,15 @@ import { assertRoot } from '../arr/roots.js';
 import { MEDIA_KINDS } from '../db/schema.js';
 import { autoTrailer } from '../trailers/service.js';
 import { deleteDuplicate, findDuplicates } from './duplicates.js';
+import { browse, importCandidates, setFolder, titlesWithoutFolder } from './folders.js';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const num = z.number().int().min(0).max(5000);
+const folderPath = z
+  .string()
+  .min(1)
+  .max(4000)
+  .refine((p) => !p.includes('\0'), 'Bad path');
 
 /** File management for monitored titles. Manager and above: these change files on disk. */
 export async function fileRoutes(app: FastifyInstance) {
@@ -58,6 +64,59 @@ export async function fileRoutes(app: FastifyInstance) {
     audit(ctx.db, req, 'files.moved', { target: row.title, details: { from, to: after.path, rootId } });
     void refreshMediaServers(ctx);
     return { path: after.path, rootId: after.rootId ?? 'default' };
+  });
+
+  // A folder browser for picking a title's folder. Only lists folders inside the root folders.
+  app.get('/api/files/browse', { config: { access: 'manager' } }, async (req) => {
+    const q = parse(z.object({ kind: z.enum(MEDIA_KINDS), path: folderPath.optional() }), req.query);
+    return safely(() => browse(ctx, q.kind, q.path));
+  });
+
+  // Points a title at a folder picked by hand, then adopts the files in it.
+  app.post('/api/monitored/:id/folder', { config: { access: 'manager' } }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(z.object({ path: folderPath }), req.body);
+    let row = getRow(id);
+    if (row.kind === 'show') {
+      await refreshEpisodes(ctx, row).catch(() => undefined);
+      row = getRow(id);
+    }
+    const from = row.path;
+    const result = safely(() => setFolder(ctx, row, body.path));
+    audit(ctx.db, req, 'files.folder_set', { target: row.title, details: { from, to: result.folder, found: result.found } });
+    if (result.found) void autoTrailer(ctx, getRow(id)).catch(() => undefined);
+    return result;
+  });
+
+  // Library Import: folders in the root folders that no title uses yet, with a suggested title each.
+  app.get('/api/files/library-import', { config: { access: 'manager' } }, async (req) => {
+    const { kind } = parse(z.object({ kind: z.enum(MEDIA_KINDS) }), req.query);
+    return { folders: importCandidates(ctx, kind), titles: titlesWithoutFolder(ctx, kind) };
+  });
+
+  app.post('/api/files/library-import', { config: { access: 'manager' } }, async (req) => {
+    const body = parse(z.object({ items: z.array(z.object({ folder: folderPath, monitoredId: z.number().int().positive() })).min(1).max(1000) }), req.body);
+    const results: { monitoredId: number; folder: string; found: number; error?: string }[] = [];
+    for (const item of body.items) {
+      let row = ctx.db.select().from(monitored).where(eq(monitored.id, item.monitoredId)).get();
+      if (!row) {
+        results.push({ ...item, found: 0, error: 'Not monitored' });
+        continue;
+      }
+      if (row.kind === 'show') {
+        await refreshEpisodes(ctx, row).catch(() => undefined);
+        row = getRow(row.id);
+      }
+      try {
+        results.push({ ...item, found: setFolder(ctx, row, item.folder).found });
+      } catch (err) {
+        results.push({ ...item, found: 0, error: (err as Error).message });
+      }
+    }
+    const ok = results.filter((r) => !r.error);
+    const files = ok.reduce((n, r) => n + r.found, 0);
+    audit(ctx.db, req, 'files.library_import', { details: { mapped: ok.length, failed: results.length - ok.length, files } });
+    return { mapped: ok.length, files, results };
   });
 
   app.get('/api/monitored/:id/files', { config: { access: 'manager' } }, async (req) => {

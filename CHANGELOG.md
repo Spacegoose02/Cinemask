@@ -4,6 +4,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- **Choose folder.** A title's Seasons (or Files) section has a Choose folder button that browses your media folders and points the title at the folder you pick, then links the episodes or movie file already in it. Only folders inside the configured root folders can be listed or chosen (symlinks out of them are refused), a folder another title uses can't be taken, and only managers and admins can use it. Each change is in the audit log.
+- **Library import (Monitored → Library import).** Lists every folder in your TV or movie folders that no monitored title uses yet, with a suggested title for each (matched on words in the name, the year, or a `{tmdb-…}` tag). Tick the rows, fix any guesses, and import them all at once. Nothing is moved, renamed or downloaded.
+
+### Fixed
+- **Existing folders and episodes that weren't picked up.** A folder whose year is one off from TMDB's ("Show (2020)" for a show TMDB dates 2021) is now found. In season folders, episodes named "Episode 5", "E05" or "05 - Title" are matched, and "Specials", "S01" and "Series 1" folders count as seasons. Rescan folder now says when no folder was found instead of "Found 0 new files".
+
 ## [0.40.0] - 2026-11-22
 
 ### Added

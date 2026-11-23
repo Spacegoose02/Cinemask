@@ -8,6 +8,7 @@ import { mediaPath } from '../lib/media';
 import type { MediaDetail } from '../pages/MediaDetail';
 import { TrailerManager } from './Extras';
 import { fetchSubtitles, FileInfoLines, readFiles, type DetailFile } from './FileDetails';
+import { FolderPicker } from './FolderPicker';
 import { MatchPicker } from './MatchPicker';
 import { ManualSearch } from './MediaActions';
 import { Modal } from './Modal';
@@ -263,6 +264,7 @@ export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNo
   const [manual, setManual] = useState<{ season: number; episode?: number } | null>(null);
   const [openSeason, setOpenSeason] = useState<number | null>(null);
   const [matching, setMatching] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   const isShow = m.kind === 'show';
   // What ffprobe found in each file, shown under its episode. Movies keep their own "What's in the files".
   const details = useQuery({ queryKey: ['file-details', mon?.id], queryFn: () => api<{ files: DetailFile[] }>(`/api/monitored/${mon!.id}/details`), enabled: isShow && Boolean(mon) });
@@ -369,8 +371,20 @@ export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNo
               Search missing
             </button>
           )}
-          <button className="btn-secondary" onClick={() => run(() => api(`/api/monitored/${mon.id}/scan`, { body: {} }), (r: { found: number; missing: number }) => `Found ${r.found} new file(s)${r.missing ? `, ${r.missing} missing` : ''}.`)}>
+          <button
+            className="btn-secondary"
+            onClick={() =>
+              run(
+                () => api(`/api/monitored/${mon.id}/scan`, { body: {} }),
+                (r: { found: number; missing: number; exists?: boolean }) =>
+                  r.exists === false ? 'No folder found for this title in the media folders. Use Choose folder to point it at the right one.' : `Found ${r.found} new file(s)${r.missing ? `, ${r.missing} missing` : ''}.`,
+              )
+            }
+          >
             Rescan folder
+          </button>
+          <button className="btn-secondary" onClick={() => setChoosing(true)} title="Point this title at the folder its files are in">
+            Choose folder
           </button>
           <button className="btn-secondary" onClick={() => setRenaming(true)}>
             Rename
@@ -563,6 +577,20 @@ export function FilesPanel({ m, standard }: { m: MediaDetail; standard?: ReactNo
       {renaming && <RenameModal id={mon.id} onClose={() => setRenaming(false)} onDone={done} />}
       {deleting && <DeleteModal id={mon.id} target={deleting} onClose={() => setDeleting(null)} onDone={done} />}
       {trailers && <TrailerManager monitoredId={mon.id} kind={m.kind} tmdbId={m.tmdbId} onClose={() => (setTrailers(false), void qc.invalidateQueries({ queryKey: ['local-trailers'] }))} />}
+      {choosing && (
+        <FolderPicker
+          kind={m.kind}
+          title={mon.title}
+          start={mon.path ? mon.path.replace(/[\\/][^\\/]+[\\/]?$/, '') : null}
+          onClose={() => setChoosing(false)}
+          onPick={async (folder) => {
+            const r = await api<{ found: number; missing: number }>(`/api/monitored/${mon.id}/folder`, { body: { path: folder } });
+            setChoosing(false);
+            setMsg({ kind: 'success', text: `Folder set. Found ${r.found} new file(s)${r.missing ? `, ${r.missing} missing` : ''}.` });
+            await refresh();
+          }}
+        />
+      )}
       {matching && (
         <MatchPicker
           kind={m.kind}
