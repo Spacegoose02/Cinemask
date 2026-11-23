@@ -1,5 +1,6 @@
 import { connectError, fetchJson, IntegrationError, normalizeResolution } from './http.js';
-import { rollUpViews, type LiveSession, type MediaServerClient, type ServerItem } from './mediaserver.js';
+import type { MediaKind } from '../db/schema.js';
+import { rollUpViews, type LiveSession, type MediaServerClient, type ServerFile, type ServerItem } from './mediaserver.js';
 
 interface JfItem {
   Id: string;
@@ -127,6 +128,39 @@ export class JellyfinClient implements MediaServerClient {
     }
     for (const item of items) rollUpViews(item);
     return items;
+  }
+
+  async itemFiles(id: string, kind: MediaKind): Promise<ServerFile[]> {
+    type Stream = { Type: string; Codec?: string; Width?: number; Height?: number; Channels?: number };
+    type Source = { Path?: string; Size?: number; Container?: string; Bitrate?: number; RunTimeTicks?: number; MediaStreams?: Stream[] };
+    type Item = { ParentIndexNumber?: number; IndexNumber?: number; MediaSources?: Source[] };
+    const q = kind === 'show' ? `ParentId=${encodeURIComponent(id)}&Recursive=true&IncludeItemTypes=Episode` : `Ids=${encodeURIComponent(id)}`;
+    const r = await this.get<{ Items: Item[] }>(`/Items?${q}&Fields=MediaSources,Path`);
+    const out: ServerFile[] = [];
+    for (const i of r.Items ?? []) {
+      for (const src of i.MediaSources ?? []) {
+        if (!src.Path) continue;
+        const video = src.MediaStreams?.find((s) => s.Type === 'Video');
+        const audio = src.MediaStreams?.find((s) => s.Type === 'Audio');
+        const h = video ? Math.max(video.Height ?? 0, Math.round(((video.Width ?? 0) * 9) / 16)) : 0;
+        out.push({
+          path: src.Path,
+          size: src.Size ?? null,
+          container: src.Container ?? null,
+          resolution: h ? normalizeResolution(h) : null,
+          width: video?.Width ?? null,
+          height: video?.Height ?? null,
+          videoCodec: video?.Codec ?? null,
+          audioCodec: audio?.Codec ?? null,
+          audioChannels: audio?.Channels ?? null,
+          // Ticks are 100 ns.
+          durationMin: src.RunTimeTicks ? Math.round(src.RunTimeTicks / 600_000_000) : null,
+          bitrateKbps: src.Bitrate ? Math.round(src.Bitrate / 1000) : null,
+          ...(kind === 'show' ? { season: i.ParentIndexNumber ?? null, episode: i.IndexNumber ?? null } : {}),
+        });
+      }
+    }
+    return out;
   }
 
   // ---------------- Writes: collections and posters ----------------

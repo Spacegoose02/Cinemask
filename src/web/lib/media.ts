@@ -20,6 +20,8 @@ export interface MediaCardData {
   resolution?: string | null;
   /** Plays on Plex/Jellyfin; a show counts once every episode has been played. */
   viewCount?: number | null;
+  /** Library rows behind the card. A title with no TMDB match opens its library page through these. */
+  itemIds?: number[];
 }
 
 /** Image URL for a poster value: a TMDB path, an https link, or an image held by Plex/Jellyfin/BingeBandit/the app (proxied). */
@@ -43,3 +45,6 @@ export const STATUS_LABEL: Record<Availability, string> = {
 };
 
 export const mediaPath = (kind: MediaKind, tmdbId: number) => `/${kind === 'movie' ? 'movie' : 'tv'}/${tmdbId}`;
+
+/** Where a card goes: the title's page, or for a library title with no TMDB match, its library page. */
+export const cardPath = (item: MediaCardData) => (item.tmdbId ? mediaPath(item.kind, item.tmdbId) : item.itemIds?.length ? `/library/item/${item.itemIds[0]}` : null);

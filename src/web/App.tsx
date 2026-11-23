@@ -24,6 +24,7 @@ import { WrappedPage } from './pages/Wrapped';
 import { RequestsPage } from './pages/Requests';
 import { HomePage } from './pages/Home';
 import { LibraryPage } from './pages/Library';
+import { LibraryItemPage } from './pages/LibraryItem';
 import { LoginPage } from './pages/Login';
 import { MediaDetailPage, type MediaDetail } from './pages/MediaDetail';
 import { MissingPage } from './pages/Missing';
@@ -87,6 +88,7 @@ export function App() {
         <Route path="/invite/:code" element={<Navigate to="/" replace />} />
         <Route path="/" element={<HomePage />} />
         <Route path="/library" element={<LibraryPage />} />
+        <Route path="/library/item/:id" element={<LibraryItemPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" actions={(m) => <MediaActions m={m} />} panels={panels} />} />
         <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} panels={panels} seasons={seasons} />} />

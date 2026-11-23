@@ -324,3 +324,71 @@ describe('Jellyfin resolution', () => {
     ]);
   });
 });
+
+describe('titles the server left unmatched', () => {
+  const routes = {
+    ...plexRoutes,
+    ...tmdbRoutes,
+    [`${PLEX}/library/sections/1/all`]: () => ({
+      MediaContainer: {
+        Metadata: [
+          { ratingKey: '30', type: 'movie', title: 'Dry', year: 2021, Media: [{ videoResolution: '1080' }] },
+          { ratingKey: '31', type: 'movie', title: "I'll Be Watching", year: 2018, Media: [{ videoResolution: '1080' }] },
+          { ratingKey: '32', type: 'movie', title: 'Home Video', year: 2010, Media: [{ videoResolution: '720' }] },
+        ],
+      },
+    }),
+    'https://api.themoviedb.org/3/search/movie': (url: URL) =>
+      ({
+        Dry: { results: [{ id: 4001, title: 'Dry', release_date: '1990-01-01' }, { id: 4002, title: 'Dry', release_date: '2022-03-01' }, { id: 4003, title: 'Dry Spell', release_date: '2021-01-01' }] },
+        "I'll Be Watching": { results: [{ id: 5001, title: "I'll Be Watching", release_date: '2023-01-01' }] },
+      })[url.searchParams.get('query') ?? ''] ?? { results: [] },
+    [`${PLEX}/library/metadata/32`]: () => ({
+      MediaContainer: {
+        Metadata: [{ ratingKey: '32', Media: [{ videoResolution: '720', width: 1280, height: 720, videoCodec: 'h264', audioCodec: 'aac', audioChannels: 2, bitrate: 4000, container: 'mp4', Part: [{ file: '/media/Movies/Home Video (2010)/Home Video.mp4', size: 1234567890, duration: 5_400_000 }] }] }],
+      },
+    }),
+  };
+
+  beforeEach(async () => {
+    fakeFetch(routes);
+    await t.librarySync.run();
+  });
+
+  it('matches them on TMDB by title, allowing a year either way, and only when sure', async () => {
+    const lib = (await owner.req('GET', '/api/library?kind=movie&sort=title')).json();
+    const byTitle = Object.fromEntries(lib.items.map((i: { title: string; tmdbId: number | null }) => [i.title, i.tmdbId]));
+    // 2021 on Plex, 2022 on TMDB: close enough, and "Dry Spell" and the 1990 film are not it.
+    expect(byTitle.Dry).toBe(4002);
+    // Five years out is a different film.
+    expect(byTitle["I'll Be Watching"]).toBeNull();
+    expect(byTitle['Home Video']).toBeNull();
+  });
+
+  it('opens an unmatched title with its server details, and its files for managers only', async () => {
+    const lib = (await owner.req('GET', '/api/library?q=home')).json();
+    const id = lib.items[0].itemIds[0];
+    const item = (await owner.req('GET', `/api/library/items/${id}`)).json();
+    expect(item).toMatchObject({ kind: 'movie', tmdbId: null, title: 'Home Video', year: 2010, resolution: '720p', copies: [{ server: 'plex', library: 'Movies' }] });
+
+    const files = (await owner.req('GET', `/api/library/items/${id}/files`)).json();
+    expect(files.servers).toEqual([
+      {
+        itemId: id,
+        server: 'plex',
+        error: null,
+        files: [expect.objectContaining({ path: '/media/Movies/Home Video (2010)/Home Video.mp4', size: 1234567890, resolution: '720p', videoCodec: 'h264', audioChannels: 2, durationMin: 90, container: 'mp4' })],
+      },
+    ]);
+
+    const u = await createUser(owner, 'viewer', 'user');
+    const c = new Client(t.app);
+    await c.login('viewer', u.password);
+    expect((await c.req('GET', `/api/library/items/${id}`)).statusCode).toBe(200);
+    expect((await c.req('GET', `/api/library/items/${id}/files`)).statusCode).toBe(403);
+    // A kids profile can't open a title with no age rating.
+    await owner.req('PATCH', `/api/users/${u.id}`, { maxAge: 9 });
+    expect((await c.req('GET', `/api/library/items/${id}`)).statusCode).toBe(404);
+    expect((await owner.req('GET', '/api/library/items/99999')).statusCode).toBe(404);
+  });
+});
