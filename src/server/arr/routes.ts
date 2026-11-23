@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, or } from 'drizzle-orm';
 import { requestApproved, requestDeclined } from '../notify/events.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -301,15 +301,27 @@ export async function arrRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  /** Whether a monitored title has anything on disk: a folder, a movie file or an episode file. */
+  const hasFiles = (r: typeof monitored.$inferSelect) =>
+    Boolean(r.path || r.filePath || db().select({ id: monitoredEpisodes.id }).from(monitoredEpisodes).where(and(eq(monitoredEpisodes.monitoredId, r.id), isNotNull(monitoredEpisodes.filePath))).get());
+
   /** Points a monitored title at a different TMDB entry (it was matched to the wrong one), keeping its files. */
   app.post('/api/monitored/:id/match', { config: { access: 'manager' } }, async (req) => {
     const { id } = parse(idParam, req.params);
     const { tmdbId } = parse(z.object({ tmdbId: z.number().int().positive() }), req.body);
     const row = getMonitored(id);
     if (tmdbId === row.tmdbId) return monitoredView(row);
-    if (db().select().from(monitored).where(and(eq(monitored.kind, row.kind), eq(monitored.tmdbId, tmdbId))).get()) throw conflict('That title is already monitored');
+    // Another row already on that TMDB entry: one with nothing on disk (added by a request, a list or
+    // library sync) is folded into this one; one with files is a real duplicate and stays put.
+    const other = db().select().from(monitored).where(and(eq(monitored.kind, row.kind), eq(monitored.tmdbId, tmdbId))).get();
+    if (other && hasFiles(other)) throw conflict(`${other.title}${other.year ? ` (${other.year})` : ''} is already monitored with its own files. Fix or remove that one first.`);
     const meta = await upstream(() => refreshMetadata(ctx, row.kind, tmdbId));
     if (!meta) throw notFound(`No ${row.kind === 'movie' ? 'movie' : 'show'} with that TMDB id`);
+    if (other) {
+      db().update(requests).set({ monitoredId: id }).where(eq(requests.monitoredId, other.id)).run();
+      db().update(downloads).set({ monitoredId: id }).where(eq(downloads.monitoredId, other.id)).run();
+      db().delete(monitored).where(eq(monitored.id, other.id)).run();
+    }
     const next = db().update(monitored).set({ tmdbId, title: meta.title, year: meta.year }).where(eq(monitored.id, id)).returning().get();
     if (next.kind === 'show') {
       // The episode list belongs to the old show; rebuild it and link the files on disk again.
@@ -318,7 +330,7 @@ export async function arrRoutes(app: FastifyInstance) {
       if (next.path) scanFolder(ctx, next);
     }
     db().update(requests).set({ tmdbId, title: meta.title, year: meta.year, posterPath: meta.posterPath }).where(eq(requests.monitoredId, id)).run();
-    audit(db(), req, 'monitored.matched', { target: `${row.title} → ${meta.title}`, details: { from: row.tmdbId, to: tmdbId } });
+    audit(db(), req, 'monitored.matched', { target: `${row.title} → ${meta.title}`, details: { from: row.tmdbId, to: tmdbId, ...(other ? { merged: other.id } : {}) } });
     return monitoredView(getMonitored(id));
   });
 
