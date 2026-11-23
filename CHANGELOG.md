@@ -4,12 +4,17 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-11-23
+
 ### Added
 - **Choose folder.** A title's Seasons (or Files) section has a Choose folder button that browses your media folders and points the title at the folder you pick, then links the episodes or movie file already in it. Only folders inside the configured root folders can be listed or chosen (symlinks out of them are refused), a folder another title uses can't be taken, and only managers and admins can use it. Each change is in the audit log.
 - **Library import (Monitored → Library import).** Lists every folder in your TV or movie folders that no monitored title uses yet, with a suggested title for each (matched on words in the name, the year, or a `{tmdb-…}` tag). Tick the rows, fix any guesses, and import them all at once. Nothing is moved, renamed or downloaded.
+- **Open library titles with no TMDB match.** Titles Plex, Jellyfin or Emby left unmatched (often the ones without posters) now open a library page with server details, episodes and Fix match. Managers also see the files as the media server reports them. Library sync also looks these titles up on TMDB by name and takes only a confident match (same title, year within one), so most get posters on their own.
+- **Air date on every episode row.** Episodes that have aired show "Aired YYYY-MM-DD" next to their quality and size, or next to the Missing label, the way upcoming ones show "Airs YYYY-MM-DD".
 
 ### Fixed
 - **Existing folders and episodes that weren't picked up.** A folder whose year is one off from TMDB's ("Show (2020)" for a show TMDB dates 2021) is now found. In season folders, episodes named "Episode 5", "E05" or "05 - Title" are matched, and "Specials", "S01" and "Series 1" folders count as seasons. Rescan folder now says when no folder was found instead of "Found 0 new files".
+- **Fix match refused a TMDB entry held by an empty row.** If another monitored row already had that TMDB id but nothing on disk, that row is now merged into the title being fixed, and its requests and downloads move over. A row with its own files still blocks the rematch, and the error now names it.
 
 ## [0.40.0] - 2026-11-22
 
