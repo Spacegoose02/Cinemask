@@ -157,10 +157,18 @@ describe('library sync', () => {
     const row = t.app.ctx.dbHandle.sqlite.prepare("SELECT id FROM monitored WHERE title = 'Paddington'").get() as { id: number };
     const res = await owner.req('POST', `/api/monitored/${row.id}/match`, { tmdbId: 555 });
     expect(res.json()).toMatchObject({ tmdbId: 555, title: 'Future Film' });
-    // Two monitored rows can't point at the same title.
-    t.app.ctx.dbHandle.sqlite.prepare("UPDATE monitored SET tmdb_id = 116149 WHERE id = ?").run(row.id);
+    // Two monitored rows can't point at the same title: one with files on disk blocks the rematch.
+    const sql = t.app.ctx.dbHandle.sqlite;
+    sql.prepare("UPDATE monitored SET tmdb_id = 116149, file_path = '/media/Paddington.mkv' WHERE id = ?").run(row.id);
     const other = (await owner.req('POST', '/api/monitored', { kind: 'movie', tmdbId: 555 })).json();
-    expect((await owner.req('POST', `/api/monitored/${other.id}/match`, { tmdbId: 116149 })).statusCode).toBe(409);
+    const blocked = await owner.req('POST', `/api/monitored/${other.id}/match`, { tmdbId: 116149 });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json().error).toContain('with its own files');
+    // One with nothing on disk (say, added by a request) is folded into the title being fixed.
+    sql.prepare('UPDATE monitored SET file_path = NULL, path = NULL WHERE id = ?').run(row.id);
+    const merged = await owner.req('POST', `/api/monitored/${other.id}/match`, { tmdbId: 116149 });
+    expect(merged.json()).toMatchObject({ id: other.id, tmdbId: 116149 });
+    expect(sql.prepare('SELECT id FROM monitored WHERE tmdb_id = 116149').all()).toEqual([{ id: other.id }]);
   });
 
   it('a second sync replaces, not duplicates, the server contents', async () => {
