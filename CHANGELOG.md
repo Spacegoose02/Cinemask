@@ -4,6 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- **Recently watched API (`GET /api/playing/recent`).** Lists the movies and shows watched most recently (finished plays only, one row per show with its latest episode) with TMDB posters, who watched and when. Managers and API keys can read it, so dashboards like DashDen can show Recently watched without Tautulli. `limit` is 1 to 50 (default 12).
+
 ## [0.41.0] - 2026-11-23
 
 ### Added

@@ -1,6 +1,6 @@
-import { and, eq, gte, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
-import { libraryItems, plays, type ServerType } from '../db/schema.js';
+import { libraryItems, media, plays, type ServerType } from '../db/schema.js';
 import type { LiveSession } from '../integrations/mediaserver.js';
 import { mediaServers } from '../library/service.js';
 
@@ -141,4 +141,65 @@ export function watchStats(ctx: AppContext, days: number, now = Date.now()): Wat
     decisions,
     history: rows.filter((r) => !r.active).sort((a, b) => b.startedAt - a.startedAt).slice(0, 100),
   };
+}
+
+export interface RecentlyWatched {
+  kind: 'movie' | 'show' | 'other';
+  title: string;
+  /** The episode's own title, for shows. */
+  episodeTitle: string | null;
+  season: number | null;
+  episode: number | null;
+  year: number | null;
+  tmdbId: number | null;
+  posterPath: string | null;
+  user: string;
+  watchedAt: number;
+  /** How far through it got, 0 to 1, when the server reported a length. */
+  progress: number | null;
+}
+
+/**
+ * The titles watched most recently (finished plays only, newest first), one row per movie or show
+ * with its latest episode, and the poster from the TMDB metadata. Feeds dashboard "Recently watched"
+ * widgets the way Tautulli's last_watched stat did.
+ */
+export function recentlyWatched(ctx: AppContext, limit: number): RecentlyWatched[] {
+  const rows = ctx.db.select().from(plays).where(and(eq(plays.active, false), gte(plays.watchedMs, MIN_PLAY_MS))).orderBy(desc(plays.stoppedAt), desc(plays.id)).limit(500).all();
+  const seen = new Set<string>();
+  const picked: (typeof rows)[number][] = [];
+  for (const r of rows) {
+    const key = r.kind === 'episode' ? `show:${r.tmdbId ?? r.show ?? r.title}` : `${r.kind}:${r.tmdbId ?? r.title}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    picked.push(r);
+    if (picked.length >= limit) break;
+  }
+  const ids = [...new Set(picked.map((r) => r.tmdbId).filter((id): id is number => id !== null))];
+  const posters = new Map(
+    ids.length
+      ? ctx.db
+          .select({ kind: media.kind, tmdbId: media.tmdbId, poster: media.posterOverride, fallback: media.posterPath })
+          .from(media)
+          .where(inArray(media.tmdbId, ids))
+          .all()
+          .map((m) => [`${m.kind}:${m.tmdbId}`, m.poster ?? m.fallback])
+      : [],
+  );
+  return picked.map((r) => {
+    const kind = r.kind === 'episode' ? 'show' : r.kind;
+    return {
+      kind,
+      title: r.kind === 'episode' ? (r.show ?? r.title) : r.title,
+      episodeTitle: r.kind === 'episode' ? r.title : null,
+      season: r.season,
+      episode: r.episode,
+      year: r.year,
+      tmdbId: r.tmdbId,
+      posterPath: r.tmdbId !== null ? (posters.get(`${kind}:${r.tmdbId}`) ?? null) : null,
+      user: r.user,
+      watchedAt: r.stoppedAt ?? r.updatedAt,
+      progress: r.durationMs ? Math.min(1, r.positionMs / r.durationMs) : null,
+    };
+  });
 }

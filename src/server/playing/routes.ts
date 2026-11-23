@@ -7,7 +7,7 @@ import { badRequest, notFound } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { mediaServers } from '../library/service.js';
 import { upstream } from '../library/routes.js';
-import { nowPlaying, trackPlays, watchStats } from './service.js';
+import { nowPlaying, recentlyWatched, trackPlays, watchStats } from './service.js';
 
 /** Now playing (managers) and stopping a stream (admins). Viewers' names and devices aren't shown to users. */
 export async function playingRoutes(app: FastifyInstance) {
@@ -22,6 +22,11 @@ export async function playingRoutes(app: FastifyInstance) {
   app.get('/api/playing/stats', { config: { access: 'manager' } }, async (req) => {
     const { days } = parse(z.object({ days: z.coerce.number().int().min(1).max(365).default(30) }), req.query);
     return watchStats(ctx, days);
+  });
+
+  app.get('/api/playing/recent', { config: { access: 'manager' } }, async (req) => {
+    const { limit } = parse(z.object({ limit: z.coerce.number().int().min(1).max(50).default(12) }), req.query);
+    return { items: recentlyWatched(ctx, limit) };
   });
 
   app.post('/api/playing/:id/stop', { config: { access: 'admin' } }, async (req) => {

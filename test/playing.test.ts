@@ -80,6 +80,35 @@ describe('now playing and watch stats', () => {
     expect(stats.history).toHaveLength(2);
   });
 
+  it('lists recently watched titles, one per show, with posters', async () => {
+    t.app.ctx.dbHandle.sqlite.prepare("INSERT INTO media (kind, tmdb_id, title, poster_path) VALUES ('movie',116149,'Paddington','/pad.jpg'), ('show',82728,'Bluey','/bluey.jpg')").run();
+    const t0 = Date.now();
+    await trackPlays(t.app.ctx, t0);
+    await trackPlays(t.app.ctx, t0 + 60_000);
+    await trackPlays(t.app.ctx, t0 + 120_000);
+    plexSessions = [];
+    jfSessions = [];
+    await trackPlays(t.app.ctx, t0 + 180_000);
+    // A later episode of the same show replaces the earlier one.
+    jfSessions = [{ Id: 'jf-s2', UserName: 'kid', Client: 'Jellyfin Web', DeviceName: 'Chrome', NowPlayingItem: { Id: 'e10', Name: 'Hospital', Type: 'Episode', SeriesName: 'Bluey', SeriesId: 's1', ParentIndexNumber: 1, IndexNumber: 2, RunTimeTicks: 4_200_000_000 }, PlayState: { PositionTicks: 600_000_000, IsPaused: false, PlayMethod: 'DirectPlay' } }];
+    await trackPlays(t.app.ctx, t0 + 240_000);
+    await trackPlays(t.app.ctx, t0 + 300_000);
+    jfSessions = [];
+    await trackPlays(t.app.ctx, t0 + 360_000);
+
+    const res = await owner.req('GET', '/api/playing/recent?limit=5');
+    expect(res.statusCode).toBe(200);
+    const items = res.json().items;
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ kind: 'show', title: 'Bluey', episodeTitle: 'Hospital', season: 1, episode: 2, posterPath: '/bluey.jpg', user: 'kid' });
+    expect(items[1]).toMatchObject({ kind: 'movie', title: 'Paddington', posterPath: '/pad.jpg', user: 'Grandma' });
+
+    const u = await createUser(owner, 'kid', 'user');
+    const kid = new Client(t.app);
+    await kid.login('kid', u.password);
+    expect((await kid.req('GET', '/api/playing/recent')).statusCode).toBe(403);
+  });
+
   it('lets managers see and only admins stop streams', async () => {
     await trackPlays(t.app.ctx);
     const u = await createUser(owner, 'kid', 'user');
