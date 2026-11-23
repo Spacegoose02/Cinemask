@@ -40,6 +40,36 @@ export function mediaServers(ctx: AppContext): { server: ServerType; client: Med
   return out;
 }
 
+/** Most titles to look up by name in one sync, so a big unmatched library can't stall it. */
+const TITLE_LOOKUPS_PER_SYNC = 200;
+
+/** Lower case, letters and digits only, "&" read as "and", so "Bob's Burgers" and "Bobs Burgers" agree. */
+export const normalTitle = (s: string) =>
+  s
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '');
+
+/**
+ * The TMDB id for a server title found by name: the title must be the same and the year within one
+ * (servers and TMDB often disagree by a year). With no year, only a single same-titled result counts.
+ * When several fit, an exact year wins; a tie means no match.
+ */
+export function confidentMatch(item: { title: string; year: number | null }, results: { id: number; title?: string; name?: string; release_date?: string; first_air_date?: string }[]): number | null {
+  const want = normalTitle(item.title);
+  if (!want) return null;
+  const same = results
+    .map((r) => ({ id: r.id, title: normalTitle(r.title ?? r.name ?? ''), year: Number((r.release_date ?? r.first_air_date ?? '').slice(0, 4)) || null }))
+    .filter((r) => r.title === want);
+  if (item.year === null) return same.length === 1 ? same[0]!.id : null;
+  const exact = same.filter((r) => r.year === item.year);
+  if (exact.length) return exact.length === 1 ? exact[0]!.id : null;
+  const near = same.filter((r) => r.year !== null && Math.abs(r.year - item.year!) <= 1);
+  return near.length === 1 ? near[0]!.id : null;
+}
+
 /** Returns the media row id for a TMDB title, creating a placeholder row if it is new. */
 export function ensureMedia(ctx: AppContext, kind: MediaKind, tmdbId: number, fallback: { title: string; year?: number | null }): number {
   const existing = ctx.db.select({ id: media.id }).from(media).where(and(eq(media.kind, kind), eq(media.tmdbId, tmdbId))).get();
@@ -341,6 +371,18 @@ export class LibrarySync {
         if (hit) item.tmdbId = hit.id;
       } catch {
         // Leave unmatched; it still shows in the library by title.
+      }
+    }
+    // Titles the server left unmatched (no ids at all) are looked up on TMDB by title and year.
+    // Only a confident hit is taken; anything else stays unmatched for Fix match.
+    for (const item of items.filter((i) => !i.tmdbId && !i.imdbId && !i.tvdbId).slice(0, TITLE_LOOKUPS_PER_SYNC)) {
+      try {
+        // No year filter: TMDB's is exact, and the year is checked with some slack.
+        const found = await tmdb.searchKind(item.kind === 'movie' ? 'movie' : 'tv', item.title);
+        const hit = confidentMatch(item, found.results);
+        if (hit) item.tmdbId = hit;
+      } catch {
+        // Leave unmatched.
       }
     }
   }

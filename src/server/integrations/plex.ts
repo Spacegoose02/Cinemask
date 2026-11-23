@@ -1,5 +1,6 @@
 import { connectError, fetchJson, IntegrationError, normalizeResolution } from './http.js';
-import { rollUpViews, type LiveSession, type MediaServerClient, type ServerItem } from './mediaserver.js';
+import type { MediaKind } from '../db/schema.js';
+import { rollUpViews, type LiveSession, type MediaServerClient, type ServerFile, type ServerItem } from './mediaserver.js';
 
 interface PlexGuid {
   id: string;
@@ -150,6 +151,38 @@ export class PlexClient implements MediaServerClient {
       }
     }
     return items;
+  }
+
+  async itemFiles(ratingKey: string, kind: MediaKind): Promise<ServerFile[]> {
+    type Part = { file?: string; size?: number; container?: string; duration?: number };
+    type Media = { videoResolution?: string; width?: number; height?: number; videoCodec?: string; audioCodec?: string; audioChannels?: number; bitrate?: number; duration?: number; container?: string; Part?: Part[] };
+    type M = { parentIndex?: number; index?: number; Media?: Media[] };
+    const key = encodeURIComponent(ratingKey);
+    const r = await this.get<{ Metadata?: M[] }>(kind === 'show' ? `/library/metadata/${key}/allLeaves` : `/library/metadata/${key}`);
+    const out: ServerFile[] = [];
+    for (const m of r.Metadata ?? []) {
+      for (const media of m.Media ?? []) {
+        for (const part of media.Part ?? []) {
+          if (!part.file) continue;
+          const ms = part.duration ?? media.duration;
+          out.push({
+            path: part.file,
+            size: part.size ?? null,
+            container: part.container ?? media.container ?? null,
+            resolution: normalizeResolution(media.videoResolution),
+            width: media.width ?? null,
+            height: media.height ?? null,
+            videoCodec: media.videoCodec ?? null,
+            audioCodec: media.audioCodec ?? null,
+            audioChannels: media.audioChannels ?? null,
+            durationMin: ms ? Math.round(ms / 60_000) : null,
+            bitrateKbps: media.bitrate ?? null,
+            ...(kind === 'show' ? { season: m.parentIndex ?? null, episode: m.index ?? null } : {}),
+          });
+        }
+      }
+    }
+    return out;
   }
 
   // ---------------- Writes: collections and posters ----------------

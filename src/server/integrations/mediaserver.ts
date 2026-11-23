@@ -28,6 +28,24 @@ export function rollUpViews(item: ServerItem) {
   item.lastViewedAt = last || null;
 }
 
+/** One video file of a movie or show, as the media server describes it. */
+export interface ServerFile {
+  path: string;
+  size: number | null;
+  container: string | null;
+  resolution: string | null;
+  width: number | null;
+  height: number | null;
+  videoCodec: string | null;
+  audioCodec: string | null;
+  audioChannels: number | null;
+  durationMin: number | null;
+  bitrateKbps: number | null;
+  /** Set for a show's episode files. */
+  season?: number | null;
+  episode?: number | null;
+}
+
 /** Something being played right now, from the server's own list of sessions. */
 export interface LiveSession {
   /** Stable for one play of one item on one device. */
@@ -59,6 +77,8 @@ export interface MediaServerClient {
   test(): Promise<{ name: string; version: string; machineId?: string }>;
   /** Every movie and show (with episodes) on the server. */
   fetchLibrary(): Promise<ServerItem[]>;
+  /** The files behind one movie or show (every episode), for titles Cinemask has no files of its own for. */
+  itemFiles?(externalKey: string, kind: MediaKind): Promise<ServerFile[]>;
   /** What's playing now (Now playing). */
   sessions?(): Promise<LiveSession[]>;
   /** Stops a stream, with a message for the viewer where the server can show one. */

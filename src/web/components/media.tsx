@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { mediaPath, poster, STATUS_LABEL, type Availability, type MediaCardData } from '../lib/media';
+import { cardPath, poster, STATUS_LABEL, type Availability, type MediaCardData } from '../lib/media';
 import { t } from '../lib/i18n';
 
 const STATUS_STYLE: Record<Availability, string> = {
@@ -45,7 +45,8 @@ export function MediaCard({ item, extra }: { item: MediaCardData; extra?: ReactN
       </div>
     </div>
   );
-  const card = item.tmdbId ? <Link to={mediaPath(item.kind, item.tmdbId)}>{body}</Link> : body;
+  const to = cardPath(item);
+  const card = to ? <Link to={to}>{body}</Link> : body;
   return extra ? (
     <div>
       {card}

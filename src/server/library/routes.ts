@@ -7,7 +7,7 @@ import { rootOf } from '../arr/roots.js';
 import { bestResolution, IntegrationError } from '../integrations/http.js';
 import { HttpError } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
-import { availabilityFor, cards, episodesOnServer, isReleased, mdblistClient, refreshMetadata, tmdbClient, watchInfo, type LibrarySync } from './service.js';
+import { availabilityFor, cards, episodesOnServer, isReleased, mdblistClient, mediaServers, refreshMetadata, tmdbClient, watchInfo, type LibrarySync } from './service.js';
 import { localDay } from '../lib/dates.js';
 import { assertSuitable, certificationOf, forViewer, maxAgeOf, suitableSql } from '../kids/ratings.js';
 
@@ -353,6 +353,84 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
     }
     audit(ctx.db, req, 'library.matched', { target: `${items[0]!.title} → ${meta.title}`, details: { tmdbId: body.tmdbId, items: body.itemIds } });
     return { kind, tmdbId: body.tmdbId, title: meta.title };
+  });
+
+  /**
+   * One library title as the media servers have it: the page for titles with no TMDB match (and so
+   * no movie or show page). The same title on other servers comes along, as in the Library grid.
+   */
+  function libraryGroup(userId: number, id: number) {
+    const first = ctx.db.select().from(libraryItems).where(eq(libraryItems.id, id)).get();
+    if (!first) throw new HttpError(404, 'Library item not found', 'not_found');
+    // Kids profiles only see titles rated for their age, and an unmatched title has no rating.
+    const maxAge = maxAgeOf(ctx, userId);
+    if (maxAge !== null) {
+      const ok = first.mediaId !== null && ctx.db.select({ id: media.id }).from(media).where(and(eq(media.id, first.mediaId), suitableSql(maxAge))).get();
+      if (!ok) throw new HttpError(404, 'Library item not found', 'not_found');
+    }
+    const items = first.tmdbId === null ? [first] : ctx.db.select().from(libraryItems).where(and(eq(libraryItems.kind, first.kind), eq(libraryItems.tmdbId, first.tmdbId))).all();
+    return { first, items };
+  }
+
+  app.get('/api/library/items/:id', { config: { access: 'user' } }, async (req) => {
+    const { id } = parse(z.object({ id: z.coerce.number().int().positive() }), req.params);
+    const { first, items } = libraryGroup(req.user!.id, id);
+    const eps = first.kind === 'show' ? ctx.db.select().from(libraryEpisodes).where(inArray(libraryEpisodes.libraryItemId, items.map((i) => i.id))).orderBy(asc(libraryEpisodes.season), asc(libraryEpisodes.episode)).all() : [];
+    const byEp = new Map<string, { season: number; episode: number; title: string | null; resolution: string | null; viewCount: number | null }>();
+    for (const e of eps) {
+      const k = `${e.season}:${e.episode}`;
+      const had = byEp.get(k);
+      if (!had) byEp.set(k, { season: e.season, episode: e.episode, title: e.title, resolution: e.resolution, viewCount: e.viewCount });
+      else {
+        had.resolution = bestResolution([had.resolution, e.resolution]);
+        if (e.viewCount !== null) had.viewCount = Math.max(had.viewCount ?? 0, e.viewCount);
+      }
+    }
+    const meta = first.mediaId ? ctx.db.select({ posterPath: sql<string | null>`coalesce(${media.posterOverride}, ${media.posterPath})` }).from(media).where(eq(media.id, first.mediaId)).get() : undefined;
+    return {
+      id: first.id,
+      kind: first.kind,
+      tmdbId: first.tmdbId,
+      imdbId: first.imdbId,
+      tvdbId: first.tvdbId,
+      title: first.title,
+      year: first.year,
+      posterPath: meta?.posterPath ?? null,
+      resolution: bestResolution(items.map((i) => i.resolution)),
+      itemIds: items.map((i) => i.id),
+      copies: items.map((i) => ({
+        id: i.id,
+        server: i.server,
+        library: i.library,
+        resolution: i.resolution,
+        addedAt: i.addedAt,
+        viewCount: i.viewCount,
+        lastViewedAt: i.lastViewedAt,
+        labels: i.labels ? (JSON.parse(i.labels) as string[]) : [],
+      })),
+      episodes: [...byEp.values()],
+    };
+  });
+
+  /** Managers: the files behind a library title, read from the media servers that have it. */
+  app.get('/api/library/items/:id/files', { config: { access: 'manager' } }, async (req) => {
+    const { id } = parse(z.object({ id: z.coerce.number().int().positive() }), req.params);
+    const { items } = libraryGroup(req.user!.id, id);
+    const servers = mediaServers(ctx);
+    const out = [];
+    for (const i of items) {
+      const client = servers.find((s) => s.server === i.server)?.client;
+      if (!client?.itemFiles) {
+        out.push({ itemId: i.id, server: i.server, files: [], error: client ? 'This server does not share file details.' : 'This server is not connected.' });
+        continue;
+      }
+      try {
+        out.push({ itemId: i.id, server: i.server, files: await client.itemFiles(i.externalKey, i.kind), error: null });
+      } catch (err) {
+        out.push({ itemId: i.id, server: i.server, files: [], error: (err as Error).message });
+      }
+    }
+    return { servers: out };
   });
 
   app.post('/api/library/sync', { config: { access: 'manager' } }, async (req) => {
