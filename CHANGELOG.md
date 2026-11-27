@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.42.1] - 2026-11-27
+
+### Fixed
+- **Indexer priority from Prowlarr.** The Prowlarr sync never read Prowlarr's priority, so every synced indexer kept the default of 25. Each sync now copies the priority, kept within 1 to 50, including onto indexers that already exist.
+
 ## [0.42.0] - 2026-11-25
 
 ### Added
