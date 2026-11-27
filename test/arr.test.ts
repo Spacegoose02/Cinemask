@@ -119,6 +119,45 @@ describe('direct download safety', () => {
   });
 });
 
+describe('Prowlarr sync', () => {
+  const PROWLARR = 'http://prowlarr.local:9696';
+  let t: Awaited<ReturnType<typeof makeApp>>;
+  let owner: Client;
+  let list: Record<string, unknown>[];
+
+  beforeEach(async () => {
+    t = await makeApp();
+    owner = await setupOwner(t.app);
+    list = [
+      { id: 1, name: '1337x', protocol: 'torrent', enable: true, priority: 40 },
+      { id: 2, name: 'Usenet-Crawler', protocol: 'usenet', enable: false, priority: 25 },
+    ];
+    fakeFetch({ [`${PROWLARR}/api/v1/indexer`]: () => list });
+    await owner.req('PUT', '/api/settings/prowlarr', { url: PROWLARR, apiKey: 'pk' });
+  });
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await t.close();
+  });
+
+  const synced = async () => ((await owner.req('GET', '/api/indexers')).json() as { name: string; priority: number; enabled: boolean }[]).map((i) => ({ name: i.name, priority: i.priority, enabled: i.enabled }));
+
+  it("copies each indexer's priority and updates it on a later sync", async () => {
+    expect((await owner.req('POST', '/api/indexers/prowlarr-sync')).json()).toEqual({ total: 2, added: 2 });
+    expect(await synced()).toEqual([
+      { name: 'Usenet-Crawler (Prowlarr)', priority: 25, enabled: false },
+      { name: '1337x (Prowlarr)', priority: 40, enabled: true },
+    ]);
+    list[0]!.priority = 10;
+    list[1]!.priority = 99;
+    expect((await owner.req('POST', '/api/indexers/prowlarr-sync')).json()).toEqual({ total: 2, added: 0 });
+    expect(await synced()).toEqual([
+      { name: '1337x (Prowlarr)', priority: 10, enabled: true },
+      { name: 'Usenet-Crawler (Prowlarr)', priority: 50, enabled: false },
+    ]);
+  });
+});
+
 describe('request → download → import', () => {
   let t: Awaited<ReturnType<typeof makeApp>>;
   let owner: Client;
