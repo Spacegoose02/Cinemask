@@ -125,6 +125,8 @@ export interface ProwlarrIndexer {
   name: string;
   protocol: Protocol;
   enable: boolean;
+  /** 1 (highest) to 50 (lowest); Prowlarr's default is 25. */
+  priority?: number;
   capabilities?: { categories?: { id: number }[] };
 }
 

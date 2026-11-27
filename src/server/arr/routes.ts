@@ -851,6 +851,8 @@ export async function arrRoutes(app: FastifyInstance) {
         url: `${p.url.replace(/\/+$/, '')}/${pi.id}/api`,
         apiKey: sealSecret(ctx, p.apiKey),
         enabled: pi.enable,
+        // Prowlarr and Cinemask share the same scale (1 is tried first, 50 last), so copy it across.
+        priority: Number.isInteger(pi.priority) ? Math.min(50, Math.max(1, pi.priority!)) : 25,
         source: 'prowlarr' as const,
         prowlarrId: pi.id,
       };
