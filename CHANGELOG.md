@@ -4,6 +4,17 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-11-28
+
+### Added
+- **Person pages for cast members.** Clicking a face in a title's Cast row opens a page with their photo, bio, birth and death dates, birthplace, a Known for row and the full filmography, acting and crew, filterable by movies or TV. Every credit is a normal title card with its on-server status and Request button, plus the role played. Talk show and news guest spots and adult titles are left out, and kids profiles only see titles their age limit allows.
+
+### Changed
+- **Card Download asks which library.** A manager with several library folders gets the same "Which library?" prompt as on the title page, right on the card, instead of being sent to the title page. The Request and Download buttons on cards are now always visible instead of waiting for hover.
+
+### Security
+- **Safer outgoing requests.** Ids placed into TMDB, mdblist and MusicBrainz request paths are now URL-encoded, and person ids must be whole numbers before they reach TMDB, so no input can change the path of an outgoing request.
+
 ## [0.43.0] - 2026-11-28
 
 ### Added
