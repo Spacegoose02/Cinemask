@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { StatusBadge, TrailerModal } from '../components/media';
 import { Alert } from '../components/ui';
 import { api, localDay } from '../lib/api';
-import { poster, serverName, type AvailabilityInfo, type MediaKind } from '../lib/media';
+import { initials, poster, serverName, type AvailabilityInfo, type MediaKind } from '../lib/media';
 import { t } from '../lib/i18n';
 
 export interface MediaDetail {
@@ -38,15 +38,6 @@ export interface MediaDetail {
   /** Plays on Plex/Jellyfin, null when the title isn't on a server. */
   watch: { viewCount: number; lastViewedAt: number | null } | null;
 }
-
-/** "Meg Ryan" → "MR", for people TMDB has no photo of. */
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => w[0]!.toUpperCase())
-    .slice(0, 2)
-    .join('');
 
 interface Season {
   episodes: { episodeNumber: number; name: string; airDate: string | null; overview: string; onServer: boolean; resolution: string | null; runtime: number | null; viewCount: number | null }[];
@@ -204,16 +195,18 @@ export function MediaDetailPage({
           <ul className="flex gap-3 overflow-x-auto pb-2">
             {m.cast.map((c) => (
               <li key={c.id} className="w-28 shrink-0">
-                <div className="aspect-[2/3] overflow-hidden rounded-md border border-border bg-surface-2">
-                  {c.profilePath ? (
-                    <img src={poster(c.profilePath, 'w185')!} alt="" loading="lazy" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-2xl font-semibold text-muted">{initials(c.name)}</div>
-                  )}
-                </div>
-                <div className="mt-1.5 text-sm font-medium leading-tight">{c.name}</div>
-                {c.character && <div className="text-xs leading-tight text-muted">{c.character}</div>}
-                {c.episodes ? <div className="text-xs text-muted">{c.episodes} episode{c.episodes === 1 ? '' : 's'}</div> : null}
+                <Link to={`/person/${c.id}`} className="group block" title={t('See {name}’s other work', { name: c.name })}>
+                  <div className="aspect-[2/3] overflow-hidden rounded-md border border-border bg-surface-2 transition group-hover:border-accent">
+                    {c.profilePath ? (
+                      <img src={poster(c.profilePath, 'w185')!} alt="" loading="lazy" className="h-full w-full object-cover transition group-hover:scale-105" />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-2xl font-semibold text-muted">{initials(c.name)}</div>
+                    )}
+                  </div>
+                  <div className="mt-1.5 text-sm font-medium leading-tight group-hover:text-accent">{c.name}</div>
+                  {c.character && <div className="text-xs leading-tight text-muted">{c.character}</div>}
+                  {c.episodes ? <div className="text-xs text-muted">{c.episodes} episode{c.episodes === 1 ? '' : 's'}</div> : null}
+                </Link>
               </li>
             ))}
           </ul>

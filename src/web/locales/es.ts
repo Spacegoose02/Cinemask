@@ -319,6 +319,20 @@ const messages: Record<string, string> = {
   "Series premiere": "Estreno de la serie",
   "TV shows": "Series",
   "Withdraw": "Retirar",
+  "Known for": "Conocido por",
+  "Born": "Nacimiento",
+  "Died": "Fallecimiento",
+  "Birthplace": "Lugar de nacimiento",
+  "age {n}": "{n} años",
+  "Show less": "Mostrar menos",
+  "Read more": "Leer más",
+  "Filmography": "Filmografía",
+  "{n} on your server": "{n} en tu servidor",
+  "Acting ({n})": "Actuación ({n})",
+  "Crew ({n})": "Equipo ({n})",
+  "Nothing to show here.": "No hay nada que mostrar.",
+  "TMDB has no biography for this person yet.": "TMDB aún no tiene biografía de esta persona.",
+  "See {name}’s other work": "Ver más trabajos de {name}",
 };
 
 export default messages;

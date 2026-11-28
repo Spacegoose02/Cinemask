@@ -116,7 +116,7 @@ export class MusicBrainzClient {
 
   async artist(mbid: string): Promise<ArtistCard | null> {
     try {
-      return toArtist(await this.get<MbArtist>(`/artist/${mbid}`, 7 * DAY));
+      return toArtist(await this.get<MbArtist>(`/artist/${encodeURIComponent(mbid)}`, 7 * DAY));
     } catch (err) {
       if ((err as { status?: number }).status === 404) return null;
       throw err;
@@ -125,7 +125,7 @@ export class MusicBrainzClient {
 
   /** An artist's albums and EPs (studio releases first), newest first. `fresh` skips the cache, for spotting new releases. */
   async albumsBy(artist: ArtistCard, fresh = false): Promise<AlbumCard[]> {
-    const r = await this.get<{ 'release-groups': MbReleaseGroup[] }>(`/release-group?artist=${artist.mbid}&type=album|ep&limit=100`, DAY, fresh);
+    const r = await this.get<{ 'release-groups': MbReleaseGroup[] }>(`/release-group?artist=${encodeURIComponent(artist.mbid)}&type=album|ep&limit=100`, DAY, fresh);
     return r['release-groups']
       .map((rg) => toAlbum(rg, artist))
       .sort((a, b) => Number(a.secondary.length > 0) - Number(b.secondary.length > 0) || (b.year ?? 0) - (a.year ?? 0));
@@ -133,7 +133,7 @@ export class MusicBrainzClient {
 
   async album(mbid: string): Promise<AlbumCard | null> {
     try {
-      return toAlbum(await this.get<MbReleaseGroup>(`/release-group/${mbid}?inc=artist-credits`, 7 * DAY));
+      return toAlbum(await this.get<MbReleaseGroup>(`/release-group/${encodeURIComponent(mbid)}?inc=artist-credits`, 7 * DAY));
     } catch (err) {
       if ((err as { status?: number }).status === 404) return null;
       throw err;

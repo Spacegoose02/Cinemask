@@ -319,6 +319,20 @@ const messages: Record<string, string> = {
   "Series premiere": "Seriepremière",
   "TV shows": "Series",
   "Withdraw": "Intrekken",
+  "Known for": "Bekend van",
+  "Born": "Geboren",
+  "Died": "Overleden",
+  "Birthplace": "Geboorteplaats",
+  "age {n}": "{n} jaar",
+  "Show less": "Minder tonen",
+  "Read more": "Meer lezen",
+  "Filmography": "Filmografie",
+  "{n} on your server": "{n} op je server",
+  "Acting ({n})": "Acteren ({n})",
+  "Crew ({n})": "Crew ({n})",
+  "Nothing to show here.": "Niets om te tonen.",
+  "TMDB has no biography for this person yet.": "TMDB heeft nog geen biografie van deze persoon.",
+  "See {name}’s other work": "Meer werk van {name}",
 };
 
 export default messages;

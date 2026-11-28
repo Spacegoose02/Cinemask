@@ -5,6 +5,8 @@ import { audit } from '../audit/log.js';
 import { downloads, libraryEpisodes, libraryItems, matchOverrides, media, MEDIA_KINDS, monitored, monitoredEpisodes, type MediaKind } from '../db/schema.js';
 import { rootOf } from '../arr/roots.js';
 import { bestResolution, IntegrationError } from '../integrations/http.js';
+import type { AppContext } from '../context.js';
+import type { TmdbPersonCredit } from '../integrations/tmdb.js';
 import { HttpError } from '../lib/errors.js';
 import { parse } from '../lib/validate.js';
 import { availabilityFor, cards, episodesOnServer, isReleased, mdblistClient, mediaServers, refreshMetadata, tmdbClient, watchInfo, type LibrarySync } from './service.js';
@@ -26,6 +28,46 @@ export async function upstream<T>(fn: () => Promise<T>): Promise<T> {
     if (err instanceof IntegrationError) throw new HttpError(502, err.message, 'upstream');
     throw err;
   }
+}
+
+/** How many titles a person page lists under "Known for", and at most in each of its credit lists. */
+const KNOWN_FOR_SIZE = 8;
+const PERSON_CREDITS_MAX = 300;
+/** TMDB genres for talk and news shows, where a person only appears as themselves as a guest. */
+const GUEST_GENRES = new Set([10763, 10767]);
+
+/**
+ * A person's TMDB credits as title cards, one per title (several roles on one title are joined),
+ * newest first with titles that have no date yet at the top. Adult titles and talk/news guest spots are left out.
+ */
+export function personCredits(ctx: AppContext, credits: TmdbPersonCredit[], roleOf: (c: TmdbPersonCredit) => string | undefined) {
+  const byTitle = new Map<string, { credit: TmdbPersonCredit; roles: string[]; episodes: number }>();
+  for (const c of credits) {
+    if ((c.media_type !== 'movie' && c.media_type !== 'tv') || c.adult) continue;
+    if (c.media_type === 'tv' && c.genre_ids?.some((g) => GUEST_GENRES.has(g))) continue;
+    const k = `${c.media_type}:${c.id}`;
+    const entry = byTitle.get(k) ?? { credit: c, roles: [], episodes: 0 };
+    const role = roleOf(c)?.trim();
+    if (role && !entry.roles.includes(role)) entry.roles.push(role);
+    entry.episodes += c.episode_count ?? 0;
+    byTitle.set(k, entry);
+  }
+  const date = (c: TmdbPersonCredit) => c.release_date || c.first_air_date || '';
+  const list = [...byTitle.values()]
+    .sort((a, b) => {
+      const da = date(a.credit);
+      const db = date(b.credit);
+      if (!da !== !db) return da ? 1 : -1;
+      return db.localeCompare(da) || (b.credit.popularity ?? 0) - (a.credit.popularity ?? 0);
+    })
+    .slice(0, PERSON_CREDITS_MAX);
+  // cards() keeps every movie/show credit in order, so its answer lines up with the list.
+  return cards(ctx, list.map((e) => e.credit)).map((card, i) => ({
+    ...card,
+    role: list[i]!.roles.join(' / ') || null,
+    episodes: list[i]!.episodes || null,
+    votes: list[i]!.credit.vote_count ?? 0,
+  }));
 }
 
 /** How far back "Aired in the last 60 days" looks. */
@@ -251,6 +293,32 @@ export async function libraryRoutes(app: FastifyInstance, opts: { sync: LibraryS
       cast,
       ratings,
       watch: watchInfo(ctx, kind, tmdbId),
+    };
+  });
+
+  app.get('/api/people/:id', { config: { access: 'user' } }, async (req) => {
+    const { id } = parse(z.object({ id: z.coerce.number().int().positive() }), req.params);
+    const tmdb = tmdbClient(ctx);
+    if (!tmdb.configured) throw new HttpError(404, 'Not found. Set a TMDB API key in Settings → Metadata to look up people.', 'not_found');
+    const p = await upstream(() => tmdb.person(id));
+    const cast = await forViewer(ctx, req.user!.id, personCredits(ctx, p.combined_credits?.cast ?? [], (c) => c.character));
+    const crew = await forViewer(ctx, req.user!.id, personCredits(ctx, p.combined_credits?.crew ?? [], (c) => c.job));
+    // Known for: their most-voted titles, from whichever side of the camera they mostly work on.
+    const main = p.known_for_department === 'Acting' || !crew.length ? cast : crew;
+    const knownFor = [...main].sort((a, b) => b.votes - a.votes).slice(0, KNOWN_FOR_SIZE);
+    return {
+      id: p.id,
+      name: p.name,
+      biography: p.biography ?? '',
+      birthday: p.birthday ?? null,
+      deathday: p.deathday ?? null,
+      placeOfBirth: p.place_of_birth ?? null,
+      department: p.known_for_department ?? null,
+      profilePath: p.profile_path ?? null,
+      imdbId: p.imdb_id ?? null,
+      knownFor,
+      cast,
+      crew,
     };
   });
 
