@@ -162,6 +162,7 @@ const messages: Record<string, string> = {
   "On {services}, so it can't be requested": "Op {services}, dus niet aan te vragen",
   "One more step": "Nog één stap",
   "Open": "Open",
+  "Holiday": "Feestdag",
   "Original language": "Oorspronkelijke taal",
   "Originals only": "Alleen eigen producties",
   "Password": "Wachtwoord",

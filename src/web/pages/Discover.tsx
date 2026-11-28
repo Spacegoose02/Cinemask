@@ -16,6 +16,7 @@ interface Options {
   networks: { id: number; name: string }[];
   originals: number[];
   sorts: string[];
+  holidays: { id: string; name: string }[];
   region: string;
 }
 
@@ -29,6 +30,7 @@ interface Filter {
   yearTo?: number;
   ratingMin?: number;
   language?: string;
+  holiday?: string;
   sort: string;
 }
 
@@ -51,6 +53,15 @@ const LANGUAGES = [
 const SORT_LABEL: Record<string, string> = { popular: 'Most popular', rating: 'Highest rated', newest: 'Newest', oldest: 'Oldest', title: 'Title' };
 const EMPTY: Filter = { kind: 'movie', genres: [], networks: [], providers: [], sort: 'popular' };
 
+/** The holiday coming up, offered as a one-tap "New … movies" pick in the weeks before it. */
+function seasonalHoliday(d = new Date()): { id: string; name: string } | null {
+  const m = d.getMonth() + 1;
+  if (m === 11 || m === 12) return { id: 'christmas', name: 'Christmas' };
+  if (m === 10) return { id: 'halloween', name: 'Halloween' };
+  if (m === 2 && d.getDate() <= 14) return { id: 'valentines', name: 'Valentine’s Day' };
+  return null;
+}
+
 function toQuery(f: Filter) {
   const q = new URLSearchParams({ kind: f.kind, sort: f.sort });
   if (f.genres.length) q.set('genres', f.genres.join(','));
@@ -61,6 +72,7 @@ function toQuery(f: Filter) {
   if (f.yearTo) q.set('yearTo', String(f.yearTo));
   if (f.ratingMin) q.set('ratingMin', String(f.ratingMin));
   if (f.language) q.set('language', f.language);
+  if (f.holiday) q.set('holiday', f.holiday);
   return q;
 }
 
@@ -79,6 +91,7 @@ function fromQuery(q: URLSearchParams): Filter {
     yearTo: num('yearTo'),
     ratingMin: num('ratingMin'),
     language: q.get('language') || undefined,
+    holiday: q.get('holiday') || undefined,
   };
 }
 
@@ -127,9 +140,9 @@ function SaveAsList({ filter, onClose }: { filter: Filter; onClose: () => void }
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const save = async () => {
     try {
-      const { kind, genres, networks, providers, originals, yearFrom, yearTo, ratingMin, language, sort } = filter;
+      const { kind, genres, networks, providers, originals, yearFrom, yearTo, ratingMin, language, holiday, sort } = filter;
       await api('/api/lists', {
-        body: { name, autoAdd, discover: { pages, filter: { kind, genres, networks, providers, originals: Boolean(originals && providers.length), yearFrom, yearTo, ratingMin, language, sort } } },
+        body: { name, autoAdd, discover: { pages, filter: { kind, genres, networks, providers, originals: Boolean(originals && providers.length), yearFrom, yearTo, ratingMin, language, holiday, sort } } },
       });
       setMsg({ kind: 'success', text: 'Saved. It shows up under Lists and can be added to anyone’s homepage.' });
     } catch (e) {
@@ -179,15 +192,27 @@ export function DiscoverPage() {
   });
   const items = res.data?.pages.flatMap((p) => p.results) ?? [];
   const thisYear = new Date().getFullYear();
+  const season = seasonalHoliday();
+  const seasonOn = season && f.holiday === season.id && f.sort === 'newest';
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">{t('Discover')}</h1>
         <div className="flex flex-wrap gap-2">
+          {season && (
+            <button
+              type="button"
+              aria-pressed={Boolean(seasonOn)}
+              className={seasonOn ? 'btn-primary' : 'btn-secondary'}
+              onClick={() => setF(seasonOn ? { ...EMPTY, kind: f.kind } : { ...f, holiday: season.id, sort: 'newest' })}
+            >
+              {`New ${season.name} ${f.kind === 'tv' ? 'shows' : 'movies'}`}
+            </button>
+          )}
           <div className="flex overflow-hidden rounded-md border border-border">
             {(['movie', 'tv'] as const).map((k) => (
-              <button key={k} onClick={() => setF({ ...EMPTY, kind: k, sort: f.sort })} className={`px-3 py-1.5 text-sm ${f.kind === k ? 'bg-accent text-accent-fg' : 'bg-surface-2 text-muted'}`}>
+              <button key={k} onClick={() => setF({ ...EMPTY, kind: k, sort: f.sort, holiday: f.holiday })} className={`px-3 py-1.5 text-sm ${f.kind === k ? 'bg-accent text-accent-fg' : 'bg-surface-2 text-muted'}`}>
                 {t(k === 'movie' ? 'Movies' : 'TV shows')}
               </button>
             ))}
@@ -205,7 +230,7 @@ export function DiscoverPage() {
 
       {showFilters && (
         <div className="card space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <Field label={t('Sort by')}>
               <select className="input" value={f.sort} onChange={(e) => set('sort', e.target.value)}>
                 {(opts.data?.sorts ?? ['popular']).map((s) => (
@@ -236,6 +261,16 @@ export function DiscoverPage() {
                 {LANGUAGES.map(([v, l]) => (
                   <option key={v} value={v}>
                     {l}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label={t('Holiday')}>
+              <select className="input" value={f.holiday ?? ''} onChange={(e) => set('holiday', e.target.value || undefined)}>
+                <option value="">{t('Any')}</option>
+                {(opts.data?.holidays ?? []).map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {t(h.name)}
                   </option>
                 ))}
               </select>
