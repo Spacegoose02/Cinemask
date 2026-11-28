@@ -200,6 +200,8 @@ export class TmdbClient {
 
   /** A person's bio with every movie and show they're credited on. */
   person(id: number) {
+    // The id comes from the request path: only a whole positive number may reach the URL.
+    if (!Number.isInteger(id) || id <= 0) throw new IntegrationError('TMDB', 'person ids are whole numbers');
     return this.get<TmdbPerson>(`/person/${id}`, { append_to_response: 'combined_credits' }, 24 * 60 * 60 * 1000);
   }
 
