@@ -21,6 +21,23 @@ export interface TmdbSearchResult {
   popularity?: number;
   genre_ids?: number[];
   original_language?: string;
+  adult?: boolean;
+}
+
+/** One credit on a person's page: a movie or show they acted in (character) or worked on (job). */
+export type TmdbPersonCredit = TmdbSearchResult & { character?: string; job?: string; episode_count?: number; vote_count?: number };
+
+export interface TmdbPerson {
+  id: number;
+  name: string;
+  biography: string;
+  birthday: string | null;
+  deathday: string | null;
+  place_of_birth: string | null;
+  known_for_department: string | null;
+  profile_path: string | null;
+  imdb_id?: string | null;
+  combined_credits?: { cast: TmdbPersonCredit[]; crew: TmdbPersonCredit[] };
 }
 
 export interface TmdbVideo {
@@ -179,6 +196,11 @@ export class TmdbClient {
 
   show(id: number) {
     return this.get<TmdbShow>(`/tv/${id}`, { append_to_response: 'videos,external_ids,aggregate_credits,content_ratings' });
+  }
+
+  /** A person's bio with every movie and show they're credited on. */
+  person(id: number) {
+    return this.get<TmdbPerson>(`/person/${id}`, { append_to_response: 'combined_credits' }, 24 * 60 * 60 * 1000);
   }
 
   season(id: number, season: number) {

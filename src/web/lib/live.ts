@@ -6,15 +6,15 @@ import { useEffect, useState } from 'react';
  * API route that was written to (POST /api/requests → requests), or a background job's topic.
  */
 const TOPIC_QUERIES: Record<string, string[]> = {
-  requests: ['requests', 'requests-open', 'request-count', 'request-quota', 'watchlist-me', 'home-row', 'media', 'lookup', 'activity', 'search', 'discover'],
-  downloads: ['downloads', 'download-count', 'music-requests', 'files', 'file-details', 'issues', 'issue-count', 'monitored-overview', 'monitored-missing', 'activity', 'manual-import', 'media', 'calendar', 'import'],
+  requests: ['requests', 'requests-open', 'request-count', 'request-quota', 'watchlist-me', 'home-row', 'media', 'person', 'lookup', 'activity', 'search', 'discover'],
+  downloads: ['downloads', 'download-count', 'music-requests', 'files', 'file-details', 'issues', 'issue-count', 'monitored-overview', 'monitored-missing', 'activity', 'manual-import', 'media', 'person', 'calendar', 'import'],
   // The tracker moved progress bars along and nothing finished: only what shows progress.
   'download-progress': ['downloads', 'download-count', 'requests', 'requests-open'],
-  monitored: ['storage', 'library-import', 'monitored-overview', 'monitored-missing', 'files', 'media', 'calendar', 'airing', 'downloads', 'download-count', 'lookup'],
+  monitored: ['storage', 'library-import', 'monitored-overview', 'monitored-missing', 'files', 'media', 'person', 'calendar', 'airing', 'downloads', 'download-count', 'lookup'],
   files: ['storage', 'files', 'file-details', 'media', 'duplicates', 'rename', 'monitored-overview', 'monitored-missing', 'library-import'],
   'manual-import': ['manual-import', 'downloads', 'download-count', 'files'],
   import: ['import', 'files', 'monitored-overview', 'monitored-missing'],
-  library: ['library', 'monitored-missing', 'library-sections', 'library-labels', 'home-row', 'media', 'airing', 'calendar', 'duplicates', 'sync-status', 'lookup'],
+  library: ['library', 'monitored-missing', 'library-sections', 'library-labels', 'home-row', 'media', 'person', 'airing', 'calendar', 'duplicates', 'sync-status', 'lookup'],
   books: ['book-requests', 'abs-library', 'bookbandit-library', 'books-search'],
   podcasts: ['podcasts-top', 'podcasts-search', 'abs-library'],
   health: ['health', 'health-summary'],

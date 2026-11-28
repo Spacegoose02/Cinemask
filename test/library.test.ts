@@ -210,6 +210,27 @@ describe('statuses and details', () => {
     expect(season.episodes.map((e: { onServer: boolean }) => e.onServer)).toEqual([true, true, false]);
   });
 
+  it('shows a cast member’s bio and other work, with what is on the server', async () => {
+    const u = await createUser(owner, 'fan', 'user');
+    const c = new Client(t.app);
+    await c.login('fan', u.password);
+    const res = await c.req('GET', '/api/people/1');
+    expect(res.statusCode).toBe(200);
+    const p = res.json();
+    expect(p).toMatchObject({ name: 'Ben Whishaw', biography: 'An English actor.', birthday: '1980-10-14', department: 'Acting', imdbId: 'nm0924210' });
+    // One card per title, roles joined, undated titles first then newest; talk shows and adult titles left out.
+    const brief = (x: { title: string; role: string | null; episodes: number | null; availability: { status: string } }) => [x.title, x.role, x.episodes, x.availability.status];
+    expect(p.cast.map(brief)).toEqual([
+      ['Untitled Sequel', 'Paddington (voice)', null, 'not_available'],
+      ['Bluey', 'Guest', 2, 'on_server'],
+      ['Paddington', 'Paddington (voice) / Narrator', null, 'on_server'],
+      ['Not Here', 'Q', null, 'not_on_server'],
+    ]);
+    expect(p.crew.map(brief)).toEqual([['Future Film', 'Producer', null, 'not_available']]);
+    expect(p.knownFor.map((x: { title: string }) => x.title)).toEqual(['Not Here', 'Paddington', 'Bluey', 'Untitled Sequel']);
+    expect((await c.req('GET', '/api/people/abc')).statusCode).toBe(400);
+  });
+
   it('lets regular users browse but not trigger a sync', async () => {
     const u = await createUser(owner, 'kid', 'user');
     const c = new Client(t.app);

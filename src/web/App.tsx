@@ -27,6 +27,7 @@ import { LibraryPage } from './pages/Library';
 import { LibraryItemPage } from './pages/LibraryItem';
 import { LoginPage } from './pages/Login';
 import { MediaDetailPage, type MediaDetail } from './pages/MediaDetail';
+import { PersonPage } from './pages/Person';
 import { MissingPage } from './pages/Missing';
 import { LibraryImportPage } from './pages/LibraryImport';
 import { MonitoredPage } from './pages/Monitored';
@@ -93,6 +94,7 @@ export function App() {
         <Route path="/search" element={<SearchPage />} />
         <Route path="/movie/:tmdbId" element={<MediaDetailPage kind="movie" actions={(m) => <MediaActions m={m} />} panels={panels} />} />
         <Route path="/tv/:tmdbId" element={<MediaDetailPage kind="show" actions={(m) => <MediaActions m={m} />} panels={panels} seasons={seasons} />} />
+        <Route path="/person/:id" element={<PersonPage />} />
         <Route path="/books" element={<BooksPage />} />
         <Route path="/music" element={<MusicPage />} />
         <Route path="/developer" element={<ApiDocsPage />} />

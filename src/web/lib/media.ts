@@ -48,3 +48,12 @@ export const mediaPath = (kind: MediaKind, tmdbId: number) => `/${kind === 'movi
 
 /** Where a card goes: the title's page, or for a library title with no TMDB match, its library page. */
 export const cardPath = (item: MediaCardData) => (item.tmdbId ? mediaPath(item.kind, item.tmdbId) : item.itemIds?.length ? `/library/item/${item.itemIds[0]}` : null);
+
+/** "Meg Ryan" → "MR", for people TMDB has no photo of. */
+export const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0]!.toUpperCase())
+    .slice(0, 2)
+    .join('');
