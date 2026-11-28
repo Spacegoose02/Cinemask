@@ -83,6 +83,21 @@ export const SORTS = {
   title: { movie: 'title.asc', tv: 'name.asc' },
 } as const;
 
+/**
+ * Holidays Discover can pick out. TMDB tags titles with keywords, and a holiday matches any of the
+ * keywords listed (looked up by exact name, so ids never go stale). Works across every channel and service.
+ */
+export const HOLIDAYS = {
+  christmas: { name: 'Christmas', keywords: ['christmas', 'christmas eve', 'santa claus', 'christmas party', 'christmas tree'] },
+  hanukkah: { name: 'Hanukkah', keywords: ['hanukkah'] },
+  newyear: { name: "New Year's", keywords: ["new year's eve", 'new year'] },
+  valentines: { name: "Valentine's Day", keywords: ["valentine's day"] },
+  easter: { name: 'Easter', keywords: ['easter', 'easter bunny'] },
+  halloween: { name: 'Halloween', keywords: ['halloween'] },
+  thanksgiving: { name: 'Thanksgiving', keywords: ['thanksgiving'] },
+} as const;
+export type Holiday = keyof typeof HOLIDAYS;
+
 const ids = z
   .union([z.string(), z.array(z.coerce.number().int().positive())])
   .transform((v) => (typeof v === 'string' ? v.split(',').filter(Boolean).map(Number) : v))
@@ -107,6 +122,8 @@ export const discoverFilter = z.object({
     .string()
     .regex(/^[a-z]{2}$/)
     .optional(),
+  /** Only titles about a holiday, such as Christmas movies. */
+  holiday: z.enum(Object.keys(HOLIDAYS) as [Holiday, ...Holiday[]]).optional(),
   sort: z.enum(Object.keys(SORTS) as [keyof typeof SORTS, ...(keyof typeof SORTS)[]]).default('popular'),
 });
 export type DiscoverFilter = z.infer<typeof discoverFilter>;
@@ -146,10 +163,24 @@ async function channelIds(ctx: AppContext, f: DiscoverFilter): Promise<{ network
   return { networks: [], companies: [...companies], providers };
 }
 
+/** TMDB keyword ids for a holiday. A holiday with no keyword found returns [0] so the filter matches nothing rather than everything. */
+async function holidayKeywords(ctx: AppContext, holiday: Holiday | undefined): Promise<number[]> {
+  if (!holiday) return [];
+  const tmdb = tmdbClient(ctx);
+  if (!tmdb.configured) return [0];
+  const names = HOLIDAYS[holiday].keywords;
+  const found = await Promise.all(names.map((name) => tmdb.searchKeywords(name).then((r) => ({ name, r }))));
+  const kw = new Set<number>();
+  for (const { name, r } of found) for (const k of r.results) if (k.name.toLowerCase() === name) kw.add(k.id);
+  return kw.size ? [...kw] : [0];
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+
 /** Translates our filter into TMDB /discover parameters. Genres, networks and companies are OR-ed ("|"). */
 export async function discoverParams(ctx: AppContext, f: DiscoverFilter): Promise<Record<string, string | number | undefined>> {
   const movie = f.kind === 'movie';
-  const ch = await channelIds(ctx, f);
+  const [ch, keywords] = await Promise.all([channelIds(ctx, f), holidayKeywords(ctx, f.holiday)]);
   const date = movie ? 'primary_release_date' : 'first_air_date';
   const region = ctx.settings.get('metadata').region;
   return {
@@ -160,7 +191,9 @@ export async function discoverParams(ctx: AppContext, f: DiscoverFilter): Promis
     with_watch_providers: ch.providers.join('|') || undefined,
     watch_region: ch.providers.length ? region : undefined,
     [`${date}.gte`]: f.yearFrom ? `${f.yearFrom}-01-01` : undefined,
-    [`${date}.lte`]: f.yearTo ? `${f.yearTo}-12-31` : undefined,
+    // "Newest" means out already: without a cap it opens on titles only announced for years ahead.
+    [`${date}.lte`]: f.yearTo ? `${f.yearTo}-12-31` : f.sort === 'newest' ? today() : undefined,
+    with_keywords: keywords.join('|') || undefined,
     'vote_average.gte': f.ratingMin,
     // Sorting by rating without a vote floor surfaces titles with one 10/10 vote.
     'vote_count.gte': f.votesMin ?? (f.sort === 'rating' ? 200 : undefined),

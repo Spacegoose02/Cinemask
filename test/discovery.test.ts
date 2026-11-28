@@ -63,6 +63,11 @@ describe('discovery, lists, collections, posters and trailers', () => {
       },
       [`${TMDB}/search/company`]: (url: URL) =>
         url.searchParams.get('query') === 'Lifetime' ? { results: [{ id: 3431, name: 'Lifetime' }, { id: 99, name: 'Lifetime Fitness' }] } : { results: [] },
+      [`${TMDB}/search/keyword`]: (url: URL) =>
+        ({
+          christmas: { results: [{ id: 207317, name: 'christmas' }, { id: 5, name: 'christmas village' }] },
+          'santa claus': { results: [{ id: 1009, name: 'Santa Claus' }] },
+        })[url.searchParams.get('query')!] ?? { results: [] },
       [`${TMDB}/watch/providers/movie`]: () => ({ results: [{ provider_id: 8, provider_name: 'Netflix', logo_path: '/n.jpg', display_priority: 1 }] }),
       'https://api.mdblist.com/lists/someone/family-night/items': () => ({
         movies: [
@@ -130,6 +135,19 @@ describe('discovery, lists, collections, posters and trailers', () => {
     expect((await kid.req('GET', '/api/discover?language=english')).statusCode).toBe(400);
     const opts = (await kid.req('GET', '/api/discover/options?kind=tv')).json();
     expect(opts.networks.find((n: { name: string }) => n.name === 'Discovery')).toBeTruthy();
+  });
+
+  it('finds holiday movies by keyword on any channel, and Newest skips titles not out yet', async () => {
+    await kid.req('GET', '/api/discover?kind=movie&holiday=christmas&networks=384&sort=newest');
+    expect(discoverUrl!.searchParams.get('with_keywords')).toBe('207317|1009');
+    expect(discoverUrl!.searchParams.get('primary_release_date.lte')).toBe(new Date().toISOString().slice(0, 10));
+    expect(discoverUrl!.searchParams.get('sort_by')).toBe('primary_release_date.desc');
+    await kid.req('GET', '/api/discover?kind=tv&holiday=thanksgiving');
+    expect(discoverUrl!.searchParams.get('with_keywords')).toBe('0');
+    expect(discoverUrl!.searchParams.get('first_air_date.lte')).toBeNull();
+    expect((await kid.req('GET', '/api/discover?holiday=birthday')).statusCode).toBe(400);
+    const opts = (await kid.req('GET', '/api/discover/options')).json();
+    expect(opts.holidays).toContainEqual({ id: 'christmas', name: 'Christmas' });
   });
 
   it('filters by channel, including Lifetime and Hallmark movies, and by a service’s originals', async () => {
