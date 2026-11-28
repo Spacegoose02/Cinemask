@@ -122,7 +122,12 @@ export class TmdbClient {
     // v4 read tokens are JWTs and go in a header; v3 keys go in the query string.
     const bearer = this.key.startsWith('eyJ');
     if (!bearer) qs.set('api_key', this.key);
-    const url = `${BASE}${path}?${qs.toString()}`;
+    // Each path segment is URL-encoded, so an id or name in it can only ever name a resource on TMDB, never another host or path.
+    const safePath = path
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+    const url = `${BASE}${safePath}?${qs.toString()}`;
     const cacheKey = sha256(`tmdb:${path}?${qs.toString()}`);
     const hit = this.db().select().from(httpCache).where(eq(httpCache.key, cacheKey)).get();
     if (hit && hit.expiresAt > Date.now()) return JSON.parse(hit.body) as T;

@@ -35,7 +35,7 @@ export class MdblistClient {
   }
 
   async ratings(kind: MediaKind, tmdbId: number): Promise<MdblistRating[]> {
-    const r = await this.get<{ ratings?: MdblistRating[] }>(`/tmdb/${kind}/${tmdbId}`);
+    const r = await this.get<{ ratings?: MdblistRating[] }>(`/tmdb/${encodeURIComponent(kind)}/${encodeURIComponent(tmdbId)}`);
     return (r.ratings ?? []).filter((x) => x.value !== null);
   }
 
