@@ -186,7 +186,36 @@ export const folderKey = (s: string) =>
  * A folder carrying the TMDB id wins; otherwise the name must start with the title and, when
  * the year is known, contain it.
  */
-export function locateFolder(ctx: AppContext, row: MonitoredRow): { folder: string; rootId: string } | null {
+/**
+ * Folder names in each library root, kept for a few seconds. A root can hold thousands of folders on
+ * a network share, and reading it is synchronous, so a page that looks up many titles at once (or
+ * many open tabs refetching) would otherwise stall the whole server for every lookup.
+ */
+const rootListings = new Map<string, { at: number; dirs: string[] }>();
+const LISTING_TTL_MS = 15_000;
+
+function folderNames(rootPath: string, cached: boolean): string[] | null {
+  const hit = cached ? rootListings.get(rootPath) : undefined;
+  if (hit && Date.now() - hit.at < LISTING_TTL_MS) return hit.dirs;
+  let dirs: string[];
+  try {
+    dirs = fs
+      .readdirSync(rootPath, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+  } catch {
+    rootListings.delete(rootPath);
+    return null;
+  }
+  rootListings.set(rootPath, { at: Date.now(), dirs });
+  return dirs;
+}
+
+/**
+ * Finds a title's folder in the library roots. `cached` reuses a root listing up to 15 seconds old,
+ * for read-only lookups; anything about to change files reads the disk fresh.
+ */
+export function locateFolder(ctx: AppContext, row: MonitoredRow, cached = false): { folder: string; rootId: string } | null {
   const expected = expectedFolder(ctx, row);
   if (fs.existsSync(expected)) return { folder: expected, rootId: row.rootId ?? 'default' };
   const title = folderKey(row.title);
@@ -197,18 +226,13 @@ export function locateFolder(ctx: AppContext, row: MonitoredRow): { folder: stri
   // The title's own root first.
   roots.sort((a, b) => Number(b.id === (row.rootId ?? 'default')) - Number(a.id === (row.rootId ?? 'default')));
   for (const r of roots) {
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(r.path, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      if (!e.isDirectory()) continue;
-      const folder = path.join(r.path, e.name);
+    const names = folderNames(r.path, cached);
+    if (!names) continue;
+    for (const name of names) {
+      const folder = path.join(r.path, name);
       if (!insideRoot(r.path, folder)) continue;
-      if (idTag.test(e.name)) return { folder, rootId: r.id };
-      const key = folderKey(e.name);
+      if (idTag.test(name)) return { folder, rootId: r.id };
+      const key = folderKey(name);
       // TMDB's year and the folder's can be a year apart (a pilot aired the December before, say).
       const years = row.year ? [row.year, row.year - 1, row.year + 1].map(String) : [];
       if (!byName && (key === title || key.startsWith(`${title} `)) && (!row.year || key === title || key.slice(title.length).split(' ').some((w) => years.includes(w)))) byName = { folder, rootId: r.id };
@@ -222,7 +246,7 @@ export function locateFolder(ctx: AppContext, row: MonitoredRow): { folder: stri
  * title Cinemask doesn't manage, a stand-in row built from its details, so its folder and trailers
  * can still be shown. Null when there's no folder.
  */
-export function titleOnDisk(ctx: AppContext, kind: MediaKind, tmdbId: number): MonitoredRow | null {
+export function titleOnDisk(ctx: AppContext, kind: MediaKind, tmdbId: number, cached = true): MonitoredRow | null {
   let row = ctx.db.select().from(monitored).where(and(eq(monitored.kind, kind), eq(monitored.tmdbId, tmdbId))).get() ?? null;
   if (!row) {
     const m = ctx.db.select().from(media).where(and(eq(media.kind, kind), eq(media.tmdbId, tmdbId))).get();
@@ -230,7 +254,7 @@ export function titleOnDisk(ctx: AppContext, kind: MediaKind, tmdbId: number): M
     row = { id: 0, kind, tmdbId, title: m.title, year: m.year, rootId: null, path: null, filePath: null, fileQuality: null } as MonitoredRow;
   }
   if (row.path && fs.existsSync(row.path)) return row;
-  const found = locateFolder(ctx, row);
+  const found = locateFolder(ctx, row, cached);
   return found ? { ...row, path: found.folder, rootId: found.rootId === 'default' ? null : found.rootId } : null;
 }
 

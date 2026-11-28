@@ -94,3 +94,24 @@ describe('show requests', () => {
     expect((await kid.req('GET', '/api/requests')).json()[0].status).toBe('available');
   });
 });
+
+describe('open requests for title cards', () => {
+  it('lists titles with a waiting or approved request to any signed-in user, without who asked', async () => {
+    expect((await kid.req('GET', '/api/requests/open')).json()).toEqual({ titles: [] });
+    await ask(sib, [1]);
+    const res = await kid.req('GET', '/api/requests/open');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ titles: [`show:${BLUEY}`] });
+    expect(res.body).not.toContain('sib');
+  });
+
+  it('leaves out declined requests', async () => {
+    const r = await ask(sib, [1]);
+    await owner.req('POST', `/api/requests/${r.id}/decline`, {});
+    expect((await kid.req('GET', '/api/requests/open')).json()).toEqual({ titles: [] });
+  });
+
+  it('needs a signed-in user', async () => {
+    expect((await new Client(t.app).req('GET', '/api/requests/open')).statusCode).toBe(401);
+  });
+});

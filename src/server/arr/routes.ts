@@ -71,6 +71,21 @@ export async function arrRoutes(app: FastifyInstance) {
 
   app.get('/api/requests/count', { config: { access: 'manager' } }, async () => ({ pending: db().select().from(requests).where(eq(requests.status, 'pending')).all().length }));
 
+  /** Titles with a waiting or approved request, as "kind:tmdbId", so title cards can show "Requested" without a lookup each.
+   *  Any signed-in user can already see this per title on its page; no names or notes are included. */
+  app.get('/api/requests/open', { config: { access: 'user' } }, async () => ({
+    titles: [
+      ...new Set(
+        db()
+          .select({ kind: requests.kind, tmdbId: requests.tmdbId })
+          .from(requests)
+          .where(and(eq(requests.upgrade, false), inArray(requests.status, ['pending', 'approved'])))
+          .all()
+          .map((r) => `${r.kind}:${r.tmdbId}`),
+      ),
+    ],
+  }));
+
   /** The signed-in user's request allowance, and whether they may ask for 4K. */
   app.get('/api/requests/quota', { config: { access: 'user' } }, async (req) => {
     const me = db().select().from(users).where(eq(users.id, req.user!.id)).get();

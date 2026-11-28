@@ -231,7 +231,7 @@ export function titlesWithoutFolder(ctx: AppContext, kind: MediaKind): { id: num
     .from(monitored)
     .where(eq(monitored.kind, kind))
     .all()
-    .filter((r) => !(r.path && fs.existsSync(r.path)) && !locateFolder(ctx, r))
+    .filter((r) => !(r.path && fs.existsSync(r.path)) && !locateFolder(ctx, r, true))
     .map((r) => ({ id: r.id, title: r.title, year: r.year }))
     .sort((a, b) => a.title.localeCompare(b.title));
 }

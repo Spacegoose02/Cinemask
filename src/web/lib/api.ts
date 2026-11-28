@@ -31,7 +31,14 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
     headers['content-type'] = 'application/json';
     body = JSON.stringify(init.body);
   }
-  const res = await fetch(path, { method, headers, body, credentials: 'same-origin' });
+  let res: Response;
+  try {
+    res = await fetch(path, { method, headers, body, credentials: 'same-origin' });
+  } catch {
+    // The browser got no answer at all ("NetworkError when attempting to fetch resource" in Firefox,
+    // "Failed to fetch" in Chrome): the server restarted, or a proxy in front of it dropped a slow request.
+    throw new ApiError(0, "Couldn't reach Cinemask. The server may be restarting, or a proxy cut off a slow request. Refresh to check whether it went through.", 'network');
+  }
   const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
   if (!res.ok) {
     // This tab's token is from an older session (signed in again in another tab, say): fetch the current one and try once more.

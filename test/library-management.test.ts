@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { insideRoot } from '../src/server/files/service.js';
+import { insideRoot, locateFolder } from '../src/server/files/service.js';
 import { ensureMedia } from '../src/server/library/service.js';
 import { libraryEpisodes, libraryItems } from '../src/server/db/schema.js';
 import { Client, createUser, makeApp, setupOwner } from './helpers.js';
@@ -121,6 +121,26 @@ describe('file management, calendar and health', () => {
     expect((await owner.req('POST', `/api/monitored/${m.id}/remove`, { deleteFiles: true })).json()).toEqual({ ok: true, freed: 5 });
     expect(fs.existsSync(folder)).toBe(false);
     expect(fs.existsSync(path.join(movies, 'Paddington 2 (2017)', 'p2.mkv'))).toBe(true);
+  });
+
+  it('reuses a root folder listing for read-only lookups but reads fresh before changing files', async () => {
+    const row = { id: 0, kind: 'movie', tmdbId: 116149, title: 'Paddington', year: 2014, rootId: null, path: null } as Parameters<typeof locateFolder>[1];
+    expect(locateFolder(t.app.ctx, row, true)).toBeNull();
+    const folder = path.join(movies, 'Paddington.2014.1080p.BluRay-GRP');
+    fs.mkdirSync(folder, { recursive: true });
+    // The listing read a moment ago is reused, so a lookup doesn't read a big root again...
+    expect(locateFolder(t.app.ctx, row, true)).toBeNull();
+    // ...while a fresh read sees the new folder and refreshes the listing for later lookups.
+    expect(locateFolder(t.app.ctx, row)).toMatchObject({ folder });
+    expect(locateFolder(t.app.ctx, row, true)).toMatchObject({ folder });
+  });
+
+  it('lets one person open many titles at once, and never rate-limits the app files', async () => {
+    // 20 movie pages in tabs at a few dozen calls each stays well under the limit.
+    for (let i = 0; i < 1000; i++) expect((await t.app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(200);
+    for (let i = 0; i < 2000; i++) await t.app.inject({ method: 'GET', url: '/api/health' });
+    expect((await t.app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(429);
+    expect((await t.app.inject({ method: 'GET', url: '/sw.js' })).statusCode).not.toBe(429);
   });
 
   it('moves a title to another root folder, managed by Cinemask or not', async () => {

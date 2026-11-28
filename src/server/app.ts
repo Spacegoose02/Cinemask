@@ -140,7 +140,12 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   });
   await app.register(cookie);
-  await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute' });
+  // A ceiling against runaway clients, not a login guard: sign-in, 2FA, invites and other sensitive
+  // routes set their own much lower limits. One movie page makes a few dozen API calls, so opening
+  // 20 titles in tabs must fit comfortably. Only the API counts; the app's own files (scripts, icons,
+  // the service worker) and posters (cached, signed-in only) don't count: a poster grid alone is
+  // dozens of calls, and limiting the app's files shows a "can't reach Cinemask" screen.
+  await app.register(rateLimit, { global: true, max: 3000, timeWindow: '1 minute', allowList: (req) => !req.url.startsWith('/api') || req.url.startsWith('/api/images?') });
   registerGuard(app);
   registerLive(app);
 
