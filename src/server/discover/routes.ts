@@ -4,7 +4,7 @@ import { tmdbClient } from '../library/service.js';
 import { upstream } from '../library/routes.js';
 import { parse } from '../lib/validate.js';
 import { forViewer } from '../kids/ratings.js';
-import { discover, discoverFilter, NETWORKS, providerKey, SORTS } from './service.js';
+import { discover, discoverFilter, HOLIDAYS, NETWORKS, providerKey, SORTS } from './service.js';
 
 export async function discoverRoutes(app: FastifyInstance) {
   const ctx = app.ctx;
@@ -29,6 +29,7 @@ export async function discoverRoutes(app: FastifyInstance) {
       /** Services whose own shows or films can be picked out with "Originals only". */
       originals: providers.results.filter((p) => NETWORKS.some((n) => n.provider?.test(providerKey(p.provider_name)))).map((p) => p.provider_id),
       sorts: Object.keys(SORTS),
+      holidays: Object.entries(HOLIDAYS).map(([id, h]) => ({ id, name: h.name })),
       region: ctx.settings.get('metadata').region,
     };
   });
