@@ -429,7 +429,8 @@ function StreamingNote({ hit }: { hit: StreamingHit }) {
 
 /** Request / monitor / search controls on a movie or show page. What shows depends on the user's level. */
 /** Asks which library folder a new title goes in, before it is downloaded or monitored. */
-function ChooseFolder({ title, action, roots, onClose, onChosen }: { title: string; action: string; roots: RootFolder[]; onClose: () => void; onChosen: (rootId: string) => void }) {
+/** Asks which library folder a title goes in, when there's more than one. */
+export function ChooseFolder({ title, action, roots, onClose, onChosen }: { title: string; action: string; roots: RootFolder[]; onClose: () => void; onChosen: (rootId: string) => void }) {
   const [rootId, setRootId] = useState('');
   return (
     <Modal title={`Which library for ${title}?`} onClose={onClose}>
