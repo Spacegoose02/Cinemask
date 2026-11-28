@@ -135,8 +135,10 @@ describe('file management, calendar and health', () => {
     expect(locateFolder(t.app.ctx, row, true)).toMatchObject({ folder });
   });
 
-  it('never rate-limits the app files, so a busy minute does not look like the server is down', async () => {
-    for (let i = 0; i < 650; i++) await t.app.inject({ method: 'GET', url: '/api/health' });
+  it('lets one person open many titles at once, and never rate-limits the app files', async () => {
+    // 20 movie pages in tabs at a few dozen calls each stays well under the limit.
+    for (let i = 0; i < 1000; i++) expect((await t.app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(200);
+    for (let i = 0; i < 2000; i++) await t.app.inject({ method: 'GET', url: '/api/health' });
     expect((await t.app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(429);
     expect((await t.app.inject({ method: 'GET', url: '/sw.js' })).statusCode).not.toBe(429);
   });
