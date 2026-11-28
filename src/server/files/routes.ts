@@ -54,7 +54,7 @@ export async function fileRoutes(app: FastifyInstance) {
   app.post('/api/files/:kind/:tmdbId/move', { config: { access: 'manager' } }, async (req) => {
     const p = parse(z.object({ kind: z.enum(MEDIA_KINDS), tmdbId: z.coerce.number().int().positive() }), req.params);
     const { rootId } = parse(z.object({ rootId: z.string().regex(/^[a-z0-9-]{1,40}$/) }), req.body);
-    const row = ctx.db.select().from(monitored).where(and(eq(monitored.kind, p.kind), eq(monitored.tmdbId, p.tmdbId))).get() ?? titleOnDisk(ctx, p.kind, p.tmdbId);
+    const row = ctx.db.select().from(monitored).where(and(eq(monitored.kind, p.kind), eq(monitored.tmdbId, p.tmdbId))).get() ?? titleOnDisk(ctx, p.kind, p.tmdbId, false);
     if (!row) throw notFound('No folder for this title in the media folders');
     const from = row.path;
     const after = safely(() => {

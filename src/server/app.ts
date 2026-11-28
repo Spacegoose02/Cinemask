@@ -140,7 +140,9 @@ export async function buildApp(config: AppConfig, opts: { logger?: boolean } = {
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   });
   await app.register(cookie);
-  await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute' });
+  // Only the API is limited. The app's own files (scripts, icons, the service worker) are cheap to
+  // serve, and limiting them turns a busy minute into a "can't reach Cinemask" screen.
+  await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute', allowList: (req) => !req.url.startsWith('/api') });
   registerGuard(app);
   registerLive(app);
 
