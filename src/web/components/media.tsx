@@ -1,7 +1,11 @@
-import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import { cardPath, poster, STATUS_LABEL, type Availability, type MediaCardData } from '../lib/media';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, type MouseEvent, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { cardPath, mediaPath, poster, STATUS_LABEL, type Availability, type MediaCardData } from '../lib/media';
+import { api, hasRole } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { t } from '../lib/i18n';
+import { useRootFolders } from './MediaActions';
 
 const STATUS_STYLE: Record<Availability, string> = {
   on_server: 'bg-success text-bg',
@@ -16,6 +20,70 @@ export function StatusBadge({ status, resolution }: { status: Availability; reso
       {STATUS_LABEL[status]}
       {resolution && <span className="opacity-80">· {resolution}</span>}
     </span>
+  );
+}
+
+/** Titles with a waiting or approved request, shared by every card on the page. */
+function useOpenRequests(enabled: boolean) {
+  return useQuery({ queryKey: ['requests-open'], queryFn: () => api<{ titles: string[] }>('/api/requests/open'), enabled, staleTime: 30_000 });
+}
+
+/**
+ * Request straight from a poster, for titles that aren't on the server. A movie or a whole show is
+ * asked for in one tap; the server applies the usual approval, limits, streaming rule and "me too".
+ * When there's a choice to make first (a manager with several library folders), it opens the title page.
+ */
+function CardRequestButton({ item }: { item: MediaCardData & { tmdbId: number } }) {
+  const { me } = useAuth();
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const isManager = hasRole(me, 'manager');
+  const open = useOpenRequests(Boolean(me));
+  const roots = useRootFolders(isManager);
+  const [state, setState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
+  const [error, setError] = useState('');
+  if (!me) return null;
+  const requested = state === 'done' || open.data?.titles.includes(`${item.kind}:${item.tmdbId}`);
+  const label = isManager ? t('Download') : t('Request');
+
+  const onClick = async (e: MouseEvent) => {
+    // The card is a link to the title page; the button shouldn't open it.
+    e.preventDefault();
+    e.stopPropagation();
+    if (requested || state === 'busy') return;
+    if (isManager && (roots.data?.roots.filter((r) => r.kind === item.kind).length ?? 0) > 1) return navigate(mediaPath(item.kind, item.tmdbId));
+    setState('busy');
+    setError('');
+    try {
+      await api('/api/requests', { body: { kind: item.kind, tmdbId: item.tmdbId } });
+      setState('done');
+      await qc.invalidateQueries({ queryKey: ['requests-open'] });
+      await qc.invalidateQueries({ queryKey: ['request-quota'] });
+    } catch (err) {
+      setState('error');
+      setError((err as Error).message);
+    }
+  };
+
+  const base = 'absolute bottom-1 right-1 rounded px-1.5 py-0.5 text-[11px] font-medium shadow';
+  if (requested)
+    return (
+      <span className={`${base} bg-accent text-accent-fg`} onClick={(e) => (e.preventDefault(), e.stopPropagation())}>
+        ✓ {t(isManager ? 'Added' : 'Requested')}
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={state === 'busy'}
+      title={state === 'error' ? error : t('{action} {title}', { action: label, title: item.title })}
+      aria-label={t('{action} {title}', { action: label, title: item.title })}
+      // Always shown on touch screens; with a mouse it appears on hover or keyboard focus.
+      className={`${base} ${state === 'error' ? 'bg-danger text-bg' : 'bg-accent text-accent-fg'} transition hover:brightness-110 focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 ${state !== 'idle' ? 'pointer-fine:opacity-100' : ''}`}
+    >
+      {state === 'busy' ? '…' : state === 'error' ? `! ${t('Try again')}` : `+ ${label}`}
+    </button>
   );
 }
 
@@ -38,6 +106,7 @@ export function MediaCard({ item, extra }: { item: MediaCardData; extra?: ReactN
             ✓ Watched
           </span>
         ) : null}
+        {item.tmdbId && item.availability && (status === 'not_on_server' || status === 'not_available') ? <CardRequestButton item={{ ...item, tmdbId: item.tmdbId }} /> : null}
       </div>
       <div className="mt-1.5 truncate text-sm">{item.title}</div>
       <div className="text-xs text-muted">
