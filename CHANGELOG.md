@@ -4,6 +4,19 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-11-28
+
+### Added
+- **Request from poster cards.** Cards for titles that aren't on the server have a Request button, or Download for managers. On touch screens it is always visible. With a mouse it appears on hover or focus. It sends the usual request, so approval, limits, the streaming rule and "me too" all still apply. Managers with several library folders are taken to the title page to pick one. Cards show "Requested" using a new `GET /api/requests/open`, which lists titles only, no names, at user level.
+
+### Fixed
+- **Title pages stalled the whole server.** Each title lookup read every library root folder to find the title's folder. On a large network share that took about 650 ms and blocked everything else, so with several tabs open, requests and health checks timed out and the browser showed NetworkError. Read-only lookups now reuse the folder listing for 15 seconds. Anything that changes files still reads fresh.
+- **"Can't reach Cinemask" during busy minutes.** The general rate limit also covered the app's own files, so the service worker could show the offline page. It now applies to `/api` only, and the limit went from 600 to 3,000 calls a minute per address, so opening many titles at once never trips it. Sign-in and other sensitive routes keep their own low limits, and proxied posters don't count.
+- **Clearer connection errors.** The browser's bare "NetworkError when attempting to fetch resource" now says the server couldn't be reached.
+- **Unhandled promise rejections no longer stop the server.** They are logged instead.
+
+If Cinemask runs behind a reverse proxy, make sure `TRUST_PROXY=true` is set, otherwise every user shares the proxy's address for rate limits.
+
 ## [0.42.1] - 2026-11-27
 
 ### Fixed
